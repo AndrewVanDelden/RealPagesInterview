@@ -71,6 +71,44 @@ public class OpenAiCompletionClientTests
     }
 
     [Fact]
+    public async Task CompleteAsync_NoResponseJsonSchema_RequestUsesPlainJsonObjectMode()
+    {
+        const string responseJson = """{"choices":[{"message":{"content":"ok"}}]}""";
+        using var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
+        };
+        var handler = new FakeHttpMessageHandler(httpResponse);
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        await client.CompleteAsync("system", "user");
+
+        Assert.Contains("\"type\":\"json_object\"", handler.LastRequestBody);
+        Assert.DoesNotContain("\"json_schema\"", handler.LastRequestBody);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ResponseJsonSchemaProvided_RequestUsesStrictJsonSchemaMode()
+    {
+        const string responseJson = """{"choices":[{"message":{"content":"ok"}}]}""";
+        using var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
+        };
+        var handler = new FakeHttpMessageHandler(httpResponse);
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        const string schema = """{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}""";
+
+        await client.CompleteAsync("system", "user", schema);
+
+        Assert.Contains("\"json_schema\"", handler.LastRequestBody);
+        Assert.Contains("\"strict\":true", handler.LastRequestBody);
+        Assert.Contains("\"additionalProperties\":false", handler.LastRequestBody);
+    }
+
+    [Fact]
     public async Task CompleteAsync_NoChoicesReturned_ThrowsInvalidOperationException()
     {
         const string responseJson = """{"choices":[]}""";

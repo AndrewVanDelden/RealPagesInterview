@@ -37,6 +37,14 @@ public sealed class ValidatingMessageComposer(
 
                 violationsForNextAttempt = validation.Violations;
             }
+            else
+            {
+                // Not a safety violation, but still something the next attempt should
+                // know about - otherwise a retry after a Result.Failure (a wrong cta_type,
+                // a malformed completion) repeats the exact same prompt with no corrective
+                // signal, wasting the one retry this loop has.
+                violationsForNextAttempt = [attemptResult.Error];
+            }
         }
 
         Result<NextMessage> fallbackResult = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);

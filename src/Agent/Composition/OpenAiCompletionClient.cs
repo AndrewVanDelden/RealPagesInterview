@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Agent.Common;
 
 namespace Agent.Composition;
@@ -8,7 +9,13 @@ public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey,
 {
     private const string CompletionsEndpoint = "https://api.openai.com/v1/chat/completions";
 
-    public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default)
+    private const string StructuredOutputSchemaName = "composed_message";
+
+    public async Task<string> CompleteAsync(
+        string systemPrompt,
+        string userPrompt,
+        string? responseJsonSchema = null,
+        CancellationToken cancellationToken = default)
     {
         var requestBody = new OpenAiChatRequest(
             model,
@@ -16,7 +23,7 @@ public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey,
                 new OpenAiChatRequestMessage("system", systemPrompt),
                 new OpenAiChatRequestMessage("user", userPrompt),
             ],
-            new OpenAiResponseFormat("json_object"));
+            BuildResponseFormat(responseJsonSchema));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, CompletionsEndpoint)
         {
@@ -39,5 +46,22 @@ public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey,
 
         return chatResponse?.Choices?.FirstOrDefault()?.Message?.Content
             ?? throw new InvalidOperationException("OpenAI response contained no completion content.");
+    }
+
+    // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.
+    // When the caller supplies a schema, Structured Outputs (strict: true) makes the API
+    // itself enforce that shape via constrained decoding, rather than trusting prose
+    // instructions in the prompt to be honored.
+    private static OpenAiResponseFormat BuildResponseFormat(string? responseJsonSchema)
+    {
+        if (responseJsonSchema is null)
+        {
+            return new OpenAiResponseFormat("json_object");
+        }
+
+        using JsonDocument schemaDocument = JsonDocument.Parse(responseJsonSchema);
+        OpenAiJsonSchemaSpec schemaSpec = new(StructuredOutputSchemaName, Strict: true, schemaDocument.RootElement.Clone());
+
+        return new OpenAiResponseFormat("json_schema", schemaSpec);
     }
 }

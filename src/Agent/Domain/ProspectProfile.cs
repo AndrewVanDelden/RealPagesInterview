@@ -5,7 +5,10 @@ public sealed record ProspectProfile(
     string? CityInterest,
     IReadOnlyList<string>? AmenityInterest)
 {
-    public bool HasAmenityInterest => AmenityInterest is { Count: > 0 };
+    // Normalized, always-non-null views of the two interest fields, used by every
+    // composer that describes stated interest - the null/empty-vs-non-empty guard lives
+    // here once instead of being duplicated at each call site.
+    public IReadOnlyList<string> Amenities => AmenityInterest is { Count: > 0 } amenities ? amenities : [];
 
-    public bool HasCityInterest => CityInterest is { Length: > 0 };
+    public string City => CityInterest is { Length: > 0 } city ? city : string.Empty;
 }
