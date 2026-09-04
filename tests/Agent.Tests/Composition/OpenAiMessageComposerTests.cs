@@ -178,4 +178,31 @@ public class OpenAiMessageComposerTests
         Assert.Contains("pool", fakeClient.LastUserPrompt);
         Assert.Contains("Richardson, TX", fakeClient.LastUserPrompt);
     }
+
+    [Fact]
+    public async Task ComposeAsync_PriorViolationsProvided_UserPromptIncludesCorrectionFeedback()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+        string[] priorViolations = ["Missing required opt-out instructions."];
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, priorViolations);
+
+        Assert.Contains("Missing required opt-out instructions.", fakeClient.LastUserPrompt);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_NoPriorViolations_UserPromptHasNoCorrectionSection()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.DoesNotContain("previous attempt", fakeClient.LastUserPrompt, StringComparison.OrdinalIgnoreCase);
+    }
 }

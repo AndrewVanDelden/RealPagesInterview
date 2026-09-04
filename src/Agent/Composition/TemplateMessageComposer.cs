@@ -5,7 +5,15 @@ namespace Agent.Composition;
 
 public sealed class TemplateMessageComposer : IMessageComposer
 {
-    public Task<Result<NextMessage>> ComposeAsync(ProspectCase prospectCase, CommunicationChannel channel, CancellationToken cancellationToken = default)
+    // priorViolations is ignored: this composer is deterministic, so retrying with the
+    // same input can never produce a different result. ValidatingMessageComposer relies
+    // on that (a bounded loop that only ever inspects the first attempt in practice) and
+    // treats this composer as the always-clean, un-retried fallback.
+    public Task<Result<NextMessage>> ComposeAsync(
+        ProspectCase prospectCase,
+        CommunicationChannel channel,
+        IReadOnlyList<string>? priorViolations = null,
+        CancellationToken cancellationToken = default)
     {
         string firstName = prospectCase.Input.Profile.FirstName;
         string propertyName = prospectCase.Input.PropertyName;

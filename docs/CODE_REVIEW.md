@@ -58,3 +58,16 @@ or human) doesn't re-flag them as missing behavior.
   passed relative to `last_interaction`) independently satisfies all three
   of Sprint 2.3's stated acceptance criteria. See `docs/DESIGN.md`
   assumptions log #2 and the comment on `SendScheduler`.
+
+- **Fair-housing/PII heuristic, not semantic understanding (BACKLOG.md
+  Sprint 4.1).** `SafetyValidator` enforces opt-out presence, PII patterns,
+  and protected-class/steering language via keyword and regex matching, not
+  a semantic or LLM-based check. A paraphrase of steering language (e.g.
+  "we prefer residents without young children" instead of "families only")
+  would not be caught. This is a scoped, disclosed limitation for a 30-minute
+  sprint, not an oversight - see the comment on `SafetyValidator` and
+  `TalkingPoints.md` Sprint 4. `CaseConstraints.NoSensitiveDiscrimination`
+  is deliberately never read: the protected-class/steering check always
+  runs regardless of its value, since fair housing law has no legitimate
+  per-case opt-out (unlike opt-out messaging or generic PII sensitivity,
+  which can vary case by case).
