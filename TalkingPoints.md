@@ -1430,3 +1430,84 @@ completeness, closing this gap for real would mean:
   block builds its own string inline with no shared code to keep them
   aligned.
 and `Agent.Cli.Tests`.
+
+## Post-review fix round: PR #11 (code review + Antigravity/Gemini)
+
+### Scope
+
+Both an automated code review and the Antigravity (Gemini 3.8 Flash) reviewer
+left findings on PR #11 (Sprint 7's live hold-out fix). Triaged all of them on
+their merits rather than applying every suggestion - two of the eight Gemini
+comments recommended changes that this project had already deliberately
+rejected in earlier sprints, documented above.
+
+### Fixed
+
+1. **`CaseConstraints.PrimaryCta` is now genuinely nullable (`string?`).** This
+   was the actual root cause both reviewers converged on: `PrimaryCtaVocabulary.ToCtaType`
+   was patched to accept and return `string?` when Sprint 7's crash was fixed,
+   but the domain record itself - the actual source of the null - stayed
+   declared non-nullable, so every *other* caller (present or future) was
+   still working under a false compiler guarantee. Fixing the type at its
+   source, rather than patching callers one at a time, resolved two separate
+   findings for free:
+   - `PrimaryCtaVocabulary.ToCtaType` gained `[return: NotNullIfNotNull(nameof(primaryCta))]`,
+     which tells the compiler the converse also holds (a non-null input can
+     never come back null) - this cleared a real `CS8604` warning in
+     `TemplateMessageComposer.cs` that a `dotnet build -t:Rebuild` reproduced
+     during review, without relying on the incidental upfront
+     `IsNullOrWhiteSpace` guard that happened to make it safe at runtime.
+   - An explicit JSON `"primary_cta": null` (as opposed to a merely missing
+     key) no longer crashes `JsonlRecordReader.ReadAll` with an unhandled
+     `InvalidDataException` at ingestion - `RespectNullableAnnotations` only
+     rejects an explicit null against a non-nullable property, so an honestly
+     nullable property accepts it the same way it already accepted the
+     missing-key case. New test: `ReadAll_ExplicitNullPrimaryCta_ParsesToNullInsteadOfThrowing`.
+2. **The CTA instruction moved outside `<prospect_data>`.** The prompt told
+   the model to treat everything inside that block as untrusted, non-instructional
+   data, then put the one piece of text actually meant to steer the model's
+   CTA choice - especially the no-required-type fallback, which has no
+   schema-level enforcement backstop - inside it anyway. `BuildUserPrompt` now
+   builds a `ctaInstruction` sentence placed in the instructional preamble,
+   before the `<prospect_data>` block opens, for both the required and
+   fallback cases. This also resolves Gemini's separate wording complaint
+   (`required_cta_type: none specified - choose a reasonable call to action`
+   read as an oxymoron to a model) since the new fallback phrasing
+   ("No specific call to action is required; choose one reasonable for this
+   message.") is a plain sentence, not a key/value pair. New tests:
+   `ComposeAsync_UserPrompt_RequiredCtaInstructionPlacedOutsideProspectDataBlock`,
+   `ComposeAsync_UserPrompt_NoPrimaryCtaConstraint_StatesNoSpecificCtaRequiredOutsideProspectDataBlock`.
+3. **Extracted the duplicated exception-formatting expression.** `CliRunner.cs`
+   and `Evaluator.cs` each independently built `$"{ex.GetType().Name}: {ex.Message}"`
+   inline - flagged by the code review, and independently called for by
+   Sprint 8's own logging audit ("a single shared error-formatting helper so
+   the `CliRunner.cs:54`-style drift... cannot recur"). Added
+   `Agent.Common.ExceptionFormatting.ToDiagnosticString()` and pointed both
+   call sites at it.
+
+### Declined (with reasons)
+
+1. **Gemini's suggestion to give `TemplateMessageComposer` a fallback CTA
+   when `PrimaryCta` is absent, instead of refusing the record.** This is not
+   a new observation - the earlier "lenient parsing of the `expected` oracle"
+   hardening pass already found and discussed this exact behavior, and
+   concluded `TemplateMessageComposer` "correctly refuses to compose from" a
+   null `PrimaryCta`, identifying the real gap as elsewhere (the orchestrator
+   folding a legitimate refusal into the same "suppressed" shape as a
+   no-consent case) - a different, already-tracked issue, not this one.
+   Reversing that already-reasoned decision on this PR would contradict the
+   project's own prior conclusion without new evidence.
+2. **Gemini's suggestion to filter `Evaluator`'s catch with
+   `when (ex is not OperationCanceledException)`.** The principle is correct
+   in the abstract, but `Evaluate`/`Score` take no `CancellationToken` and
+   call nothing cancellable - there is no path by which `Score(run)` can
+   throw `OperationCanceledException` today. Adding the filter would add an
+   untestable branch (no honest test can force that exception without
+   inventing an unrelated seam), which both contradicts this project's
+   stated practice of not writing tests to poke at unreachable code and would
+   fail the 100% branch-coverage gate outright.
+
+### After
+
+159 tests in `Agent.Tests` (up from 156), 12 in `Agent.Cli.Tests`, 100%
+line/branch/method coverage on both, zero build warnings.

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Agent.Common;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
@@ -97,7 +98,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
                 // timezone, an unsalvageable compose-validate failure) must not discard the
                 // output already produced for every other record in the batch.
                 failureCount++;
-                error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.GetType().Name}: {ex.Message}");
+                error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.ToDiagnosticString()}");
                 continue;
             }
 

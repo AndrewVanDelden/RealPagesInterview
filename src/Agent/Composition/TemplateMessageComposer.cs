@@ -17,7 +17,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
     {
         string firstName = prospectCase.Input.Profile.FirstName;
         string propertyName = prospectCase.Input.PropertyName;
-        string primaryCta = prospectCase.Assertions.Constraints.PrimaryCta;
+        string? primaryCta = prospectCase.Assertions.Constraints.PrimaryCta;
 
         if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(propertyName) || string.IsNullOrWhiteSpace(primaryCta))
         {

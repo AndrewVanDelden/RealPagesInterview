@@ -1,3 +1,4 @@
+using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 using Agent.Orchestration;
@@ -39,7 +40,7 @@ public sealed class Evaluator : IEvaluator
             }
             catch (Exception ex)
             {
-                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, $"{ex.GetType().Name}: {ex.Message}"));
+                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, ex.ToDiagnosticString()));
             }
         }
 
