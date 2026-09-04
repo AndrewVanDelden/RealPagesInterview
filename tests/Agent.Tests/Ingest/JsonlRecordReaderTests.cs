@@ -110,7 +110,18 @@ public class JsonlRecordReaderTests
         InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
 
         Assert.Contains("Line 2", exception.Message);
-        Assert.IsType<JsonException>(exception.InnerException);
+        Assert.IsAssignableFrom<JsonException>(exception.InnerException);
+    }
+
+    [Fact]
+    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineIsValidJsonButNotAnObject()
+    {
+        using TextReader reader = new StringReader(MinimalValidLine + Environment.NewLine + "[1,2,3]" + Environment.NewLine);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+
+        Assert.Contains("Line 2", exception.Message);
+        Assert.IsAssignableFrom<JsonException>(exception.InnerException);
     }
 
     [Fact]
@@ -135,5 +146,65 @@ public class JsonlRecordReaderTests
         Assert.NotNull(parsedCase.Expected);
         Assert.Null(parsedCase.Expected!.NextMessage);
         Assert.Equal("start_cadence", parsedCase.Expected.NextAction.Type);
+    }
+
+    // "expected" is the scoring oracle, not something the agent reads to make its own
+    // decisions (DESIGN.md section 2). A hold-out file's expected shape is not under
+    // our control, so a value outside our schema (an unrecognized channel, a novel
+    // next_action shape) must not take down the whole record - only the fields the
+    // agent actually depends on (consent, channel_preferences, input, assertions,
+    // thresholds) are required to be strict.
+    [Fact]
+    public void ReadAll_ExpectedHasUnrecognizedChannelValue_ParsesRecordWithNullExpectedInsteadOfThrowing()
+    {
+        string lineWithUnknownChannel = MinimalValidLine.Replace(
+            "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
+            "\"expected\":{\"next_message\":{\"channel\":\"none\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
+        using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
+
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+
+        Assert.Equal("minimal", parsedCase.TaskId);
+        Assert.Equal("book_tour", parsedCase.Assertions.Constraints.PrimaryCta);
+        Assert.Null(parsedCase.Expected);
+    }
+
+    [Fact]
+    public void ReadAll_ExpectedHasNullRequiredNextActionType_ParsesRecordWithNullExpectedInsteadOfThrowing()
+    {
+        string lineWithBadExpected = MinimalValidLine.Replace(
+            "\"next_action\":{\"type\":\"start_cadence\"}",
+            "\"next_action\":{\"type\":null}");
+        using TextReader reader = new StringReader(lineWithBadExpected + Environment.NewLine);
+
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+
+        Assert.Equal("minimal", parsedCase.TaskId);
+        Assert.Null(parsedCase.Expected);
+    }
+
+    [Fact]
+    public void ReadAll_ExpectedPropertyMissingEntirely_ParsesRecordWithNullExpected()
+    {
+        string lineWithoutExpected = MinimalValidLine.Replace(
+            ",\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
+            string.Empty);
+        using TextReader reader = new StringReader(lineWithoutExpected + Environment.NewLine);
+
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+
+        Assert.Null(parsedCase.Expected);
+    }
+
+    [Fact]
+    public void ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize()
+    {
+        ProspectCase original = Reader.ReadAll(new StringReader(MinimalValidLine))[0];
+
+        string serialized = JsonSerializer.Serialize(original, Agent.Common.AgentJsonOptions.Default);
+        ProspectCase roundTripped = Reader.ReadAll(new StringReader(serialized))[0];
+
+        Assert.NotNull(roundTripped.Expected);
+        Assert.Equal("start_cadence", roundTripped.Expected!.NextAction.Type);
     }
 }

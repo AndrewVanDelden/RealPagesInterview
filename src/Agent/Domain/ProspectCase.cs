@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Agent.Domain;
 
 public sealed record ProspectCase(
@@ -9,4 +11,4 @@ public sealed record ProspectCase(
     ProspectContext Input,
     CaseAssertions Assertions,
     CaseThresholds Thresholds,
-    ExpectedOutcome? Expected);
+    [property: JsonConverter(typeof(LenientExpectedOutcomeConverter))] ExpectedOutcome? Expected);
