@@ -1,0 +1,124 @@
+using Agent.Composition;
+using Agent.Decisions;
+using Agent.Domain;
+using Agent.Ingest;
+using Agent.Orchestration;
+using Agent.Safety;
+using Microsoft.Extensions.Configuration;
+
+namespace Agent.Cli;
+
+public static class CliExitCodes
+{
+    public const int Success = 0;
+    public const int UsageError = 1;
+    public const int PartialFailure = 2;
+}
+
+// Thin shell over the library (DESIGN.md section 5): parses arguments, wires the
+// composition root, and runs the per-record batch loop. Holds no business rules
+// of its own - every decision stays inside Agent library components.
+public sealed class CliRunner(IConfiguration configuration, TextWriter error)
+{
+    private static readonly HttpClient SharedHttpClient = new();
+
+    public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
+    {
+        string? inputPath = GetOption(args, "--input");
+        string? outputPath = GetOption(args, "--output");
+        string composerName = GetOption(args, "--composer") ?? "template";
+        string? diagnosticsPath = GetOption(args, "--diagnostics");
+
+        if (inputPath is null || outputPath is null)
+        {
+            error.WriteLine("Usage: --input <file.jsonl> --output <file.jsonl> [--composer template|openai] [--diagnostics <file.jsonl>]");
+            return CliExitCodes.UsageError;
+        }
+
+        var templateFallback = new TemplateMessageComposer();
+        IMessageComposer baseComposer;
+        try
+        {
+            baseComposer = composerName switch
+            {
+                "template" => templateFallback,
+                "openai" => BuildOpenAiComposer(configuration),
+                _ => throw new ArgumentException($"Unknown composer '{composerName}'. Expected 'template' or 'openai'."),
+            };
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            error.WriteLine(ex.Message);
+            return CliExitCodes.UsageError;
+        }
+
+        var safetyValidator = new SafetyValidator();
+        IMessageComposer composer = new ValidatingMessageComposer(baseComposer, safetyValidator, templateFallback);
+
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            composer,
+            safetyValidator,
+            new SendScheduler(),
+            new NextActionPlanner());
+
+        IReadOnlyList<ProspectCase> cases;
+        using (var inputReader = new StreamReader(inputPath))
+        {
+            cases = new JsonlRecordReader().ReadAll(inputReader);
+        }
+
+        var outputWriter = new JsonlRecordWriter<AgentOutput>();
+        var diagnosticsWriter = new JsonlRecordWriter<TaskDiagnostics>();
+
+        await using var outputStream = new StreamWriter(outputPath);
+        await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
+
+        int failureCount = 0;
+
+        foreach (ProspectCase prospectCase in cases)
+        {
+            AgentRunResult result;
+            try
+            {
+                result = await agent.RunAsync(prospectCase, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Per-record isolation: one malformed record (bad move date, unrecognized
+                // timezone, an unsalvageable compose-validate failure) must not discard the
+                // output already produced for every other record in the batch.
+                failureCount++;
+                error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.Message}");
+                continue;
+            }
+
+            outputWriter.WriteAll(outputStream, [result.Output]);
+
+            if (diagnosticsStream is not null)
+            {
+                diagnosticsWriter.WriteAll(diagnosticsStream, [new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics)]);
+            }
+        }
+
+        return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
+    }
+
+    private static string? GetOption(string[] cliArgs, string name)
+    {
+        int index = Array.IndexOf(cliArgs, name);
+        return index >= 0 && index + 1 < cliArgs.Length ? cliArgs[index + 1] : null;
+    }
+
+    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration)
+    {
+        string apiKey = configuration["OpenAI:ApiKey"]
+            ?? throw new InvalidOperationException(
+                "OpenAI:ApiKey is not configured. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
+        string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
+
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model);
+        return new OpenAiMessageComposer(completionClient);
+    }
+}
