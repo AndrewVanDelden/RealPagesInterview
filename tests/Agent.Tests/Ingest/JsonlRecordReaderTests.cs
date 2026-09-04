@@ -114,6 +114,17 @@ public class JsonlRecordReaderTests
     }
 
     [Fact]
+    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineIsValidJsonButNotAnObject()
+    {
+        using TextReader reader = new StringReader(MinimalValidLine + Environment.NewLine + "[1,2,3]" + Environment.NewLine);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+
+        Assert.Contains("Line 2", exception.Message);
+        Assert.IsAssignableFrom<JsonException>(exception.InnerException);
+    }
+
+    [Fact]
     public void ReadAll_ThrowsInvalidDataException_WhenRequiredFieldIsNull()
     {
         string lineWithNullRequiredField = MinimalValidLine.Replace("\"task_id\":\"minimal\"", "\"task_id\":null");
@@ -183,5 +194,17 @@ public class JsonlRecordReaderTests
         ProspectCase parsedCase = Reader.ReadAll(reader)[0];
 
         Assert.Null(parsedCase.Expected);
+    }
+
+    [Fact]
+    public void ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize()
+    {
+        ProspectCase original = Reader.ReadAll(new StringReader(MinimalValidLine))[0];
+
+        string serialized = JsonSerializer.Serialize(original, Agent.Common.AgentJsonOptions.Default);
+        ProspectCase roundTripped = Reader.ReadAll(new StringReader(serialized))[0];
+
+        Assert.NotNull(roundTripped.Expected);
+        Assert.Equal("start_cadence", roundTripped.Expected!.NextAction.Type);
     }
 }
