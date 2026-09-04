@@ -732,3 +732,67 @@ _Pending._
 ### After
 
 _Pending._
+
+---
+
+## Post-MVP hardening: lenient parsing of the `expected` oracle
+
+### Before
+
+Found while rehearsing the CLI with a hand-built 11-record synthetic
+hold-out-shaped file (the "hold-out rehearsal" from the kickoff decisions):
+`dotnet run --composer openai` crashed immediately on ingestion, before any
+composer ran, with a `JsonException` on record 10's `expected.next_message
+.channel: "none"` - a value our `CommunicationChannel` enum doesn't have
+(`Sms`/`Email`/`Voice` only).
+
+Root cause, not just the symptom: `JsonlRecordReader` deserialized the whole
+line - including `expected` - as one strict object. `expected` is only the
+scoring oracle (DESIGN.md section 2); the agent's own decision pipeline
+never reads `ProspectCase.Expected`. So a single record's `expected` having
+any shape outside our exact schema (an unrecognized channel, a novel
+`next_action` shape neither of the two labeled samples showed) took down
+ingestion for the entire file, discarding every other record too - a much
+worse failure mode than "scores one record wrong," and a real risk against
+the actual 12-record hold-out, which is very unlikely to be limited to the
+two `next_action` shapes ("start_cadence", "follow_up_in_days") the labeled
+samples happened to show.
+
+Fix: `JsonlRecordReader` now parses each line in two passes via
+`JsonNode` - strip `expected` out before the strict pass (so `TaskId`,
+`Consent`, `ChannelPreferences`, `Input`, `Assertions`, `Thresholds` still
+parse strictly and loudly, since the agent genuinely depends on them), then
+attempt `expected` separately and fall back to `null` on any parse failure,
+rather than letting it fail the whole record.
+
+### After
+
+- Refactoring the parse into two passes turned a previously-reachable
+  `?? throw` guard (`ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineDeserializesToNull`
+  covers the *outer* "whole line is JSON null" case now) into dead code on
+  the *inner* pass: once `rootNode` is confirmed non-null, a non-null
+  `JsonNode` cannot deserialize to a null `ProspectCase`, so that second
+  guard could never be reached by any honest test. Removed it (null-forgiving
+  operator with a comment explaining why) rather than write a test to poke
+  at unreachable code.
+- `JsonNode.Parse`'s syntax-error exception is `JsonReaderException` (a
+  `JsonException` subclass), where `JsonSerializer.Deserialize` had thrown
+  the base `JsonException` directly - an existing test asserted the exact
+  concrete type (`Assert.IsType<JsonException>`). Fixed the assertion to
+  `Assert.IsAssignableFrom<JsonException>`, since that's what the code
+  actually guarantees (catches `JsonException` and any subclass) and was
+  always the more correct assertion - not something to work around.
+- Verified against the actual synthetic file that originally crashed: all
+  11 records now process without error (`dotnet run` exits 0). Two further,
+  separate findings from that same file, deliberately not fixed here since
+  they're schema-coverage questions rather than parsing bugs: (1) records
+  missing `move_date_target` (new lifecycle stages this file introduced -
+  no-show, cancellation, renewal - that don't naturally have a "move date")
+  silently default `send_at` to `0001-01-01`, since `DateOnly`/`DateTimeOffset`
+  are non-nullable value types that don't fail on a missing JSON property
+  the way a missing required reference-type field would; (2) records missing
+  `primary_cta` get a null `PrimaryCta`, which `TemplateMessageComposer`
+  correctly refuses to compose from, but the orchestrator's failure handling
+  folds that into the same "suppressed" output/diagnostics shape as a
+  genuine no-consent case, conflating two different situations.
+- Final: 107 tests, 100% line/branch/method coverage.
