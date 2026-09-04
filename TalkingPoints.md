@@ -1253,4 +1253,180 @@ code changes touched disjoint files; the two "Post-MVP hardening" sections
 were combined in chronological order.
 
 Final: 122 tests, 100% line/branch/method coverage across `Agent.Tests`
+
+## Sprint 8: Logging
+
+### Scope
+
+This sprint is documentation only. No source file was changed while producing
+it. It was requested after Sprint 7's live crash-and-fix raised three
+questions in quick succession: where is the logging and what are we logging
+to, do we have enough catch blocks and are error messages capturing file/line
+detail, and why doesn't the 100% code-coverage gate catch a missing catch
+block. This section answers all three with a complete inventory rather than
+spot examples, so the gaps are visible as a whole instead of one at a time.
+
+### There is no logging framework anywhere in this codebase
+
+A full grep of `src/` for `ILogger`, `Serilog`, `LoggerFactory`, `Console.`,
+and `WriteLine` returns exactly five hits, and all five are in one file:
+
+| File:Line | What it writes |
+|---|---|
+| `src/Agent.Cli/CliRunner.cs:37` | Usage message when `--input`/`--output` are missing |
+| `src/Agent.Cli/CliRunner.cs:54` | Composer-selection failure message |
+| `src/Agent.Cli/CliRunner.cs:100` | Per-record batch failure message |
+| `src/Agent.Cli/CliRunner.cs:133` | Per-record eval-scoring failure message |
+| `src/Agent.Cli/Program.cs:9` | Wires `Console.Out`/`Console.Error` into `CliRunner`'s constructor |
+
+That is the entire observability surface of the application. There is no
+`ILogger<T>`, no structured logging, no log levels (info/warn/error/debug),
+no log file, no correlation ID, and no timestamp on any emitted line. Every
+message above is a bare `TextWriter.WriteLine` call writing plain text to
+stderr (or stdout for the eval report). `Agent` (the core library) contains
+none of these five lines - it never writes anything anywhere. All
+observability, such as it is, lives entirely in the CLI shell, one layer
+above every business rule.
+
+The closest thing to structured output in the whole system is the
+`--diagnostics` JSON artifact (`TaskDiagnostics`: `consent_verified`,
+`fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`)
+and the `--eval-report` text file. Both are domain artifacts describing what
+the agent decided for a given input, not logs describing what the process
+did while deciding it. Neither carries a timestamp, a log level, or any
+indication of *when* or in what order records were processed. If asked "what
+happened when record 7 ran," the honest answer today is "read the exception
+message printed to stderr, if any was printed at all."
+
+### Complete catch-block inventory
+
+A full grep for `catch (` in `src/` returns exactly eight blocks:
+
+| # | File:Line | Catches | What happens |
+|---|---|---|---|
+| 1 | `Agent.Cli/CliRunner.cs:52` | `ArgumentException`, `InvalidOperationException` (composer selection) | `error.WriteLine(ex.Message)` - **message only**, no exception type, no stack trace |
+| 2 | `Agent.Cli/CliRunner.cs:94` | `Exception` (per-record batch loop) | `error.WriteLine($"Record '{taskId}' failed: {ex.GetType().Name}: {ex.Message}")`, then `continue` - type + message, no stack trace |
+| 3 | `Agent/Common/TimeZones.cs:11` | `TimeZoneNotFoundException`, `InvalidTimeZoneException` | Re-thrown as `ArgumentException` with the original passed as `innerException` - the detail is preserved on the new exception object, but nothing downstream ever reads `InnerException` when displaying an error, so it is captured and then never shown |
+| 4 | `Agent/Evaluation/Evaluator.cs:40` | `Exception` (per-record scoring, added in Sprint 7) | `RecordScore.Unscoreable(taskId, $"{ex.GetType().Name}: {ex.Message}")` - type + message, no stack trace |
+| 5 | `Agent/Composition/OpenAiMessageComposer.cs:74` | `HttpRequestException`, `InvalidOperationException`, `JsonException` (the completion call) | `Result<NextMessage>.Failure($"Completion request failed: {ex.Message}")` - message only |
+| 6 | `Agent/Composition/OpenAiMessageComposer.cs:84` | `JsonException` (deserializing the model's response) | `Result<NextMessage>.Failure($"Model response was not valid JSON: {ex.Message}")` - message only |
+| 7 | `Agent/Domain/LenientExpectedOutcomeConverter.cs:23` | `JsonException` (parsing the `expected` oracle field) | `return null` - **fully silent**, no message captured anywhere, see below |
+| 8 | `Agent/Ingest/JsonlRecordReader.cs:30` | `JsonException` (parsing one input line) | Re-thrown as `InvalidDataException($"Line {lineNumber} failed to parse.", ex)` - line number added, original exception preserved as `InnerException`, but again nothing ever prints `InnerException` |
+
+Observations that fall out of this table directly:
+
+- **Only 2 of 8 catch blocks capture the exception type** (`ex.GetType().Name`)
+  alongside the message (#2 and #4, both from Sprint 7's fix). The other six
+  catch specific exception types already, so the type is implicit in the
+  `catch` clause itself rather than in the emitted text - but that means the
+  *emitted text* still reads identically whichever specific exception in that
+  clause fired, e.g. block #1 cannot tell you from its output alone whether
+  it was the `ArgumentException` or the `InvalidOperationException` branch.
+- **Zero of 8 catch blocks capture or print a stack trace.** Every message on
+  screen is exactly as informative as `ex.Message` and nothing more. This
+  matters because the unhandled crash that started Sprint 7 (before the fix)
+  produced .NET's default fatal-exception output, which includes the full
+  stack trace with file and line number - meaning the *default, un-designed*
+  crash output was strictly more useful for debugging than any of the
+  deliberate error handling in this codebase.
+- **Two blocks (#3, #8) preserve `InnerException` but nothing ever reads it
+  back.** Wrapping an exception with more context is only half the pattern;
+  the other half - a top-level handler or logger that walks `InnerException`
+  and prints the full chain - does not exist. Today, catching these wrapped
+  exceptions anywhere prints only the outer message (e.g. `"'X' is not a
+  recognized time zone id."`), and the original `TimeZoneNotFoundException`
+  detail is inert.
+- **Block #7 is the one fully silent path in the system.** No message, no
+  log line, no diagnostic flag - if a record's `expected` field fails to
+  parse, the only observable symptom is that record scoring as if the field
+  were absent (e.g. showing up as "no expected outcome" in an eval report).
+  There is no way to distinguish "this record genuinely has no oracle" from
+  "this record's oracle was malformed and we swallowed the parse error" by
+  looking at any output the system produces.
+
+### The inconsistency at CliRunner.cs:54
+
+`CliRunner.cs` has three `error.WriteLine` calls inside catch blocks
+(lines 54, 100, 133). Lines 100 and 133 were touched during Sprint 7's fix
+and both include `ex.GetType().Name` (or, for 133, the already-typed
+`ScoringError` string built the same way inside `Evaluator`). Line 54 - the
+composer-selection failure, e.g. an unrecognized `--composer` value or a
+missing `OpenAI:ApiKey` user secret - was left exactly as it was before
+Sprint 7 and still reads `error.WriteLine(ex.Message)`, with no exception
+type. This is a real, current inconsistency in the codebase: two of three
+sibling error sites in the same file follow one convention, the third
+follows another, and nothing enforces consistency between them because there
+is no shared error-formatting helper - each site builds its own string
+inline. Per the instruction for this sprint, it was left unchanged so it
+could be documented here rather than fixed silently.
+
+### Per-record isolation is a CLI-layer convention, not a library guarantee
+
+The try/catch at `CliRunner.cs:94` around `agent.RunAsync(...)` and the one
+inside `Evaluator.Evaluate` (added in Sprint 7) are the only two places in
+the entire system that isolate one record's failure from the rest of the
+batch. Neither `LeasingMessageAgent` (the orchestrator) nor
+`ValidatingMessageComposer` (which sits between the raw composer and the
+safety validator) contains a single try/catch of its own - confirmed by
+reading both files in full during this audit. Both rely entirely on the
+`Result<T>` type for *expected* failures (a composer declining to produce a
+safe message, a validator rejecting output) and simply let any *unexpected*
+exception propagate unguarded through every layer until it reaches whichever
+caller happens to have wrapped the call - today, that is `CliRunner` for the
+main batch and `Evaluator` for scoring. If either of those call sites were
+ever removed, or if a third caller (a future web API, a queue worker) were
+built directly against `LeasingMessageAgent` without its own try/catch, one
+malformed record would once again take down an entire run, exactly as it did
+before the Sprint 7 fix - because the isolation lives at the edges the CLI
+happened to add, not inside the library's own contract.
+
+### Why 100% code coverage did not catch any of this
+
+The coverage gate (`test.ps1`, threshold 100% line/branch/method) measures
+whether *lines that exist* were executed by at least one test. It has no way
+to express or enforce "a catch block should exist here." The Sprint 7 crash
+is the clearest possible proof of this: at the moment the real interview
+data crashed the process with an unhandled `ArgumentNullException`, the test
+suite was reporting 100% coverage on every metric it tracks. Coverage was
+never wrong - every line that existed had been exercised - but the missing
+catch block around eval scoring was, by definition, zero lines of code, and
+zero lines cannot fail a line/branch/method threshold. The same is true of
+the fully-silent catch at `LenientExpectedOutcomeConverter.cs:23`: the
+`catch (JsonException) { return null; }` line itself is covered by a test
+(a case with a deliberately malformed `expected` field), so coverage reports
+it as fully green, while the *absence* of any logging or signal inside that
+block is invisible to any coverage tool by construction. Coverage answers
+"did we run this code," never "is this code doing enough."
+
+### What real production logging would need
+
+This is not a recommendation to implement now - the interview this data is
+from is already complete, and Sprint 8's scope is analysis only - but for
+completeness, closing this gap for real would mean:
+
+- **`ILogger<T>` injected into `LeasingMessageAgent`, `ValidatingMessageComposer`,
+  `OpenAiMessageComposer`, and `CliRunner`**, replacing the raw
+  `TextWriter`/`Console` dependency with the standard .NET logging
+  abstraction, so call sites log rather than print.
+- **Log levels** - today every emitted line is equivalent severity (plain
+  text to stderr); a real system needs `LogWarning` for a single degraded
+  record versus `LogError` for something that aborts a run versus `LogDebug`
+  for per-record timing that already exists in-memory (`Stopwatch` is
+  captured in `ScoredRun` today but never logged, only used for scoring).
+- **A correlation ID per record** - `ProspectCase.TaskId` already exists and
+  is unique per record; it should be attached to every log line for that
+  record's processing (e.g. via `ILogger` scopes), not just appended to the
+  final error string as it is today.
+- **A real sink** - a log file, or structured JSON logs to stdout for
+  container log collection, rather than unstructured text interleaved with
+  the eval report on the same stdout/stderr streams.
+- **Exception detail that includes the type and full `ToString()` (stack
+  trace included) at minimum for unexpected exceptions**, reserving the
+  short `ex.Message`-only style for expected, already-typed failure paths
+  where the message alone is genuinely sufficient (e.g. `Result<T>.Failure`
+  cases, which are business outcomes, not bugs).
+- **A single shared error-formatting helper** so the `CliRunner.cs:54`-style
+  drift (three call sites, two conventions) cannot recur - today each catch
+  block builds its own string inline with no shared code to keep them
+  aligned.
 and `Agent.Cli.Tests`.
