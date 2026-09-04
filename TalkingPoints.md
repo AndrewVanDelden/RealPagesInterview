@@ -715,11 +715,75 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+`IEvaluator`/`Evaluator` runs the agent over a labeled file (one with
+`expected` populated) and produces a `Scorecard` of per-record `RecordScore`s
+- proving the thresholds by actually executing and timing the pipeline, not
+asserting it behaves a given way. Two deliberate departures from DESIGN.md
+section 6's original wording, made explicit rather than silently
+implemented differently:
+
+- **`no_pii_leak` and `safety_violations == 0` collapse into one field**
+  (`SafetyViolationsWithinBudget`). `SafetyValidator` produces a single
+  unified violation count across PII, opt-out, and steering checks - not
+  independently distinguishable categories - so scoring them as two
+  separate signals would report a distinction the system doesn't actually
+  have.
+- **The "horizon cue" personalization token is dropped.** First name,
+  property, and interest are each a concrete, checkable string. "Horizon
+  cue" names no specific pattern - scoring it would mean inventing a rule
+  with no evidence behind it, the exact thing the working agreement's
+  "separate facts from inferences" rule warns against.
+
+`Evaluator.ContainsOptOutPhrase` reuses `SafetyValidator.OptOutPhrases`
+directly (changed from `private` to `internal`) rather than maintaining a
+second phrase list that could drift from what the validator actually
+enforces. Latency is measured with a real `Stopwatch` around each
+`agent.RunAsync` call, not injected/faked - tests that need a slow run use
+an artificial `Task.Delay` in a fake `IMessageAgent` against a
+deliberately tiny threshold, avoiding both real DI ceremony for a leaf
+timing concern and flaky sleep-based assertions.
+
+`ScorecardFormatter` is a plain aligned-text table (`Task ID | Channel |
+Action | ...`), not a table library - a handful of columns read by a human
+during the live review doesn't need a dependency.
+
+CLI: new `--eval-report <file>` flag. When present, prints the scorecard to
+the console and writes it to the file. This runs the batch a *second* time
+through the agent (`Evaluator` owns its own `agent.RunAsync` calls,
+independent of the main `--output` pass) - harmless for `--composer
+template` (deterministic, no cost), doubles latency/cost for `--composer
+openai`. Accepted deliberately: eval mode is a rehearsal/diagnostic step
+against labeled data, not the production hold-out path, so the two passes
+serve genuinely different purposes rather than being redundant work worth
+engineering away under time pressure.
 
 ### After
 
-_Pending._
+- Two self-inflicted test bugs during the initial run, neither an
+  implementation bug: (1) `BaselineExpected(message: null)`'s `??`
+  couldn't distinguish "explicitly want null" from "not specified, use
+  default," silently defaulting instead of producing the suppressed
+  `ExpectedOutcome` the test needed - fixed by constructing that one
+  `ExpectedOutcome` directly instead of through the ambiguous helper; (2)
+  a personalization test asserted a perfect 1.0 score without accounting
+  for `SampleProspectCases.Minimal()`'s default city interest, which the
+  test's message body didn't mention - fixed the body text.
+- The coverage gate caught a real gap in test variety (the same pattern as
+  every prior sprint): `ComputePersonalizationScore`'s `CityInterest is
+  { Length: > 0 }` pattern had only ever been exercised with a present,
+  non-empty city interest - no test covered "no interest stated at all."
+  Added one.
+- Extracted `RealAgentFactory` (the real-component wiring `BuildRealAgent`
+  / `ReadSampleCases`) out of `LeasingMessageAgentTests` into
+  `TestSupport`, since `EvaluatorTests`' own sample.jsonl integration test
+  needed the identical setup - duplicating it across two test classes
+  would have been a real DRY violation, not a stylistic one.
+- Verified against the actual `sample.jsonl` file end-to-end (not just
+  unit tests): both records pass every column - channel, action, opt-out,
+  CTA, safety, personalization (1.00 on both), latency - matching BACKLOG
+  6.1's literal acceptance criterion exactly.
+- Final: 147 tests in `Agent.Tests`, 11 in `Agent.Cli.Tests`, 100%
+  line/branch/method coverage on both.
 
 ---
 

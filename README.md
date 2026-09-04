@@ -62,6 +62,11 @@ built as of any given point in the log. Input stays JSONL (that part is in
 mattered more than a self-imposed symmetry once we noticed the problem statement never
 required it.
 
+Add `--eval-report <file>` against a labeled file (one with `expected` populated,
+like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds —
+channel, `next_action.type`, opt-out/CTA presence, safety, personalization, and
+latency, per record and overall — printed to the console and written to that file.
+
 ## Documentation
 
 - [docs/DESIGN.md](docs/DESIGN.md) — architecture, interface table, inferred decision rules and their evidence, assumptions log, security/governance posture.

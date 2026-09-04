@@ -16,7 +16,10 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // would substring-match unrelated text like "bus stop" even with word-boundary
     // anchoring, since "stop" is already a complete word there. Matches
     // TemplateMessageComposer's actual generated text ("Reply STOP to opt out.").
-    private static readonly string[] OptOutPhrases = ["reply stop", "text stop", "opt out", "opt-out", "unsubscribe"];
+    // Internal, not private: Agent.Evaluation.Evaluator reuses this exact list so the
+    // eval harness checks the same opt-out phrasing the validator actually enforces,
+    // rather than an independently-maintained (and possibly drifting) duplicate.
+    internal static readonly string[] OptOutPhrases = ["reply stop", "text stop", "opt out", "opt-out", "unsubscribe"];
 
     private static readonly string[] ProtectedClassAndSteeringTerms =
     [

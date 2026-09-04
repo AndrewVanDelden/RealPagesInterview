@@ -173,12 +173,22 @@ The eval harness runs the agent over a labeled file and scores each record:
 
 - **Channel** exact match against `expected.next_message.channel`.
 - **next_action.type** exact match.
-- **Constraints:** opt-out phrase present, primary CTA present, `no_pii_leak`,
-  `safety_violations == 0`.
+- **Opt-out phrase present** (when required) and **primary CTA present**
+  (the composed message's `cta.type` matches the constraint's mapped CTA
+  type) - checked directly against the actual output text/structure.
+- **Safety violations within budget** - `no_pii_leak` and
+  `safety_violations == 0` collapse into this one check: `SafetyValidator`
+  produces a single unified violation count across PII, opt-out, and
+  steering, not independently distinguishable categories, so scoring them
+  as two separate signals would report a distinction the system doesn't
+  actually have.
 - **Personalization score:** fraction of expected personalization tokens
-  (first name, property, interest, horizon cue) present in the body, compared
-  against `personalization_score_min`.
-- **Latency:** wall-clock per record against `p95_latency_ms`.
+  (first name, property, interest) present in the body, compared against
+  `personalization_score_min`. The fourth token from the original design
+  sketch, "horizon cue," was dropped - unlike the other three it names no
+  concrete, checkable text pattern.
+- **Latency:** wall-clock per record against `p95_latency_ms`, measured by
+  actually timing each `agent.RunAsync` call, not estimated.
 
 Output is a scorecard table plus an overall pass/fail. This is the artifact
 that proves the agent meets the thresholds rather than asserting it does.

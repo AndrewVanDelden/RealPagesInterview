@@ -7,13 +7,25 @@ namespace Agent.Cli.Tests;
 
 public class CliRunnerTests
 {
-    private static string RecordJson(string taskId, string moveDateTarget, string lastInteraction, string timeZoneId = "America/Chicago") =>
-        "{\"task_id\":\"" + taskId + "\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
-        "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false}," +
-        "\"channel_preferences\":[\"sms\"]," +
-        "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"" + moveDateTarget + "\",\"last_interaction\":\"" + lastInteraction + "\",\"timezone\":\"" + timeZoneId + "\",\"language\":\"en\",\"profile\":{\"first_name\":\"Taylor\"}}," +
-        "\"assertions\":{\"required_states\":[],\"constraints\":{\"no_pii_leak\":true,\"include_opt_out_instructions\":true,\"primary_cta\":\"book_tour\"}}," +
-        "\"thresholds\":{\"p95_latency_ms\":2000,\"personalization_score_min\":0.85,\"reply_classification_f1_min\":0.9,\"safety_violations_max\":0}}";
+    private static string RecordJson(
+        string taskId,
+        string moveDateTarget,
+        string lastInteraction,
+        string timeZoneId = "America/Chicago",
+        bool includeExpected = false)
+    {
+        string expectedSuffix = includeExpected
+            ? ",\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}"
+            : string.Empty;
+
+        return "{\"task_id\":\"" + taskId + "\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
+            "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false}," +
+            "\"channel_preferences\":[\"sms\"]," +
+            "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"" + moveDateTarget + "\",\"last_interaction\":\"" + lastInteraction + "\",\"timezone\":\"" + timeZoneId + "\",\"language\":\"en\",\"profile\":{\"first_name\":\"Taylor\"}}," +
+            "\"assertions\":{\"required_states\":[],\"constraints\":{\"no_pii_leak\":true,\"include_opt_out_instructions\":true,\"primary_cta\":\"book_tour\"}}," +
+            "\"thresholds\":{\"p95_latency_ms\":2000,\"personalization_score_min\":0.85,\"reply_classification_f1_min\":0.9,\"safety_violations_max\":0}" +
+            expectedSuffix + "}";
+    }
 
     private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
 
@@ -25,8 +37,9 @@ public class CliRunnerTests
     [Fact]
     public async Task RunAsync_MissingInputAndOutput_WritesUsageAndReturnsUsageError()
     {
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         int exitCode = await runner.RunAsync([]);
 
@@ -40,8 +53,9 @@ public class CliRunnerTests
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
@@ -63,8 +77,9 @@ public class CliRunnerTests
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
@@ -90,8 +105,9 @@ public class CliRunnerTests
             RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
             RecordJson("t2", "2026-03-01", "2025-12-08T15:04:00Z"));
         await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
@@ -122,8 +138,9 @@ public class CliRunnerTests
             RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
             RecordJson("t2", "2025-01-01", "2025-12-08T15:04:00Z"));
         await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
@@ -148,8 +165,9 @@ public class CliRunnerTests
         string outputPath = TempFilePath();
         string diagnosticsPath = TempFilePath();
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
@@ -178,8 +196,9 @@ public class CliRunnerTests
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage")])
             .Build();
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(configuration, errorWriter);
+        var runner = new CliRunner(configuration, outputWriter, errorWriter);
 
         try
         {
@@ -203,8 +222,9 @@ public class CliRunnerTests
         IConfiguration configuration = new ConfigurationBuilder()
             .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage"), new("OpenAI:Model", "gpt-4o")])
             .Build();
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(configuration, errorWriter);
+        var runner = new CliRunner(configuration, outputWriter, errorWriter);
 
         try
         {
@@ -225,14 +245,70 @@ public class CliRunnerTests
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
 
         try
         {
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_EvalReportPathProvided_WritesScorecardToConsoleAndFile()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("t1", outputWriter.ToString());
+            Assert.Contains("Overall:", outputWriter.ToString());
+            string fileContent = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("t1", fileContent);
+            Assert.Contains("Overall:", fileContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_EvalReportRequestedButRecordHasNoExpectedOutcome_WritesCleanErrorAndReturnsPartialFailure()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: false));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            Assert.Contains("Eval report failed", errorWriter.ToString());
         }
         finally
         {
