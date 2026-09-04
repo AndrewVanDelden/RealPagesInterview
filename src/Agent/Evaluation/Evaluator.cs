@@ -1,3 +1,4 @@
+using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 using Agent.Orchestration;
@@ -28,7 +29,19 @@ public sealed class Evaluator : IEvaluator
 
         foreach (ScoredRun run in runs)
         {
-            scores.Add(Score(run));
+            // Per-record isolation, same principle as CliRunner's main batch loop: a bug in
+            // scoring one record (this project's own history includes exactly such a bug -
+            // see TalkingPoints.md Sprint 7) must not discard every other record's score.
+            // Exception type is captured alongside the message - a bare ex.Message alone
+            // ("Value cannot be null. (Parameter 'key')") does not say what went wrong.
+            try
+            {
+                scores.Add(Score(run));
+            }
+            catch (Exception ex)
+            {
+                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, ex.ToDiagnosticString()));
+            }
         }
 
         return new Scorecard(scores);
@@ -50,7 +63,7 @@ public sealed class Evaluator : IEvaluator
         NextMessage? actual = result.Output.NextMessage;
         CaseConstraints constraints = prospectCase.Assertions.Constraints;
         CaseThresholds thresholds = prospectCase.Thresholds;
-        string requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
+        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
 
         bool channelMatches = expected.NextMessage?.Channel == actual?.Channel;
         bool nextActionTypeMatches = expected.NextAction.Type == result.Output.NextAction.Type;
@@ -59,7 +72,10 @@ public sealed class Evaluator : IEvaluator
             || !constraints.IncludeOptOutInstructions
             || ContainsOptOutPhrase(actual);
 
-        bool primaryCtaPresent = actual is null || actual.Cta?.Type == requiredCtaType;
+        // Trivially satisfied when the case states no primary CTA at all - there is
+        // nothing to check the actual output against (confirmed real, not hypothetical:
+        // two records in the actual interview hold-out have no primary_cta constraint).
+        bool primaryCtaPresent = actual is null || requiredCtaType is null || actual.Cta?.Type == requiredCtaType;
 
         bool safetyWithinBudget = result.Diagnostics.SafetyViolationCount <= thresholds.SafetyViolationsMax;
 

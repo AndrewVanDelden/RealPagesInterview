@@ -829,11 +829,144 @@ real gaps, addressed together since fixing the most substantive one
 
 ### Before
 
-_Pending._
+BACKLOG's original framing of this sprint ("be ready to run 12 hold-outs
+live") assumed the runbook would be written *before* the live review, as
+rehearsal. That didn't happen the way planned - by the time this sprint was
+picked up, the interview itself was already over and Andrew supplied the
+actual 12-record hold-out file that had been used. So this sprint became
+what BACKLOG's acceptance criteria describe either way: running the CLI
+against the real hold-out and writing down what actually happened, just
+after the fact instead of before it. Every command below was actually run,
+in this order, against the actual file.
 
 ### After
 
-_Pending._
+**The exact commands run**, against the real 12-record file (saved for this
+analysis at a session-scratchpad path, not committed to the repo - it is
+Andrew's interview material, not project source):
+
+```
+dotnet run --project src/Agent.Cli -- --input <holdout-12>.jsonl --output out.json
+```
+
+First run, before any fix: **unhandled crash**, exit code 127, before a
+single output line was written:
+
+```
+Unhandled exception. System.ArgumentNullException: Value cannot be null. (Parameter 'key')
+   at System.Collections.Generic.Dictionary`2.FindValue(TKey key)
+   at System.Collections.Generic.Dictionary`2.TryGetValue(TKey key, TValue& value)
+   at Agent.Composition.PrimaryCtaVocabulary.ToCtaType(String primaryCta) in ...\PrimaryCtaVocabulary.cs:line 11
+   at Agent.Evaluation.Evaluator.Score(ScoredRun run) in ...\Evaluator.cs:line 53
+   ...
+```
+
+**Root cause:** `PrimaryCtaVocabulary.ToCtaType(string primaryCta)` took a
+non-nullable `string`, but two records in the actual hold-out
+(`prospect_consent_block_sms_fallback_email`,
+`resident_renewal_details_branch_email`) have no `primary_cta` in their
+`constraints` at all. A missing JSON property deserializes
+`CaseConstraints.PrimaryCta` to C# `null` (not a thrown exception - the
+same "missing, not explicitly null" class of gap already documented for
+`move_date_target` after the earlier synthetic-file rehearsal), and
+`Dictionary.TryGetValue(null)` throws. `Evaluator.Score` called this with
+no null-guard; `OpenAiMessageComposer.ComposeAsync` had the identical
+unguarded call (would have crashed identically under `--composer openai`);
+only `TemplateMessageComposer` happened to be protected, by an unrelated
+upfront `IsNullOrWhiteSpace` check that existed for a different reason, not
+because anyone had reasoned about `PrimaryCtaVocabulary` specifically.
+
+**A second, related gap found in the same conversation, before the rerun:**
+the eval-report code path (`Scorecard scorecard = evaluator.Evaluate(scoredRuns);`
+in `CliRunner`) had *no catch block at all* - unlike the main batch loop,
+which isolates one bad record from the rest. That is the actual reason a
+single record's bug crashed the entire run instead of degrading one row of
+the scorecard.
+
+**Fixes, root cause not per-caller patches:**
+
+- `PrimaryCtaVocabulary.ToCtaType` now takes and returns `string?`: null in,
+  null out. Every caller updated to treat "no required CTA type" as its own
+  valid state, not an error - `Evaluator`'s `PrimaryCtaPresent` check is
+  trivially true when there is no required type to check against (same
+  pattern as `OptOutPresent` when opt-out isn't required);
+  `OpenAiMessageComposer` skips constraining the response schema's
+  `cta_type` enum and skips the post-hoc equality check when there is
+  nothing to constrain it to.
+- `Evaluator.Evaluate` now wraps each record's `Score(run)` call in its own
+  `try`/`catch`, converting an unexpected exception into
+  `RecordScore.Unscoreable` for that one row instead of losing the whole
+  batch - the same per-record-isolation principle `CliRunner`'s main loop
+  already used, now applied consistently to the scorer too.
+- Both catch sites now capture `ex.GetType().Name` alongside `ex.Message`.
+  A bare `ex.Message` for this exact bug read `"Value cannot be null.
+  (Parameter 'key')"` - useless without the type. The irony this bug
+  exposed directly: the *unhandled* crash's default .NET stack trace (file,
+  line, full call chain) was more informative than anything our own
+  deliberate error handling captured anywhere in the codebase. See Sprint 8
+  for the full audit this observation triggered.
+- Added tests for all three changed branches (`PrimaryCtaVocabulary`'s null
+  path, `OpenAiMessageComposer`'s skip-the-schema-constraint path, and the
+  new `Evaluator` catch block, the last one triggered with a deliberately
+  malformed `NextMessage.Body` forced null via `!` despite its non-nullable
+  static type - the same "type says non-null, real data disagrees" pattern
+  that caused the original bug, used deliberately as the test's mechanism).
+
+**Second run, after the fix**, exit code 0, no crash:
+
+```
+dotnet run --project src/Agent.Cli -- --input <holdout-12>.jsonl --output out.json --diagnostics diagnostics.json --eval-report eval.txt
+```
+
+Result: **2 of 12 records pass the eval harness.** Every failure traces to
+one of two already-known, already-documented schema-coverage gaps - not new
+bugs, and not chased further here since the interview this data is from is
+already complete:
+
+1. **Missing `move_date_target`** (5 records: cancellation, both
+   residents without a stated move date, loyalty engagement, Spanish
+   locale) defaults to `0001-01-01` (`DateOnly`/`DateTimeOffset` are
+   non-nullable value types - a missing property doesn't throw, it
+   defaults), producing `start_cadence` where the labeled data expects
+   `follow_up_in_days`.
+2. **Missing `primary_cta`** (the same 2 records that used to crash) is now
+   handled safely by `TemplateMessageComposer`'s existing
+   `IsNullOrWhiteSpace` guard - but that guard treats "no CTA stated" as a
+   *missing required field* and suppresses the message entirely, rather
+   than composing a message with no specific CTA phrase. That is a
+   legitimate, still-open design question (not resolved here): should "no
+   `primary_cta`" mean "nothing to say" or "say something, just not tied to
+   one specific CTA"? The real data suggests the latter (both of those
+   records have a real, expected email in the labeled data), but changing
+   `TemplateMessageComposer`'s behavior now, after the graded review, would
+   be design work done in the wrong sprint for the wrong reason.
+3. **A closed `next_action` vocabulary.** `start_cadence` and
+   `follow_up_in_days` were the only two shapes the two original labeled
+   samples showed. The real hold-out's other personas and lifecycle stages
+   (no-show re-engagement, lease renewal, resident welcome, an intent-branch
+   flow, an e-sign flow) need `reset_cadence`, `schedule_sms_reminder`,
+   `branch_on_intent`, `no_op`, `start_esign_flow` - a materially larger
+   action vocabulary than a two-sample take-home could reasonably infer.
+   This is the honest boundary of what "generalizes from 2 examples" can
+   promise, not an implementation defect.
+
+One record (`resident_opt_out_respected`) shows as unscoreable rather than
+scored right or wrong: its labeled `expected.next_message.channel` is
+`"none"`, which is not a value our `CommunicationChannel` enum has - the
+`LenientExpectedOutcomeConverter` from the earlier ingestion-crash fix (see
+the hardening entry above) correctly parsed the rest of that record and set
+`Expected = null` for just the unparseable oracle, exactly as designed. Its
+*actual* output (message suppressed, `next_action: no_op`-equivalent
+suppression) is arguably correct given `respect_consent: true` and all
+three consent flags false - it simply cannot be scored against a `"none"`
+channel value with no corresponding enum member, which is a distinct,
+smaller gap from the two above (the enum would need a `None`/`Suppressed`
+member to represent "deliberately no channel" as a real, nameable value
+rather than only "absent").
+
+No code changes were made in this sprint beyond the crash fix - the
+schema-coverage gaps are recorded as findings, not treated as bugs to fix
+under time pressure after the actual grading already happened.
 
 ---
 
@@ -1120,4 +1253,261 @@ code changes touched disjoint files; the two "Post-MVP hardening" sections
 were combined in chronological order.
 
 Final: 122 tests, 100% line/branch/method coverage across `Agent.Tests`
+
+## Sprint 8: Logging
+
+### Scope
+
+This sprint is documentation only. No source file was changed while producing
+it. It was requested after Sprint 7's live crash-and-fix raised three
+questions in quick succession: where is the logging and what are we logging
+to, do we have enough catch blocks and are error messages capturing file/line
+detail, and why doesn't the 100% code-coverage gate catch a missing catch
+block. This section answers all three with a complete inventory rather than
+spot examples, so the gaps are visible as a whole instead of one at a time.
+
+### There is no logging framework anywhere in this codebase
+
+A full grep of `src/` for `ILogger`, `Serilog`, `LoggerFactory`, `Console.`,
+and `WriteLine` returns exactly five hits, and all five are in one file:
+
+| File:Line | What it writes |
+|---|---|
+| `src/Agent.Cli/CliRunner.cs:37` | Usage message when `--input`/`--output` are missing |
+| `src/Agent.Cli/CliRunner.cs:54` | Composer-selection failure message |
+| `src/Agent.Cli/CliRunner.cs:100` | Per-record batch failure message |
+| `src/Agent.Cli/CliRunner.cs:133` | Per-record eval-scoring failure message |
+| `src/Agent.Cli/Program.cs:9` | Wires `Console.Out`/`Console.Error` into `CliRunner`'s constructor |
+
+That is the entire observability surface of the application. There is no
+`ILogger<T>`, no structured logging, no log levels (info/warn/error/debug),
+no log file, no correlation ID, and no timestamp on any emitted line. Every
+message above is a bare `TextWriter.WriteLine` call writing plain text to
+stderr (or stdout for the eval report). `Agent` (the core library) contains
+none of these five lines - it never writes anything anywhere. All
+observability, such as it is, lives entirely in the CLI shell, one layer
+above every business rule.
+
+The closest thing to structured output in the whole system is the
+`--diagnostics` JSON artifact (`TaskDiagnostics`: `consent_verified`,
+`fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`)
+and the `--eval-report` text file. Both are domain artifacts describing what
+the agent decided for a given input, not logs describing what the process
+did while deciding it. Neither carries a timestamp, a log level, or any
+indication of *when* or in what order records were processed. If asked "what
+happened when record 7 ran," the honest answer today is "read the exception
+message printed to stderr, if any was printed at all."
+
+### Complete catch-block inventory
+
+A full grep for `catch (` in `src/` returns exactly eight blocks:
+
+| # | File:Line | Catches | What happens |
+|---|---|---|---|
+| 1 | `Agent.Cli/CliRunner.cs:52` | `ArgumentException`, `InvalidOperationException` (composer selection) | `error.WriteLine(ex.Message)` - **message only**, no exception type, no stack trace |
+| 2 | `Agent.Cli/CliRunner.cs:94` | `Exception` (per-record batch loop) | `error.WriteLine($"Record '{taskId}' failed: {ex.GetType().Name}: {ex.Message}")`, then `continue` - type + message, no stack trace |
+| 3 | `Agent/Common/TimeZones.cs:11` | `TimeZoneNotFoundException`, `InvalidTimeZoneException` | Re-thrown as `ArgumentException` with the original passed as `innerException` - the detail is preserved on the new exception object, but nothing downstream ever reads `InnerException` when displaying an error, so it is captured and then never shown |
+| 4 | `Agent/Evaluation/Evaluator.cs:40` | `Exception` (per-record scoring, added in Sprint 7) | `RecordScore.Unscoreable(taskId, $"{ex.GetType().Name}: {ex.Message}")` - type + message, no stack trace |
+| 5 | `Agent/Composition/OpenAiMessageComposer.cs:74` | `HttpRequestException`, `InvalidOperationException`, `JsonException` (the completion call) | `Result<NextMessage>.Failure($"Completion request failed: {ex.Message}")` - message only |
+| 6 | `Agent/Composition/OpenAiMessageComposer.cs:84` | `JsonException` (deserializing the model's response) | `Result<NextMessage>.Failure($"Model response was not valid JSON: {ex.Message}")` - message only |
+| 7 | `Agent/Domain/LenientExpectedOutcomeConverter.cs:23` | `JsonException` (parsing the `expected` oracle field) | `return null` - **fully silent**, no message captured anywhere, see below |
+| 8 | `Agent/Ingest/JsonlRecordReader.cs:30` | `JsonException` (parsing one input line) | Re-thrown as `InvalidDataException($"Line {lineNumber} failed to parse.", ex)` - line number added, original exception preserved as `InnerException`, but again nothing ever prints `InnerException` |
+
+Observations that fall out of this table directly:
+
+- **Only 2 of 8 catch blocks capture the exception type** (`ex.GetType().Name`)
+  alongside the message (#2 and #4, both from Sprint 7's fix). The other six
+  catch specific exception types already, so the type is implicit in the
+  `catch` clause itself rather than in the emitted text - but that means the
+  *emitted text* still reads identically whichever specific exception in that
+  clause fired, e.g. block #1 cannot tell you from its output alone whether
+  it was the `ArgumentException` or the `InvalidOperationException` branch.
+- **Zero of 8 catch blocks capture or print a stack trace.** Every message on
+  screen is exactly as informative as `ex.Message` and nothing more. This
+  matters because the unhandled crash that started Sprint 7 (before the fix)
+  produced .NET's default fatal-exception output, which includes the full
+  stack trace with file and line number - meaning the *default, un-designed*
+  crash output was strictly more useful for debugging than any of the
+  deliberate error handling in this codebase.
+- **Two blocks (#3, #8) preserve `InnerException` but nothing ever reads it
+  back.** Wrapping an exception with more context is only half the pattern;
+  the other half - a top-level handler or logger that walks `InnerException`
+  and prints the full chain - does not exist. Today, catching these wrapped
+  exceptions anywhere prints only the outer message (e.g. `"'X' is not a
+  recognized time zone id."`), and the original `TimeZoneNotFoundException`
+  detail is inert.
+- **Block #7 is the one fully silent path in the system.** No message, no
+  log line, no diagnostic flag - if a record's `expected` field fails to
+  parse, the only observable symptom is that record scoring as if the field
+  were absent (e.g. showing up as "no expected outcome" in an eval report).
+  There is no way to distinguish "this record genuinely has no oracle" from
+  "this record's oracle was malformed and we swallowed the parse error" by
+  looking at any output the system produces.
+
+### The inconsistency at CliRunner.cs:54
+
+`CliRunner.cs` has three `error.WriteLine` calls inside catch blocks
+(lines 54, 100, 133). Lines 100 and 133 were touched during Sprint 7's fix
+and both include `ex.GetType().Name` (or, for 133, the already-typed
+`ScoringError` string built the same way inside `Evaluator`). Line 54 - the
+composer-selection failure, e.g. an unrecognized `--composer` value or a
+missing `OpenAI:ApiKey` user secret - was left exactly as it was before
+Sprint 7 and still reads `error.WriteLine(ex.Message)`, with no exception
+type. This is a real, current inconsistency in the codebase: two of three
+sibling error sites in the same file follow one convention, the third
+follows another, and nothing enforces consistency between them because there
+is no shared error-formatting helper - each site builds its own string
+inline. Per the instruction for this sprint, it was left unchanged so it
+could be documented here rather than fixed silently.
+
+### Per-record isolation is a CLI-layer convention, not a library guarantee
+
+The try/catch at `CliRunner.cs:94` around `agent.RunAsync(...)` and the one
+inside `Evaluator.Evaluate` (added in Sprint 7) are the only two places in
+the entire system that isolate one record's failure from the rest of the
+batch. Neither `LeasingMessageAgent` (the orchestrator) nor
+`ValidatingMessageComposer` (which sits between the raw composer and the
+safety validator) contains a single try/catch of its own - confirmed by
+reading both files in full during this audit. Both rely entirely on the
+`Result<T>` type for *expected* failures (a composer declining to produce a
+safe message, a validator rejecting output) and simply let any *unexpected*
+exception propagate unguarded through every layer until it reaches whichever
+caller happens to have wrapped the call - today, that is `CliRunner` for the
+main batch and `Evaluator` for scoring. If either of those call sites were
+ever removed, or if a third caller (a future web API, a queue worker) were
+built directly against `LeasingMessageAgent` without its own try/catch, one
+malformed record would once again take down an entire run, exactly as it did
+before the Sprint 7 fix - because the isolation lives at the edges the CLI
+happened to add, not inside the library's own contract.
+
+### Why 100% code coverage did not catch any of this
+
+The coverage gate (`test.ps1`, threshold 100% line/branch/method) measures
+whether *lines that exist* were executed by at least one test. It has no way
+to express or enforce "a catch block should exist here." The Sprint 7 crash
+is the clearest possible proof of this: at the moment the real interview
+data crashed the process with an unhandled `ArgumentNullException`, the test
+suite was reporting 100% coverage on every metric it tracks. Coverage was
+never wrong - every line that existed had been exercised - but the missing
+catch block around eval scoring was, by definition, zero lines of code, and
+zero lines cannot fail a line/branch/method threshold. The same is true of
+the fully-silent catch at `LenientExpectedOutcomeConverter.cs:23`: the
+`catch (JsonException) { return null; }` line itself is covered by a test
+(a case with a deliberately malformed `expected` field), so coverage reports
+it as fully green, while the *absence* of any logging or signal inside that
+block is invisible to any coverage tool by construction. Coverage answers
+"did we run this code," never "is this code doing enough."
+
+### What real production logging would need
+
+This is not a recommendation to implement now - the interview this data is
+from is already complete, and Sprint 8's scope is analysis only - but for
+completeness, closing this gap for real would mean:
+
+- **`ILogger<T>` injected into `LeasingMessageAgent`, `ValidatingMessageComposer`,
+  `OpenAiMessageComposer`, and `CliRunner`**, replacing the raw
+  `TextWriter`/`Console` dependency with the standard .NET logging
+  abstraction, so call sites log rather than print.
+- **Log levels** - today every emitted line is equivalent severity (plain
+  text to stderr); a real system needs `LogWarning` for a single degraded
+  record versus `LogError` for something that aborts a run versus `LogDebug`
+  for per-record timing that already exists in-memory (`Stopwatch` is
+  captured in `ScoredRun` today but never logged, only used for scoring).
+- **A correlation ID per record** - `ProspectCase.TaskId` already exists and
+  is unique per record; it should be attached to every log line for that
+  record's processing (e.g. via `ILogger` scopes), not just appended to the
+  final error string as it is today.
+- **A real sink** - a log file, or structured JSON logs to stdout for
+  container log collection, rather than unstructured text interleaved with
+  the eval report on the same stdout/stderr streams.
+- **Exception detail that includes the type and full `ToString()` (stack
+  trace included) at minimum for unexpected exceptions**, reserving the
+  short `ex.Message`-only style for expected, already-typed failure paths
+  where the message alone is genuinely sufficient (e.g. `Result<T>.Failure`
+  cases, which are business outcomes, not bugs).
+- **A single shared error-formatting helper** so the `CliRunner.cs:54`-style
+  drift (three call sites, two conventions) cannot recur - today each catch
+  block builds its own string inline with no shared code to keep them
+  aligned.
 and `Agent.Cli.Tests`.
+
+## Post-review fix round: PR #11 (code review + Antigravity/Gemini)
+
+### Scope
+
+Both an automated code review and the Antigravity (Gemini 3.8 Flash) reviewer
+left findings on PR #11 (Sprint 7's live hold-out fix). Triaged all of them on
+their merits rather than applying every suggestion - two of the eight Gemini
+comments recommended changes that this project had already deliberately
+rejected in earlier sprints, documented above.
+
+### Fixed
+
+1. **`CaseConstraints.PrimaryCta` is now genuinely nullable (`string?`).** This
+   was the actual root cause both reviewers converged on: `PrimaryCtaVocabulary.ToCtaType`
+   was patched to accept and return `string?` when Sprint 7's crash was fixed,
+   but the domain record itself - the actual source of the null - stayed
+   declared non-nullable, so every *other* caller (present or future) was
+   still working under a false compiler guarantee. Fixing the type at its
+   source, rather than patching callers one at a time, resolved two separate
+   findings for free:
+   - `PrimaryCtaVocabulary.ToCtaType` gained `[return: NotNullIfNotNull(nameof(primaryCta))]`,
+     which tells the compiler the converse also holds (a non-null input can
+     never come back null) - this cleared a real `CS8604` warning in
+     `TemplateMessageComposer.cs` that a `dotnet build -t:Rebuild` reproduced
+     during review, without relying on the incidental upfront
+     `IsNullOrWhiteSpace` guard that happened to make it safe at runtime.
+   - An explicit JSON `"primary_cta": null` (as opposed to a merely missing
+     key) no longer crashes `JsonlRecordReader.ReadAll` with an unhandled
+     `InvalidDataException` at ingestion - `RespectNullableAnnotations` only
+     rejects an explicit null against a non-nullable property, so an honestly
+     nullable property accepts it the same way it already accepted the
+     missing-key case. New test: `ReadAll_ExplicitNullPrimaryCta_ParsesToNullInsteadOfThrowing`.
+2. **The CTA instruction moved outside `<prospect_data>`.** The prompt told
+   the model to treat everything inside that block as untrusted, non-instructional
+   data, then put the one piece of text actually meant to steer the model's
+   CTA choice - especially the no-required-type fallback, which has no
+   schema-level enforcement backstop - inside it anyway. `BuildUserPrompt` now
+   builds a `ctaInstruction` sentence placed in the instructional preamble,
+   before the `<prospect_data>` block opens, for both the required and
+   fallback cases. This also resolves Gemini's separate wording complaint
+   (`required_cta_type: none specified - choose a reasonable call to action`
+   read as an oxymoron to a model) since the new fallback phrasing
+   ("No specific call to action is required; choose one reasonable for this
+   message.") is a plain sentence, not a key/value pair. New tests:
+   `ComposeAsync_UserPrompt_RequiredCtaInstructionPlacedOutsideProspectDataBlock`,
+   `ComposeAsync_UserPrompt_NoPrimaryCtaConstraint_StatesNoSpecificCtaRequiredOutsideProspectDataBlock`.
+3. **Extracted the duplicated exception-formatting expression.** `CliRunner.cs`
+   and `Evaluator.cs` each independently built `$"{ex.GetType().Name}: {ex.Message}"`
+   inline - flagged by the code review, and independently called for by
+   Sprint 8's own logging audit ("a single shared error-formatting helper so
+   the `CliRunner.cs:54`-style drift... cannot recur"). Added
+   `Agent.Common.ExceptionFormatting.ToDiagnosticString()` and pointed both
+   call sites at it.
+
+### Declined (with reasons)
+
+1. **Gemini's suggestion to give `TemplateMessageComposer` a fallback CTA
+   when `PrimaryCta` is absent, instead of refusing the record.** This is not
+   a new observation - the earlier "lenient parsing of the `expected` oracle"
+   hardening pass already found and discussed this exact behavior, and
+   concluded `TemplateMessageComposer` "correctly refuses to compose from" a
+   null `PrimaryCta`, identifying the real gap as elsewhere (the orchestrator
+   folding a legitimate refusal into the same "suppressed" shape as a
+   no-consent case) - a different, already-tracked issue, not this one.
+   Reversing that already-reasoned decision on this PR would contradict the
+   project's own prior conclusion without new evidence.
+2. **Gemini's suggestion to filter `Evaluator`'s catch with
+   `when (ex is not OperationCanceledException)`.** The principle is correct
+   in the abstract, but `Evaluate`/`Score` take no `CancellationToken` and
+   call nothing cancellable - there is no path by which `Score(run)` can
+   throw `OperationCanceledException` today. Adding the filter would add an
+   untestable branch (no honest test can force that exception without
+   inventing an unrelated seam), which both contradicts this project's
+   stated practice of not writing tests to poke at unreachable code and would
+   fail the 100% branch-coverage gate outright.
+
+### After
+
+159 tests in `Agent.Tests` (up from 156), 12 in `Agent.Cli.Tests`, 100%
+line/branch/method coverage on both, zero build warnings.

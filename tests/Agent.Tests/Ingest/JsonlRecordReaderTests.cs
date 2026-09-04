@@ -196,6 +196,22 @@ public class JsonlRecordReaderTests
         Assert.Null(parsedCase.Expected);
     }
 
+    // CaseConstraints.PrimaryCta is nullable (real hold-out data can omit primary_cta
+    // entirely - see TalkingPoints.md Sprint 7). An explicit JSON null must parse the same
+    // way as a missing key, not throw: RespectNullableAnnotations only rejects an explicit
+    // null against a *non-nullable* property, so this is only safe because the property is
+    // honestly typed string?, not because of any special-case handling here.
+    [Fact]
+    public void ReadAll_ExplicitNullPrimaryCta_ParsesToNullInsteadOfThrowing()
+    {
+        string lineWithExplicitNullCta = MinimalValidLine.Replace("\"primary_cta\":\"book_tour\"", "\"primary_cta\":null");
+        using TextReader reader = new StringReader(lineWithExplicitNullCta + Environment.NewLine);
+
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+
+        Assert.Null(parsedCase.Assertions.Constraints.PrimaryCta);
+    }
+
     [Fact]
     public void ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize()
     {

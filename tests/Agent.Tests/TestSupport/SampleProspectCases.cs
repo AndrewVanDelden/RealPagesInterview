@@ -9,7 +9,7 @@ internal static class SampleProspectCases
         string propertyName = "Oak Ridge Apartments",
         string? cityInterest = "Richardson, TX",
         IReadOnlyList<string>? amenityInterest = null,
-        string primaryCta = "book_tour",
+        string? primaryCta = "book_tour",
         bool includeOptOutInstructions = true)
     {
         var profile = new ProspectProfile(firstName, cityInterest, amenityInterest);
