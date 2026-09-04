@@ -173,6 +173,59 @@ Confirmed green:
   me"), on top of the earlier test-command carve-out. `dotnet user-secrets`
   remains Andrew-run, since that is the only command touching the raw
   OpenAI key.
+- Post-merge code review (`/code-review` on PR #1) surfaced 7 findings, 5
+  confirmed by independent verification, 2 plausible. All 7 fixed under TDD,
+  each driven by a failing test where the fix changed observable behavior:
+  - `ExpectedOutcome.NextMessage` was non-nullable while `AgentOutput.NextMessage`
+    (the same shape) was nullable. `System.Text.Json` doesn't enforce nullable
+    annotations by default, so a hold-out record exercising the documented
+    suppression path (`next_message: null`) would have silently produced a
+    null the type claimed couldn't happen. Root-caused with two changes:
+    `AgentJsonOptions.Default` now sets `RespectNullableAnnotations = true`
+    (so any genuinely-required field getting `null` throws instead of
+    silently propagating), and `ExpectedOutcome.NextMessage` is now `NextMessage?`
+    to honestly model the one field that's allowed to be absent.
+  - `JsonlRecordReader.ReadAll` only normalized one failure mode
+    (valid-JSON-deserializes-to-null) into `InvalidDataException`; malformed
+    JSON leaked a raw `JsonException`, and neither message included the
+    failing line number. Now both failure modes funnel through one
+    `try`/`catch (JsonException)` into `InvalidDataException` with a 1-based
+    line number in the message.
+  - `docs/BACKLOG.md` 1.1 and `docs/DESIGN.md` both committed to "Result and
+    option types in `Common/`" that were never implemented. Added
+    `Agent.Common.Result<TValue>` and `Agent.Common.Option<TValue>` (minimal
+    success/failure and some/none records, no consumer forced into this
+    sprint's ingest code, same precedent as `IRecordReader` existing ahead of
+    a second implementation).
+  - `coverlet.collector` was swapped for `coverlet.msbuild` in the Sprint 1
+    coverage-gate work, which silently broke `dotnet test --collect:"XPlat
+    Code Coverage"` and IDE "Analyze Code Coverage" (both need the VSTest
+    collector; msbuild-based coverage only activates via `test.ps1`'s
+    explicit `/p:` flags). Both packages now installed side by side; they
+    don't conflict, so `test.ps1`'s gate and the standard collect workflow
+    both work.
+  - A UTF-8 BOM had been accidentally introduced into `Agent.Cli.csproj`
+    (byte-diff confirmed, likely an editor artifact from adding
+    `UserSecretsId`), inconsistent with every sibling `.csproj`. Removed.
+  - `JsonlRecordReader`'s private `JsonSerializerOptions` was extracted to
+    `Agent.Common.AgentJsonOptions.Default` so the Sprint 5 CLI output writer
+    (which needs the identical naming policy and enum converter to stay
+    consistent with the input format) has a shared place to reuse it instead
+    of duplicating the config later.
+  - `JsonlRecordReaderTests` re-instantiated `JsonlRecordReader` in every
+    fact; consolidated to one shared `static readonly` field (the reader is
+    stateless, so this doesn't weaken xUnit's per-fact isolation), and
+    extracted the repeated temp-file create/write/delete-in-finally pattern
+    into a `WithTempFile` helper.
+  - Final: 12 tests, 100% line/branch/method coverage, confirmed via
+    `.\test.ps1`.
+  - The 7 findings were posted as inline review comments on PR #1 first;
+    fixing them was a separate, explicitly-requested follow-up step, not an
+    automatic part of running the review.
+  - A second, unrelated diff appeared in `docs/BACKLOG.md` during this fix
+    pass (a parallel review's findings appended under Sprint 1, presumably
+    from another concurrent session). Left untouched and unstaged; it wasn't
+    reviewed or authored as part of this fix round.
 
 ---
 

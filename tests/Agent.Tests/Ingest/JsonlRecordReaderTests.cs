@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Agent.Domain;
 using Agent.Ingest;
 using Xunit;
@@ -7,13 +8,36 @@ namespace Agent.Tests.Ingest;
 public class JsonlRecordReaderTests
 {
     private static readonly string SampleFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "sample.jsonl");
+    private static readonly IRecordReader Reader = new JsonlRecordReader();
+
+    private const string MinimalValidLine =
+        "{\"task_id\":\"minimal\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
+        "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false}," +
+        "\"channel_preferences\":[\"sms\"]," +
+        "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\",\"profile\":{\"first_name\":\"Taylor\"}}," +
+        "\"assertions\":{\"required_states\":[],\"constraints\":{\"no_pii_leak\":true,\"include_opt_out_instructions\":true,\"primary_cta\":\"book_tour\"}}," +
+        "\"thresholds\":{\"p95_latency_ms\":2000,\"personalization_score_min\":0.85,\"reply_classification_f1_min\":0.9,\"safety_violations_max\":0}," +
+        "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}}";
+
+    private static void WithTempFile(string content, Action<string> action)
+    {
+        string tempFilePath = Path.GetTempFileName();
+        File.WriteAllText(tempFilePath, content);
+
+        try
+        {
+            action(tempFilePath);
+        }
+        finally
+        {
+            File.Delete(tempFilePath);
+        }
+    }
 
     [Fact]
     public void ReadAll_ParsesSampleJsonl_ReturnsExactlyTwoCases()
     {
-        IRecordReader reader = new JsonlRecordReader();
-
-        IReadOnlyList<ProspectCase> cases = reader.ReadAll(SampleFilePath);
+        IReadOnlyList<ProspectCase> cases = Reader.ReadAll(SampleFilePath);
 
         Assert.Equal(2, cases.Count);
     }
@@ -21,9 +45,7 @@ public class JsonlRecordReaderTests
     [Fact]
     public void ReadAll_ParsesSampleJsonl_PopulatesShortHorizonSmsCase()
     {
-        IRecordReader reader = new JsonlRecordReader();
-
-        ProspectCase shortHorizonCase = reader.ReadAll(SampleFilePath)[0];
+        ProspectCase shortHorizonCase = Reader.ReadAll(SampleFilePath)[0];
 
         Assert.Equal("prospect_welcome_day0", shortHorizonCase.TaskId);
         Assert.Equal("prospect", shortHorizonCase.Persona);
@@ -36,16 +58,15 @@ public class JsonlRecordReaderTests
         Assert.Equal("book_tour", shortHorizonCase.Assertions.Constraints.PrimaryCta);
         Assert.Equal(2000, shortHorizonCase.Thresholds.P95LatencyMs);
         Assert.NotNull(shortHorizonCase.Expected);
-        Assert.Equal(CommunicationChannel.Sms, shortHorizonCase.Expected!.NextMessage.Channel);
+        Assert.NotNull(shortHorizonCase.Expected!.NextMessage);
+        Assert.Equal(CommunicationChannel.Sms, shortHorizonCase.Expected.NextMessage!.Channel);
         Assert.Equal("start_cadence", shortHorizonCase.Expected.NextAction.Type);
     }
 
     [Fact]
     public void ReadAll_ParsesSampleJsonl_PopulatesLongHorizonEmailCase()
     {
-        IRecordReader reader = new JsonlRecordReader();
-
-        ProspectCase longHorizonCase = reader.ReadAll(SampleFilePath)[1];
+        ProspectCase longHorizonCase = Reader.ReadAll(SampleFilePath)[1];
 
         Assert.Equal("prospect_long_horizon_day3", longHorizonCase.TaskId);
         Assert.False(longHorizonCase.Consent.SmsOptIn);
@@ -60,38 +81,62 @@ public class JsonlRecordReaderTests
     [Fact]
     public void ReadAll_SkipsBlankLines()
     {
-        string tempFilePath = Path.GetTempFileName();
-        File.WriteAllText(tempFilePath, "\n   \n" + File.ReadAllText(SampleFilePath));
-
-        try
+        WithTempFile("\n   \n" + File.ReadAllText(SampleFilePath), tempFilePath =>
         {
-            IRecordReader reader = new JsonlRecordReader();
-
-            IReadOnlyList<ProspectCase> cases = reader.ReadAll(tempFilePath);
+            IReadOnlyList<ProspectCase> cases = Reader.ReadAll(tempFilePath);
 
             Assert.Equal(2, cases.Count);
-        }
-        finally
-        {
-            File.Delete(tempFilePath);
-        }
+        });
     }
 
     [Fact]
-    public void ReadAll_ThrowsInvalidDataException_WhenLineDeserializesToNull()
+    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineDeserializesToNull()
     {
-        string tempFilePath = Path.GetTempFileName();
-        File.WriteAllText(tempFilePath, "null" + Environment.NewLine);
-
-        try
+        WithTempFile("null" + Environment.NewLine, tempFilePath =>
         {
-            IRecordReader reader = new JsonlRecordReader();
+            InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(tempFilePath));
 
-            Assert.Throws<InvalidDataException>(() => reader.ReadAll(tempFilePath));
-        }
-        finally
+            Assert.Contains("Line 1", exception.Message);
+        });
+    }
+
+    [Fact]
+    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineIsMalformedJson()
+    {
+        WithTempFile(MinimalValidLine + Environment.NewLine + "{not valid json" + Environment.NewLine, tempFilePath =>
         {
-            File.Delete(tempFilePath);
-        }
+            InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(tempFilePath));
+
+            Assert.Contains("Line 2", exception.Message);
+            Assert.IsType<JsonException>(exception.InnerException);
+        });
+    }
+
+    [Fact]
+    public void ReadAll_ThrowsInvalidDataException_WhenRequiredFieldIsNull()
+    {
+        string lineWithNullRequiredField = MinimalValidLine.Replace("\"task_id\":\"minimal\"", "\"task_id\":null");
+
+        WithTempFile(lineWithNullRequiredField + Environment.NewLine, tempFilePath =>
+        {
+            Assert.Throws<InvalidDataException>(() => Reader.ReadAll(tempFilePath));
+        });
+    }
+
+    [Fact]
+    public void ReadAll_ParsesSuppressedExpectedOutcome_WhenNextMessageIsNull()
+    {
+        string suppressedLine = MinimalValidLine.Replace(
+            "\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"}",
+            "\"next_message\":null");
+
+        WithTempFile(suppressedLine + Environment.NewLine, tempFilePath =>
+        {
+            ProspectCase parsedCase = Reader.ReadAll(tempFilePath)[0];
+
+            Assert.NotNull(parsedCase.Expected);
+            Assert.Null(parsedCase.Expected!.NextMessage);
+            Assert.Equal("start_cadence", parsedCase.Expected.NextAction.Type);
+        });
     }
 }
