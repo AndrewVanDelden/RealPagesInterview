@@ -6,12 +6,13 @@ namespace Agent.Ingest;
 
 public sealed class JsonlRecordReader : IRecordReader
 {
-    public IReadOnlyList<ProspectCase> ReadAll(string filePath)
+    public IReadOnlyList<ProspectCase> ReadAll(TextReader reader)
     {
         var cases = new List<ProspectCase>();
         int lineNumber = 0;
+        string? line;
 
-        foreach (string line in File.ReadLines(filePath))
+        while ((line = reader.ReadLine()) is not null)
         {
             lineNumber++;
 
@@ -24,11 +25,11 @@ public sealed class JsonlRecordReader : IRecordReader
             try
             {
                 prospectCase = JsonSerializer.Deserialize<ProspectCase>(line, AgentJsonOptions.Default)
-                    ?? throw new InvalidDataException($"Line {lineNumber} in '{filePath}' deserialized to null.");
+                    ?? throw new InvalidDataException($"Line {lineNumber} deserialized to null.");
             }
             catch (JsonException ex)
             {
-                throw new InvalidDataException($"Line {lineNumber} in '{filePath}' failed to parse.", ex);
+                throw new InvalidDataException($"Line {lineNumber} failed to parse.", ex);
             }
 
             cases.Add(prospectCase);

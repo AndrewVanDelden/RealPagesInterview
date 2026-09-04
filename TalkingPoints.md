@@ -223,9 +223,53 @@ Confirmed green:
     fixing them was a separate, explicitly-requested follow-up step, not an
     automatic part of running the review.
   - A second, unrelated diff appeared in `docs/BACKLOG.md` during this fix
-    pass (a parallel review's findings appended under Sprint 1, presumably
-    from another concurrent session). Left untouched and unstaged; it wasn't
-    reviewed or authored as part of this fix round.
+    pass: 58 lines of review notes signed "Antigravity (Gemini 3.8 Flash)"
+    inserted directly into the working tree (uncommitted), matching 9
+    separate review comments the same tool posted on PR #1. Confirms
+    Antigravity runs locally against this checkout, not just against GitHub,
+    and edits working-tree files as a side effect of reviewing. Left
+    untouched and unstaged; not reviewed or authored as part of this fix
+    round. Andrew is adjusting Antigravity's run settings separately.
+  - Of Antigravity's 9 findings, 4 overlapped with the review above and got
+    fixed incidentally (`Common/` Result/option types, `RespectNullableAnnotations`,
+    missing line number, the BOM). The remaining 3 were reviewed and fixed
+    as a follow-up, same TDD discipline:
+    - `AgentOutput` was never constructed or deserialized anywhere in the
+      codebase, so it had zero real exercise. Coverlet's `ExcludeByAttribute
+      =CompilerGeneratedAttribute` setting excludes it from the coverage
+      denominator entirely regardless of whether it's tested (confirmed
+      empirically: it never appears in `coverage.cobertura.xml`, before or
+      after adding tests for it), so the "0% coverage, bypasses the gate"
+      framing doesn't quite hold. What's real is that its JSON shape (the
+      naming policy, enum converter, and nullable `NextMessage` for the
+      suppression case) had never been exercised in the direction Sprint 5's
+      CLI will actually use it: serialization, not just deserialization.
+      Added `AgentOutputTests` round-tripping it through
+      `AgentJsonOptions.Default` in both directions, present and suppressed.
+    - `IRecordReader.ReadAll(string filePath)` baked file I/O into an
+      interface whose documented job (docs/DESIGN.md's component table) is
+      "no logic beyond deserialization." Changed the signature to
+      `ReadAll(TextReader reader)`; `JsonlRecordReader` now reads via
+      `reader.ReadLine()` instead of `File.ReadLines(filePath)`, and opening
+      the file becomes the caller's job (a `StreamReader` in tests; the
+      Sprint 5 CLI will do the same). No production caller existed yet
+      (`Program.cs` is still Sprint 0 scaffold), so this was the cheapest
+      point to fix it. Side benefit: every synthetic-input test now uses
+      `StringReader` directly instead of a temp file, so the `WithTempFile`
+      helper added in the first fix round is gone entirely, not just
+      simplified.
+    - Several sample.jsonl fields deserialized correctly but were never
+      asserted: `Cta.Link` (the only `Uri`-typed field in the schema),
+      `Cta.Options`, `Input.TimeZoneId`, `Input.MoveDateTarget`,
+      `Input.LastInteraction`, `Thresholds.ReplyClassificationF1Min`,
+      `NextMessage.Body`/`Subject`, and `CaseConstraints.NoSensitiveDiscrimination`
+      being genuinely null on the row that omits it. Added assertions for
+      all of them across both sample rows. `Body`/`Subject` are asserted via
+      `Assert.Contains` on an em-dash-free substring rather than full
+      equality, to avoid transcribing the sample data's em dash into a
+      string literal (working agreement: no em dashes in code).
+    - Final: 14 tests, 100% line/branch/method coverage, confirmed via
+      `.\test.ps1`.
 
 ---
 

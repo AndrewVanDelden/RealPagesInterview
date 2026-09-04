@@ -4,5 +4,5 @@ namespace Agent.Ingest;
 
 public interface IRecordReader
 {
-    IReadOnlyList<ProspectCase> ReadAll(string filePath);
+    IReadOnlyList<ProspectCase> ReadAll(TextReader reader);
 }
