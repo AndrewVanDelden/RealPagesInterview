@@ -829,11 +829,144 @@ real gaps, addressed together since fixing the most substantive one
 
 ### Before
 
-_Pending._
+BACKLOG's original framing of this sprint ("be ready to run 12 hold-outs
+live") assumed the runbook would be written *before* the live review, as
+rehearsal. That didn't happen the way planned - by the time this sprint was
+picked up, the interview itself was already over and Andrew supplied the
+actual 12-record hold-out file that had been used. So this sprint became
+what BACKLOG's acceptance criteria describe either way: running the CLI
+against the real hold-out and writing down what actually happened, just
+after the fact instead of before it. Every command below was actually run,
+in this order, against the actual file.
 
 ### After
 
-_Pending._
+**The exact commands run**, against the real 12-record file (saved for this
+analysis at a session-scratchpad path, not committed to the repo - it is
+Andrew's interview material, not project source):
+
+```
+dotnet run --project src/Agent.Cli -- --input <holdout-12>.jsonl --output out.json
+```
+
+First run, before any fix: **unhandled crash**, exit code 127, before a
+single output line was written:
+
+```
+Unhandled exception. System.ArgumentNullException: Value cannot be null. (Parameter 'key')
+   at System.Collections.Generic.Dictionary`2.FindValue(TKey key)
+   at System.Collections.Generic.Dictionary`2.TryGetValue(TKey key, TValue& value)
+   at Agent.Composition.PrimaryCtaVocabulary.ToCtaType(String primaryCta) in ...\PrimaryCtaVocabulary.cs:line 11
+   at Agent.Evaluation.Evaluator.Score(ScoredRun run) in ...\Evaluator.cs:line 53
+   ...
+```
+
+**Root cause:** `PrimaryCtaVocabulary.ToCtaType(string primaryCta)` took a
+non-nullable `string`, but two records in the actual hold-out
+(`prospect_consent_block_sms_fallback_email`,
+`resident_renewal_details_branch_email`) have no `primary_cta` in their
+`constraints` at all. A missing JSON property deserializes
+`CaseConstraints.PrimaryCta` to C# `null` (not a thrown exception - the
+same "missing, not explicitly null" class of gap already documented for
+`move_date_target` after the earlier synthetic-file rehearsal), and
+`Dictionary.TryGetValue(null)` throws. `Evaluator.Score` called this with
+no null-guard; `OpenAiMessageComposer.ComposeAsync` had the identical
+unguarded call (would have crashed identically under `--composer openai`);
+only `TemplateMessageComposer` happened to be protected, by an unrelated
+upfront `IsNullOrWhiteSpace` check that existed for a different reason, not
+because anyone had reasoned about `PrimaryCtaVocabulary` specifically.
+
+**A second, related gap found in the same conversation, before the rerun:**
+the eval-report code path (`Scorecard scorecard = evaluator.Evaluate(scoredRuns);`
+in `CliRunner`) had *no catch block at all* - unlike the main batch loop,
+which isolates one bad record from the rest. That is the actual reason a
+single record's bug crashed the entire run instead of degrading one row of
+the scorecard.
+
+**Fixes, root cause not per-caller patches:**
+
+- `PrimaryCtaVocabulary.ToCtaType` now takes and returns `string?`: null in,
+  null out. Every caller updated to treat "no required CTA type" as its own
+  valid state, not an error - `Evaluator`'s `PrimaryCtaPresent` check is
+  trivially true when there is no required type to check against (same
+  pattern as `OptOutPresent` when opt-out isn't required);
+  `OpenAiMessageComposer` skips constraining the response schema's
+  `cta_type` enum and skips the post-hoc equality check when there is
+  nothing to constrain it to.
+- `Evaluator.Evaluate` now wraps each record's `Score(run)` call in its own
+  `try`/`catch`, converting an unexpected exception into
+  `RecordScore.Unscoreable` for that one row instead of losing the whole
+  batch - the same per-record-isolation principle `CliRunner`'s main loop
+  already used, now applied consistently to the scorer too.
+- Both catch sites now capture `ex.GetType().Name` alongside `ex.Message`.
+  A bare `ex.Message` for this exact bug read `"Value cannot be null.
+  (Parameter 'key')"` - useless without the type. The irony this bug
+  exposed directly: the *unhandled* crash's default .NET stack trace (file,
+  line, full call chain) was more informative than anything our own
+  deliberate error handling captured anywhere in the codebase. See Sprint 8
+  for the full audit this observation triggered.
+- Added tests for all three changed branches (`PrimaryCtaVocabulary`'s null
+  path, `OpenAiMessageComposer`'s skip-the-schema-constraint path, and the
+  new `Evaluator` catch block, the last one triggered with a deliberately
+  malformed `NextMessage.Body` forced null via `!` despite its non-nullable
+  static type - the same "type says non-null, real data disagrees" pattern
+  that caused the original bug, used deliberately as the test's mechanism).
+
+**Second run, after the fix**, exit code 0, no crash:
+
+```
+dotnet run --project src/Agent.Cli -- --input <holdout-12>.jsonl --output out.json --diagnostics diagnostics.json --eval-report eval.txt
+```
+
+Result: **2 of 12 records pass the eval harness.** Every failure traces to
+one of two already-known, already-documented schema-coverage gaps - not new
+bugs, and not chased further here since the interview this data is from is
+already complete:
+
+1. **Missing `move_date_target`** (5 records: cancellation, both
+   residents without a stated move date, loyalty engagement, Spanish
+   locale) defaults to `0001-01-01` (`DateOnly`/`DateTimeOffset` are
+   non-nullable value types - a missing property doesn't throw, it
+   defaults), producing `start_cadence` where the labeled data expects
+   `follow_up_in_days`.
+2. **Missing `primary_cta`** (the same 2 records that used to crash) is now
+   handled safely by `TemplateMessageComposer`'s existing
+   `IsNullOrWhiteSpace` guard - but that guard treats "no CTA stated" as a
+   *missing required field* and suppresses the message entirely, rather
+   than composing a message with no specific CTA phrase. That is a
+   legitimate, still-open design question (not resolved here): should "no
+   `primary_cta`" mean "nothing to say" or "say something, just not tied to
+   one specific CTA"? The real data suggests the latter (both of those
+   records have a real, expected email in the labeled data), but changing
+   `TemplateMessageComposer`'s behavior now, after the graded review, would
+   be design work done in the wrong sprint for the wrong reason.
+3. **A closed `next_action` vocabulary.** `start_cadence` and
+   `follow_up_in_days` were the only two shapes the two original labeled
+   samples showed. The real hold-out's other personas and lifecycle stages
+   (no-show re-engagement, lease renewal, resident welcome, an intent-branch
+   flow, an e-sign flow) need `reset_cadence`, `schedule_sms_reminder`,
+   `branch_on_intent`, `no_op`, `start_esign_flow` - a materially larger
+   action vocabulary than a two-sample take-home could reasonably infer.
+   This is the honest boundary of what "generalizes from 2 examples" can
+   promise, not an implementation defect.
+
+One record (`resident_opt_out_respected`) shows as unscoreable rather than
+scored right or wrong: its labeled `expected.next_message.channel` is
+`"none"`, which is not a value our `CommunicationChannel` enum has - the
+`LenientExpectedOutcomeConverter` from the earlier ingestion-crash fix (see
+the hardening entry above) correctly parsed the rest of that record and set
+`Expected = null` for just the unparseable oracle, exactly as designed. Its
+*actual* output (message suppressed, `next_action: no_op`-equivalent
+suppression) is arguably correct given `respect_consent: true` and all
+three consent flags false - it simply cannot be scored against a `"none"`
+channel value with no corresponding enum member, which is a distinct,
+smaller gap from the two above (the enum would need a `None`/`Suppressed`
+member to represent "deliberately no channel" as a real, nameable value
+rather than only "absent").
+
+No code changes were made in this sprint beyond the crash fix - the
+schema-coverage gaps are recorded as findings, not treated as bugs to fix
+under time pressure after the actual grading already happened.
 
 ---
 

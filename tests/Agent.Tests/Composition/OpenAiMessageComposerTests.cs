@@ -274,4 +274,22 @@ public class OpenAiMessageComposerTests
 
         Assert.True(result.IsSuccess);
     }
+
+    // A record with no primary_cta constraint at all is real, not hypothetical: two
+    // records in the actual interview hold-out have none (see TalkingPoints.md Sprint 7).
+    // Deserialization leaves CaseConstraints.PrimaryCta null rather than throwing (a
+    // missing property, not an explicit JSON null) - constructed directly here with `!`
+    // since the static type says non-nullable but the real data proves otherwise.
+    [Fact]
+    public async Task ComposeAsync_NoPrimaryCtaConstraint_DoesNotEnforceAnyCtaType()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"anything_reasonable","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null!);
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("anything_reasonable", result.Value!.Cta!.Type);
+    }
 }

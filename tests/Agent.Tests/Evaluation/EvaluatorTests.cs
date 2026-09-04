@@ -368,4 +368,24 @@ public class EvaluatorTests
             Assert.True(score.LatencyWithinBudget, $"{score.TaskId}: latency over budget");
         }
     }
+
+    // Per-record isolation for the scorer itself, same principle as CliRunner's main batch
+    // loop (and the exact gap that let a real bug - see Sprint 7 - crash the whole eval
+    // report instead of degrading one record). Body is forced null via `!` despite the
+    // non-nullable static type, deliberately simulating the "malformed despite what the
+    // type promises" scenario that keeps recurring with real interview data.
+    [Fact]
+    public void Evaluate_ScoringThrows_RecordBecomesUnscoreableInsteadOfAbortingTheBatch()
+    {
+        ProspectCase prospectCase = BaselineCase();
+        var malformedMessage = new NextMessage(CommunicationChannel.Sms, null, null, null!, new Cta("schedule_tour", null, null));
+        AgentRunResult actual = SuccessfulResult(malformedMessage);
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.NotNull(score.ScoringError);
+        Assert.Contains("NullReferenceException", score.ScoringError);
+        Assert.False(score.Passed);
+    }
 }

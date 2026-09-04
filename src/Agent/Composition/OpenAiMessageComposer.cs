@@ -41,11 +41,17 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
     // Outputs' constrained decoding only enforces what the schema states - a bare
     // "type": "string" only guarantees *some* string comes back, not the right one - so
     // the model cannot generate anything else, instead of a wrong CTA being caught after
-    // the round trip by the string.Equals check below.
-    private static string BuildResponseJsonSchema(string requiredCtaType)
+    // the round trip by the string.Equals check below. When there is no required CTA type
+    // at all (primary_cta absent from the case), the schema is left unconstrained - there
+    // is nothing specific to force the model toward.
+    private static string BuildResponseJsonSchema(string? requiredCtaType)
     {
         JsonNode schema = JsonNode.Parse(ResponseJsonSchemaShape)!;
-        schema["properties"]!["cta_type"]!["enum"] = new JsonArray(JsonValue.Create(requiredCtaType));
+
+        if (requiredCtaType is not null)
+        {
+            schema["properties"]!["cta_type"]!["enum"] = new JsonArray(JsonValue.Create(requiredCtaType));
+        }
 
         return schema.ToJsonString();
     }
@@ -56,7 +62,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        string requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.Assertions.Constraints.PrimaryCta);
+        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.Assertions.Constraints.PrimaryCta);
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
@@ -88,8 +94,10 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
         // The response schema already constrains cta_type to exactly requiredCtaType
         // (BuildResponseJsonSchema), so this should be unreachable under Structured
         // Outputs' constrained decoding - kept as defense in depth for any completion
-        // client that doesn't enforce the schema as strictly.
-        if (!string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
+        // client that doesn't enforce the schema as strictly. No check at all when there
+        // is no required CTA type: payload.CtaType being non-empty (verified above) is
+        // the only requirement in that case.
+        if (requiredCtaType is not null && !string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
             return Result<NextMessage>.Failure(
                 $"Model returned cta_type '{payload.CtaType}' but '{requiredCtaType}' was required.");
@@ -104,13 +112,14 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
     private static string BuildUserPrompt(
         ProspectCase prospectCase,
         CommunicationChannel channel,
-        string requiredCtaType,
+        string? requiredCtaType,
         IReadOnlyList<string>? priorViolations)
     {
         ProspectProfile profile = prospectCase.Input.Profile;
         CaseConstraints constraints = prospectCase.Assertions.Constraints;
         string interest = DescribeInterest(profile);
         string optOutDirective = constraints.IncludeOptOutInstructions ? "required" : "not required";
+        string ctaDirective = requiredCtaType ?? "none specified - choose a reasonable call to action";
 
         string correctionSection = priorViolations is { Count: > 0 }
             ? "\nYour previous attempt failed a safety check for the following reason(s); fix these " +
@@ -124,7 +133,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
             $"first_name: {profile.FirstName}\n" +
             $"property: {prospectCase.Input.PropertyName}\n" +
             $"stated_interest: {interest}\n" +
-            $"required_cta_type: {requiredCtaType}\n" +
+            $"required_cta_type: {ctaDirective}\n" +
             $"Opt-out instructions: {optOutDirective}.\n" +
             "</prospect_data>" +
             correctionSection;
