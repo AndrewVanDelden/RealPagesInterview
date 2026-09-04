@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
+using Agent.Evaluation;
 using Agent.Ingest;
 using Agent.Orchestration;
 using Agent.Safety;
@@ -18,7 +20,7 @@ public static class CliExitCodes
 // Thin shell over the library (DESIGN.md section 5): parses arguments, wires the
 // composition root, and runs the per-record batch loop. Holds no business rules
 // of its own - every decision stays inside Agent library components.
-public sealed class CliRunner(IConfiguration configuration, TextWriter error)
+public sealed class CliRunner(IConfiguration configuration, TextWriter output, TextWriter error)
 {
     private static readonly HttpClient SharedHttpClient = new();
 
@@ -28,10 +30,11 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
         string? outputPath = GetOption(args, "--output");
         string composerName = GetOption(args, "--composer") ?? "template";
         string? diagnosticsPath = GetOption(args, "--diagnostics");
+        string? evalReportPath = GetOption(args, "--eval-report");
 
         if (inputPath is null || outputPath is null)
         {
-            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--composer template|openai] [--diagnostics <file.json>]");
+            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>]");
             return CliExitCodes.UsageError;
         }
 
@@ -77,10 +80,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
 
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
+        var scoredRuns = new List<ScoredRun>();
         int failureCount = 0;
 
         foreach (ProspectCase prospectCase in cases)
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;
             try
             {
@@ -96,8 +101,10 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
                 continue;
             }
 
+            stopwatch.Stop();
             outputs.Add(result.Output);
             diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
+            scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
         }
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
@@ -107,6 +114,29 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
         {
             var diagnosticsWriter = new JsonArrayRecordWriter<TaskDiagnostics>();
             await diagnosticsWriter.WriteAllAsync(diagnosticsStream, diagnosticsRecords, cancellationToken);
+        }
+
+        if (evalReportPath is not null)
+        {
+            // Scores the results already captured above - never re-runs the agent, so the
+            // report describes exactly what was persisted to --output, not a second,
+            // possibly different sample (this matters for non-deterministic composers).
+            // A case missing its labeled expected outcome shows up as an unscoreable row
+            // rather than aborting the whole report.
+            IEvaluator evaluator = new Evaluator();
+            Scorecard scorecard = evaluator.Evaluate(scoredRuns);
+
+            foreach (RecordScore score in scorecard.RecordScores)
+            {
+                if (score.ScoringError is not null)
+                {
+                    error.WriteLine($"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
+                }
+            }
+
+            string report = ScorecardFormatter.Format(scorecard);
+            output.Write(report);
+            await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;

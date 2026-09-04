@@ -715,11 +715,113 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+`IEvaluator`/`Evaluator` runs the agent over a labeled file (one with
+`expected` populated) and produces a `Scorecard` of per-record `RecordScore`s
+- proving the thresholds by actually executing and timing the pipeline, not
+asserting it behaves a given way. Two deliberate departures from DESIGN.md
+section 6's original wording, made explicit rather than silently
+implemented differently:
+
+- **`no_pii_leak` and `safety_violations == 0` collapse into one field**
+  (`SafetyViolationsWithinBudget`). `SafetyValidator` itself returns
+  per-category violation messages, but `LeasingMessageAgent` collapses
+  them into a single count (`AgentDiagnostics.SafetyViolationCount`)
+  before they reach the evaluator - scoring PII and safety-violation-count
+  as two separate signals isn't supported by the diagnostics contract this
+  evaluator actually receives.
+- **The "horizon cue" personalization token is dropped.** First name,
+  property, and interest are each a concrete, checkable string. "Horizon
+  cue" names no specific pattern - scoring it would mean inventing a rule
+  with no evidence behind it, the exact thing the working agreement's
+  "separate facts from inferences" rule warns against.
+
+`Evaluator.ContainsOptOutPhrase` reuses `SafetyValidator.OptOutPhrases`
+directly (changed from `private` to `internal`) rather than maintaining a
+second phrase list that could drift from what the validator actually
+enforces. Latency is measured with a real `Stopwatch` around each
+`agent.RunAsync` call, not injected/faked - tests that need a slow run use
+an artificial `Task.Delay` in a fake `IMessageAgent` against a
+deliberately tiny threshold, avoiding both real DI ceremony for a leaf
+timing concern and flaky sleep-based assertions.
+
+`ScorecardFormatter` is a plain aligned-text table (`Task ID | Channel |
+Action | ...`), not a table library - a handful of columns read by a human
+during the live review doesn't need a dependency.
+
+CLI: new `--eval-report <file>` flag. When present, prints the scorecard to
+the console and writes it to the file, scored from the same results already
+captured during the main `--output` pass - `Evaluator` takes precomputed
+`ScoredRun`s (case, result, latency) rather than calling `agent.RunAsync`
+itself, so the report describes exactly what was persisted, not a second,
+possibly different sample.
 
 ### After
 
-_Pending._
+- Two self-inflicted test bugs during the initial run, neither an
+  implementation bug: (1) `BaselineExpected(message: null)`'s `??`
+  couldn't distinguish "explicitly want null" from "not specified, use
+  default," silently defaulting instead of producing the suppressed
+  `ExpectedOutcome` the test needed - fixed by constructing that one
+  `ExpectedOutcome` directly instead of through the ambiguous helper; (2)
+  a personalization test asserted a perfect 1.0 score without accounting
+  for `SampleProspectCases.Minimal()`'s default city interest, which the
+  test's message body didn't mention - fixed the body text.
+- The coverage gate caught a real gap in test variety (the same pattern as
+  every prior sprint): `ComputePersonalizationScore`'s `CityInterest is
+  { Length: > 0 }` pattern had only ever been exercised with a present,
+  non-empty city interest - no test covered "no interest stated at all."
+  Added one.
+- Extracted `RealAgentFactory` (the real-component wiring `BuildRealAgent`
+  / `ReadSampleCases`) out of `LeasingMessageAgentTests` into
+  `TestSupport`, since `EvaluatorTests`' own sample.jsonl integration test
+  needed the identical setup - duplicating it across two test classes
+  would have been a real DRY violation, not a stylistic one.
+- Verified against the actual `sample.jsonl` file end-to-end (not just
+  unit tests): both records pass every column - channel, action, opt-out,
+  CTA, safety, personalization (1.00 on both), latency - exceeding
+  BACKLOG 6.1's narrower literal acceptance criterion (channel, action,
+  personalization only).
+- Final: 147 tests in `Agent.Tests`, 11 in `Agent.Cli.Tests`, 100%
+  line/branch/method coverage on both.
+
+### Post-review fix round
+
+A code review (own findings plus Antigravity/Gemini's) surfaced several
+real gaps, addressed together since fixing the most substantive one
+(the double-run) reshaped how the others were fixed:
+
+- **`Evaluator` no longer drives its own `agent.RunAsync` loop.** It now
+  takes precomputed `ScoredRun`s (case, result, latency) captured once by
+  `CliRunner` during the main batch pass, and `Evaluate` is a synchronous,
+  pure scoring function. This closes three findings at once: the eval
+  report can no longer describe a different (non-deterministic) sample
+  than what was persisted to `--output`; a `--composer openai` run no
+  longer pays for the batch twice; and per-record isolation is no longer
+  Evaluator's problem to solve, since it never touches the agent at all.
+- **A case missing its labeled `expected` outcome is now an unscoreable
+  row, not a crash.** `RecordScore.Unscoreable` records the reason;
+  `CliRunner` logs it to stderr for visibility but no longer lets it
+  override the main pass's exit code - a labeling gap in the optional eval
+  rehearsal and a broken production batch are no longer indistinguishable
+  from the exit code alone.
+- **`ComputePersonalizationScore`'s `AmenityInterest`/`CityInterest` check
+  changed from `if/else if` to two independent `if`s** (and now reads
+  through `ProspectProfile.Amenities`/`City`, the same normalized
+  properties the composers already use) - a prospect with both no longer
+  has city interest silently dropped from scoring.
+- **`ContainsOptOutPhrase` now checks Subject+Body**, mirroring
+  `SafetyValidator.Validate`'s own search text, instead of Body alone.
+- **`ScorecardFormatter` now pads columns to a computed width** so rows
+  align regardless of `TaskId` length, and renders unscoreable rows with
+  their reason instead of blank columns.
+- **`SafetyValidator.OptOutPhrases` is now `IReadOnlyList<string>`**
+  instead of a mutable `string[]`, per Pillar 2 (immutability).
+- Not changed: the per-record latency check against `P95LatencyMs`
+  remains a per-record ceiling, not a computed percentile - that's
+  DESIGN.md's own long-standing wording ("wall-clock per record against
+  p95_latency_ms"), inherited from the problem's own threshold field name,
+  and a true percentile isn't a meaningful calculation over a 2-12 record
+  batch anyway.
 
 ---
 

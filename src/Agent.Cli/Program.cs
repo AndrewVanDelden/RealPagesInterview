@@ -6,5 +6,5 @@ IConfiguration configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
-var runner = new CliRunner(configuration, Console.Error);
+var runner = new CliRunner(configuration, Console.Out, Console.Error);
 return await runner.RunAsync(args);

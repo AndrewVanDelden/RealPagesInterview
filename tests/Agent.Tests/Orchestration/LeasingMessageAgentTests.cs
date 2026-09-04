@@ -11,33 +11,11 @@ namespace Agent.Tests.Orchestration;
 
 public class LeasingMessageAgentTests
 {
-    private static readonly string SampleFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "sample.jsonl");
-
-    private static IMessageAgent BuildRealAgent(ISafetyValidator? finalValidator = null)
-    {
-        var templateComposer = new TemplateMessageComposer();
-        IMessageComposer validatingComposer = new ValidatingMessageComposer(templateComposer, new SafetyValidator(), templateComposer);
-
-        return new LeasingMessageAgent(
-            new ConsentGate(),
-            new ChannelSelector(),
-            validatingComposer,
-            finalValidator ?? new SafetyValidator(),
-            new SendScheduler(),
-            new NextActionPlanner());
-    }
-
-    private static IReadOnlyList<ProspectCase> ReadSampleCases()
-    {
-        using var reader = new StreamReader(SampleFilePath);
-        return new JsonlRecordReader().ReadAll(reader);
-    }
-
     [Fact]
     public async Task RunAsync_Sample1_ProducesSmsAndStartCadence()
     {
-        IMessageAgent agent = BuildRealAgent();
-        ProspectCase sample1 = ReadSampleCases()[0];
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase sample1 = RealAgentFactory.ReadSampleCases()[0];
 
         AgentRunResult result = await agent.RunAsync(sample1);
 
@@ -54,8 +32,8 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_Sample2_ProducesEmailAndFollowUpInDays()
     {
-        IMessageAgent agent = BuildRealAgent();
-        ProspectCase sample2 = ReadSampleCases()[1];
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase sample2 = RealAgentFactory.ReadSampleCases()[1];
 
         AgentRunResult result = await agent.RunAsync(sample2);
 
@@ -68,7 +46,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_NoConsentedChannel_SuppressesMessageButStillPlansNextAction()
     {
-        IMessageAgent agent = BuildRealAgent();
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase suppressedCase = SampleProspectCases.Minimal() with
         {
             Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
@@ -87,7 +65,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_ComposerCannotProduceAnyValidMessage_SuppressesMessageInsteadOfThrowing()
     {
-        IMessageAgent agent = BuildRealAgent();
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase impossibleCase = SampleProspectCases.Minimal(firstName: "");
 
         AgentRunResult result = await agent.RunAsync(impossibleCase);
@@ -104,7 +82,7 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage()
     {
         var violatingResult = new SafetyValidationResult(["Body contains protected-class or steering language: 'disability'."], FairHousingCheckPassed: false);
-        IMessageAgent agent = BuildRealAgent(new FixedSafetyValidator(violatingResult));
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(violatingResult));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
         AgentRunResult result = await agent.RunAsync(prospectCase);
