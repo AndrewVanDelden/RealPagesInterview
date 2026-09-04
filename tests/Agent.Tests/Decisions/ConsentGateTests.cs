@@ -31,4 +31,16 @@ public class ConsentGateTests
         Assert.False(decision.IsContactable);
         Assert.True(decision.ConsentVerified);
     }
+
+    [Fact]
+    public void Evaluate_EmptyChannelPreferences_ReturnsSuppressed()
+    {
+        var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: true);
+        CommunicationChannel[] preferences = [];
+
+        ConsentDecision decision = Gate.Evaluate(consent, preferences);
+
+        Assert.False(decision.IsContactable);
+        Assert.True(decision.ConsentVerified);
+    }
 }

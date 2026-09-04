@@ -46,6 +46,18 @@ public class ChannelSelectorTests
     }
 
     [Fact]
+    public void Select_FirstPreferenceNotConsented_FallsBackToSecondPreference()
+    {
+        var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: false, VoiceOptIn: false);
+        CommunicationChannel[] preferences = [CommunicationChannel.Sms, CommunicationChannel.Email];
+
+        Option<CommunicationChannel> selected = Selector.Select(preferences, consent);
+
+        Assert.True(selected.HasValue);
+        Assert.Equal(CommunicationChannel.Email, selected.Value);
+    }
+
+    [Fact]
     public void Select_NoneConsented_ReturnsNone()
     {
         var consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false);

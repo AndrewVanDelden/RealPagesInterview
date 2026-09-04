@@ -2,16 +2,23 @@ namespace Agent.Common;
 
 public sealed record Result<TValue>
 {
+    private readonly TValue? _value;
+    private readonly string? _error;
+
     private Result(TValue? value, string? error, bool isSuccess)
     {
-        Value = value;
-        Error = error;
+        _value = value;
+        _error = error;
         IsSuccess = isSuccess;
     }
 
-    public TValue? Value { get; }
+    public TValue Value => IsSuccess
+        ? _value!
+        : throw new InvalidOperationException("Result has no value because it is a failure.");
 
-    public string? Error { get; }
+    public string Error => !IsSuccess
+        ? _error!
+        : throw new InvalidOperationException("Result has no error because it is a success.");
 
     public bool IsSuccess { get; }
 

@@ -1,3 +1,4 @@
+using Agent.Common;
 using Agent.Domain;
 
 namespace Agent.Decisions;
@@ -13,9 +14,13 @@ public sealed class SendScheduler : ISendScheduler
 
     public DateTimeOffset Resolve(DateTimeOffset lastInteraction, string timeZoneId, CommunicationChannel channel)
     {
-        TimeZoneInfo timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        TimeZoneInfo timeZone = TimeZones.Resolve(timeZoneId);
         DateTimeOffset localLastInteraction = TimeZoneInfo.ConvertTime(lastInteraction, timeZone);
-        TimeOnly defaultHour = DefaultSendHour[channel];
+
+        if (!DefaultSendHour.TryGetValue(channel, out TimeOnly defaultHour))
+        {
+            throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unknown communication channel.");
+        }
 
         DateOnly candidateDate = DateOnly.FromDateTime(localLastInteraction.DateTime);
         DateTime candidateLocal = candidateDate.ToDateTime(defaultHour);

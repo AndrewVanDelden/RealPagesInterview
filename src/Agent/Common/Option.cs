@@ -2,13 +2,17 @@ namespace Agent.Common;
 
 public sealed record Option<TValue>
 {
+    private readonly TValue? _value;
+
     private Option(TValue? value, bool hasValue)
     {
-        Value = value;
+        _value = value;
         HasValue = hasValue;
     }
 
-    public TValue? Value { get; }
+    public TValue Value => HasValue
+        ? _value!
+        : throw new InvalidOperationException("Option has no value.");
 
     public bool HasValue { get; }
 
