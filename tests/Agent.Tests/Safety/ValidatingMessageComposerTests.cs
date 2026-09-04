@@ -130,6 +130,25 @@ public class ValidatingMessageComposerTests
         Assert.NotEmpty(innerComposer.LastPriorViolations);
     }
 
+    // A Result.Failure from the inner composer (e.g. a wrong cta_type, a malformed
+    // completion) is not a safety violation, but it's still something the retry should
+    // know about - otherwise the second attempt repeats the exact same prompt with zero
+    // corrective signal, wasting the one retry this loop has.
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptFails_RetryReceivesFailureReasonAsCorrection()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Failure("Model returned cta_type 'call_now' but 'schedule_tour' was required."),
+            Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.NotNull(innerComposer.LastPriorViolations);
+        Assert.Contains("Model returned cta_type 'call_now' but 'schedule_tour' was required.", innerComposer.LastPriorViolations);
+    }
+
     [Fact]
     public async Task ComposeAsync_FirstAttempt_ReceivesNoPriorViolations()
     {

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
@@ -108,6 +109,22 @@ public class OpenAiMessageComposerTests
 
         Assert.False(result.IsSuccess);
         Assert.Contains("no completion content", result.Error);
+    }
+
+    // OpenAiCompletionClient.BuildResponseFormat parses the response schema with
+    // JsonDocument.Parse, which throws JsonException on malformed input - the same
+    // exception type every other completion-client failure degrades into a Result.Failure
+    // for, so this one must too.
+    [Fact]
+    public async Task ComposeAsync_CompletionClientThrowsJsonException_ReturnsFailureNotException()
+    {
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new JsonException("Invalid JSON schema.")));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Invalid JSON schema.", result.Error);
     }
 
     [Fact]
@@ -221,6 +238,29 @@ public class OpenAiMessageComposerTests
 
         Assert.False(result.IsSuccess);
         Assert.Contains("call_now", result.Error);
+    }
+
+    // Structured Outputs' constrained decoding can only enforce a value (not just a shape)
+    // via an "enum"/"const" constraint. Without this, cta_type's schema only says "some
+    // string", so the API-level guarantee doesn't actually rule out a wrong CTA - the
+    // post-hoc string.Equals check below is the only real enforcement. Constraining the
+    // schema to the exact required value closes that gap at the source.
+    [Fact]
+    public async Task ComposeAsync_SendsResponseSchemaConstrainingCtaTypeToTheRequiredValue()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "book_tour");
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.NotNull(fakeClient.LastResponseJsonSchema);
+        using JsonDocument schemaDocument = JsonDocument.Parse(fakeClient.LastResponseJsonSchema);
+        JsonElement ctaTypeEnum = schemaDocument.RootElement.GetProperty("properties").GetProperty("cta_type").GetProperty("enum");
+        Assert.Equal(JsonValueKind.Array, ctaTypeEnum.ValueKind);
+        Assert.Equal(1, ctaTypeEnum.GetArrayLength());
+        Assert.Equal("schedule_tour", ctaTypeEnum[0].GetString());
     }
 
     [Fact]

@@ -60,7 +60,7 @@ public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey,
         }
 
         using JsonDocument schemaDocument = JsonDocument.Parse(responseJsonSchema);
-        var schemaSpec = new OpenAiJsonSchemaSpec(StructuredOutputSchemaName, Strict: true, schemaDocument.RootElement.Clone());
+        OpenAiJsonSchemaSpec schemaSpec = new(StructuredOutputSchemaName, Strict: true, schemaDocument.RootElement.Clone());
 
         return new OpenAiResponseFormat("json_schema", schemaSpec);
     }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Agent.Common;
 using Agent.Domain;
 
@@ -19,7 +20,9 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
 
     // Structured Outputs (strict mode) enforces this shape at the API level - see
     // OpenAiCompletionClient.BuildResponseFormat - rather than relying on prose alone.
-    private const string ResponseJsonSchema = """
+    // Property names and required-ness must stay in sync with ComposedMessagePayload,
+    // which this schema describes the wire shape of.
+    private const string ResponseJsonSchemaShape = """
         {
           "type": "object",
           "properties": {
@@ -34,6 +37,19 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
         }
         """;
 
+    // Constrains cta_type to exactly the one value this request requires. Structured
+    // Outputs' constrained decoding only enforces what the schema states - a bare
+    // "type": "string" only guarantees *some* string comes back, not the right one - so
+    // the model cannot generate anything else, instead of a wrong CTA being caught after
+    // the round trip by the string.Equals check below.
+    private static string BuildResponseJsonSchema(string requiredCtaType)
+    {
+        JsonNode schema = JsonNode.Parse(ResponseJsonSchemaShape)!;
+        schema["properties"]!["cta_type"]!["enum"] = new JsonArray(JsonValue.Create(requiredCtaType));
+
+        return schema.ToJsonString();
+    }
+
     public async Task<Result<NextMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
@@ -42,13 +58,14 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
     {
         string requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.Assertions.Constraints.PrimaryCta);
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
+        string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
         string rawResponse;
         try
         {
-            rawResponse = await completionClient.CompleteAsync(SystemPrompt, userPrompt, ResponseJsonSchema, cancellationToken);
+            rawResponse = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
         {
             return Result<NextMessage>.Failure($"Completion request failed: {ex.Message}");
         }
@@ -68,9 +85,10 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
             return Result<NextMessage>.Failure("Model response was missing required fields (body, cta_type).");
         }
 
-        // We tell the model exactly which cta_type is required (below); this is the other
-        // half of that contract - checking it actually returned it, not just that it
-        // returned *some* non-empty string.
+        // The response schema already constrains cta_type to exactly requiredCtaType
+        // (BuildResponseJsonSchema), so this should be unreachable under Structured
+        // Outputs' constrained decoding - kept as defense in depth for any completion
+        // client that doesn't enforce the schema as strictly.
         if (!string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
             return Result<NextMessage>.Failure(
@@ -116,14 +134,14 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
     {
         var clauses = new List<string>();
 
-        if (profile.AmenityInterest is { Count: > 0 } amenities)
+        if (profile.Amenities.Count > 0)
         {
-            clauses.Add(string.Join(", ", amenities));
+            clauses.Add(string.Join(", ", profile.Amenities));
         }
 
-        if (profile.CityInterest is { Length: > 0 } cityInterest)
+        if (profile.City.Length > 0)
         {
-            clauses.Add(cityInterest);
+            clauses.Add(profile.City);
         }
 
         return clauses.Count > 0 ? string.Join("; ", clauses) : "no stated interest";

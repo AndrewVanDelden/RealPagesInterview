@@ -85,7 +85,7 @@ public class OpenAiCompletionClientTests
         await client.CompleteAsync("system", "user");
 
         Assert.Contains("\"type\":\"json_object\"", handler.LastRequestBody);
-        Assert.Contains("\"json_schema\":null", handler.LastRequestBody);
+        Assert.DoesNotContain("\"json_schema\"", handler.LastRequestBody);
     }
 
     [Fact]
