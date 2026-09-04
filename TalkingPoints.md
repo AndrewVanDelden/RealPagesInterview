@@ -287,11 +287,50 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+- `ConsentGate.Evaluate` and `ChannelSelector.Select` share one source of
+  truth for "is this channel opted in": `ConsentPreferencesExtensions.IsOptedIn`,
+  a switch expression over `CommunicationChannel` in `Agent.Domain` (DRY -
+  the per-channel bool lookup used to live in two places during design).
+- `ChannelSelector` returns `Option<CommunicationChannel>` (from
+  `Agent.Common`, already introduced during Sprint 1 code review) rather than
+  a nullable enum, now that the codebase has an established option type -
+  one convention for "value or absence," not two.
+- `SendScheduler`: channel default hour (sms 09:00, email 10:00, voice 09:00
+  as an unproven default - no sample covers voice) plus a single rollover
+  rule (if today's default-hour slot has already passed relative to
+  `last_interaction`, use tomorrow instead). Andrew confirmed BACKLOG's
+  separate "quiet-hours window" language is not in the actual problem
+  statement or sample.jsonl assertions/thresholds - it was elaboration in
+  our own DESIGN.md, not a graded requirement - so it was scoped out in
+  favor of the simpler rule, which independently satisfies all three of
+  2.3's stated acceptance criteria (sms → 09:00, email → 10:00, late-night
+  last_interaction pushes to next day).
+- `NextActionPlanner`: horizon = days between `move_date_target` and
+  `last_interaction` (`DateOnly.DayNumber` difference), threshold defaults
+  to 45 days per DESIGN.md's assumptions log. The short-horizon cadence name
+  (`prospect_welcome_short_horizon`) and long-horizon follow-up interval (3
+  days) are single-sample-derived constants, made configurable via
+  `NextActionPlannerOptions` rather than asserted as a general rule, per the
+  working agreement's "say so explicitly and make it configurable" clause.
 
 ### After
 
-_Pending._
+- All four components green on the first real `dotnet test` run except one
+  gap the coverage gate caught: `ConsentPreferencesExtensions.IsOptedIn`'s
+  switch expression triggered CS8524 (non-exhaustive) even though all three
+  named `CommunicationChannel` values are handled - the compiler treats enum
+  switches as open because any underlying int is castable to the enum type,
+  and generates an untested fallback branch. Fixed properly, not by
+  suppressing the warning: added an explicit
+  `ArgumentOutOfRangeException` guard arm and a test that casts an
+  out-of-range enum value to exercise it. Real coverage of real defensive
+  code, not a coverage exclusion.
+- Final: 27 tests total (16 new for Sprint 2 plus its 1 guard-clause test),
+  100% line/branch/method coverage.
+- Workflow: `gh pr merge` is blocked by Claude Code's own permission
+  classifier, not by Andrew - Andrew merges each sprint's PR himself on
+  GitHub going forward; Claude still creates the branch, commits, pushes,
+  and opens the PR.
 
 ---
 
