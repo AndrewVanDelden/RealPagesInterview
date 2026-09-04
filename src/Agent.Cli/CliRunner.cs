@@ -31,7 +31,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
 
         if (inputPath is null || outputPath is null)
         {
-            error.WriteLine("Usage: --input <file.jsonl> --output <file.jsonl> [--composer template|openai] [--diagnostics <file.jsonl>]");
+            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--composer template|openai] [--diagnostics <file.json>]");
             return CliExitCodes.UsageError;
         }
 
@@ -69,12 +69,14 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
             cases = new JsonlRecordReader().ReadAll(inputReader);
         }
 
-        var outputWriter = new JsonlRecordWriter<AgentOutput>();
-        var diagnosticsWriter = new JsonlRecordWriter<TaskDiagnostics>();
-
+        // Output streams are opened here, before the batch loop, deliberately: an invalid
+        // output/diagnostics path (bad directory, no write permission) must fail immediately,
+        // not after every record has already run through the composer and any LLM calls.
         await using var outputStream = new StreamWriter(outputPath);
         await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
 
+        var outputs = new List<AgentOutput>();
+        var diagnosticsRecords = new List<TaskDiagnostics>();
         int failureCount = 0;
 
         foreach (ProspectCase prospectCase in cases)
@@ -94,12 +96,17 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
                 continue;
             }
 
-            outputWriter.WriteAll(outputStream, [result.Output]);
+            outputs.Add(result.Output);
+            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
+        }
 
-            if (diagnosticsStream is not null)
-            {
-                diagnosticsWriter.WriteAll(diagnosticsStream, [new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics)]);
-            }
+        var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
+        await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
+
+        if (diagnosticsStream is not null)
+        {
+            var diagnosticsWriter = new JsonArrayRecordWriter<TaskDiagnostics>();
+            await diagnosticsWriter.WriteAllAsync(diagnosticsStream, diagnosticsRecords, cancellationToken);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;

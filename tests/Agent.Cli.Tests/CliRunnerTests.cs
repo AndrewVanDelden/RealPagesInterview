@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Agent.Cli;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -80,7 +81,7 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_TemplateComposerTwoValidRecords_WritesTwoOutputLinesAndReturnsSuccess()
+    public async Task RunAsync_TemplateComposerTwoValidRecords_WritesTwoOutputRecordsAndReturnsSuccess()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
@@ -97,9 +98,10 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-            string[] outputLines = (await File.ReadAllLinesAsync(outputPath)).Where(l => l.Length > 0).ToArray();
-            Assert.Equal(2, outputLines.Length);
-            Assert.Contains("next_message", outputLines[0]);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(JsonValueKind.Array, output.RootElement.ValueKind);
+            Assert.Equal(2, output.RootElement.GetArrayLength());
+            Assert.True(output.RootElement[0].TryGetProperty("next_message", out _));
         }
         finally
         {
@@ -128,8 +130,8 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
 
             Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            string[] outputLines = (await File.ReadAllLinesAsync(outputPath)).Where(l => l.Length > 0).ToArray();
-            Assert.Single(outputLines);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(1, output.RootElement.GetArrayLength());
             Assert.Contains("t2", errorWriter.ToString());
         }
         finally
@@ -140,7 +142,7 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_DiagnosticsPathProvided_WritesOneTypedDiagnosticsLinePerRecord()
+    public async Task RunAsync_DiagnosticsPathProvided_WritesOneTypedDiagnosticsRecordPerRecord()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
@@ -153,10 +155,11 @@ public class CliRunnerTests
         {
             await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
 
-            string[] diagnosticsLines = (await File.ReadAllLinesAsync(diagnosticsPath)).Where(l => l.Length > 0).ToArray();
-            Assert.Single(diagnosticsLines);
-            Assert.Contains("\"task_id\":\"t1\"", diagnosticsLines[0]);
-            Assert.Contains("\"diagnostics\"", diagnosticsLines[0]);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal(1, diagnostics.RootElement.GetArrayLength());
+            JsonElement firstRecord = diagnostics.RootElement[0];
+            Assert.Equal("t1", firstRecord.GetProperty("task_id").GetString());
+            Assert.True(firstRecord.TryGetProperty("diagnostics", out _));
         }
         finally
         {

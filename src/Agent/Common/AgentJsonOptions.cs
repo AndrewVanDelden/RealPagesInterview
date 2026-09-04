@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Agent.Domain;
@@ -11,5 +12,11 @@ public static class AgentJsonOptions
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         Converters = { new JsonStringEnumConverter<CommunicationChannel>(JsonNamingPolicy.CamelCase) },
         RespectNullableAnnotations = true,
+        // The default encoder escapes ordinary punctuation and every non-ASCII character
+        // to \uXXXX as an HTML/XSS precaution. None of our JSON is ever embedded in a web
+        // page - it is JSONL on ingestion and a formatted JSON array on output, both read
+        // by humans and by our own reader - so that precaution only makes composed message
+        // text unreadable for no benefit.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 }

@@ -873,3 +873,149 @@ fix #1 above: the real gap wasn't the type, it was the missing check.
   email/`follow_up_in_days` outputs.
 - Final: 109 tests, 100% line/branch/method coverage across both `Agent
   .Tests` and `Agent.Cli.Tests`.
+
+---
+
+## Post-MVP hardening: readable JSON output
+
+### Before
+
+Andrew's reaction to the actual CLI output file: unreadable. `System.Text
+.Json`'s default encoder escapes ordinary punctuation and every non-ASCII
+character to `\uXXXX` sequences as an HTML/XSS precaution - an apostrophe
+in a composed message became `'`, an accented name like "Lucía" became
+"Lucía". None of our JSON is ever embedded in a web page; it is a
+JSONL file read by our own reader and, just as importantly, by a human
+reviewing it. The precaution had no benefit here and made every composed
+message harder to read than the actual text the LLM or template wrote.
+
+This is a readability fix, not a format change: the output stays valid
+JSONL (one JSON object per line, per BACKLOG 5.2's contract) - only the
+*content* of the strings changes, from escaped to literal characters.
+
+### After
+
+- `AgentJsonOptions.Default` (the single shared options object used by
+  ingestion, output serialization, and the OpenAI request/response bodies)
+  now sets `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping`. Because
+  every JSON touchpoint in the codebase already went through this one
+  shared options object (a Sprint 1 decision), fixing it in one place fixed
+  it everywhere - ingestion, CLI output, and the OpenAI wire format all read
+  cleanly now, not just the output file.
+- Verified against the actual CLI output: the body text now reads
+  `you're looking in Richardson, TX` instead of the previous escaped
+  form (a backslash-u sequence in place of the apostrophe).
+- Final: 111 tests, 100% line/branch/method coverage.
+
+---
+
+## Post-MVP hardening: output format changed from JSONL to a JSON array
+
+### Before
+
+Andrew's principle for resolving this kind of question, stated directly:
+if it's in `problem_statement.txt`, it's law and gets done exactly as
+stated; if it only appears in our own planning documents (`BACKLOG.md`,
+`DESIGN.md`), it can be amended when something better is warranted.
+Re-checked `problem_statement.txt` against that test: it says "You are
+given a JSONL file" (input only) and never once constrains the *output*
+format. "Read JSONL, write JSONL" in BACKLOG.md 5.2 was purely our own
+invention, not a requirement - amendable, and Andrew confirmed amending it
+directly ("backlog can be ammended").
+
+Changed the CLI's `--output`/`--diagnostics` files from compact
+line-delimited JSONL to a single indented JSON array. Input parsing stays
+strict JSONL, unchanged - that half of the format *is* stated in the actual
+ask.
+
+### After
+
+- `JsonlRecordWriter<T>` (line-per-record) replaced with
+  `JsonArrayRecordWriter<T>` (one indented JSON array via
+  `JsonSerializer.Serialize(IEnumerable<T>, ...)` with `WriteIndented =
+  true` - the array wrapping is free, System.Text.Json serializes any
+  `IEnumerable<T>` as a JSON array natively). Empty input now correctly
+  produces `[]`, a valid JSON document, rather than an empty/zero-byte file.
+- `CliRunner` restructured: results now accumulate into `List<AgentOutput>`
+  / `List<TaskDiagnostics>` during the per-record loop (per-record error
+  isolation unchanged - one bad record still can't discard the others) and
+  the whole array is written once after the loop, instead of appending one
+  line per record as it completed. Traded away: true crash resilience (a
+  genuine unhandled crash mid-loop now loses the whole batch instead of
+  whatever had already been flushed) for a single well-formed JSON
+  document - deliberate, since a real crash is already an "something is
+  broken" scenario outside the intended contract either way.
+  `Agent.Cli.Tests` assertions that counted output lines (`File
+  .ReadAllLinesAsync(...).Length`) were rewritten to parse the file as JSON
+  and check `GetArrayLength()` / element properties instead - counting
+  lines was always really an assumption about JSONL, not what the tests
+  were actually trying to verify (record count, correct shape).
+  `docs/BACKLOG.md`, `README.md` amended to match (`out.jsonl` -> `out.json`
+  in examples), consistent with the "can be amended" ruling.
+- Final: 112 tests, 100% line/branch/method coverage across `Agent.Tests`
+  and `Agent.Cli.Tests`.
+
+---
+
+## PR #9 review response
+
+Andrew's own review (via the Antigravity/Gemini reviewer, per
+[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md)) on the escaping/JSON-array PR
+raised seven points. Triaged rather than blanket-applied:
+
+**Fixed:**
+
+1. **Fail-fast regression (a real bug the refactor introduced).**
+   Accumulating results and writing once at the end had moved
+   `new StreamWriter(outputPath)` to *after* the whole batch loop. An
+   invalid output path (bad directory, no permission) would only surface
+   once every record had already run through the composer and any LLM
+   calls - wasted latency and cost before an unrecoverable failure. Fixed
+   by opening both output streams before the loop (fail-fast restored,
+   verified by pointing `--output` at a nonexistent directory and
+   confirming it now fails immediately) while still deferring the actual
+   array *write* until after accumulation, so the JSON-array format is
+   unaffected.
+2. **Stale doc comment.** `AgentJsonOptions.Default`'s comment still said
+   "JSONL file" after this same PR changed output to a JSON array. Updated.
+3. **Synchronous I/O in an async pipeline.** `IRecordWriter<T>.WriteAll`
+   was a blocking synchronous call inside `CliRunner.RunAsync`. Changed to
+   `Task WriteAllAsync(TextWriter, IEnumerable<T>, CancellationToken)`,
+   using `TextWriter.WriteAsync(ReadOnlyMemory<char>, CancellationToken)`
+   so cancellation actually propagates through the write, not just the
+   agent calls.
+
+**Deferred, with reasoning recorded rather than silently dropped:**
+
+4. **LOH / intermediate string allocation in `JsonArrayRecordWriter`.**
+   True that `JsonSerializer.Serialize(records, options)` builds one
+   contiguous string before writing it. The suggested fix (serialize
+   directly to a stream/`Utf8JsonWriter`) would require `IRecordWriter<T>`
+   to stop being `TextWriter`-based - which is also what backs
+   `StringWriter` in every unit test for this writer. Reworking a public
+   interface to avoid an allocation that, for this project's actual data
+   (2-12 records), is a few KB, is disproportionate now. Recorded as a
+   real, known limitation rather than an oversight.
+5. **Crash/cancellation loses accumulated-but-unwritten output.** This is
+   the same tradeoff already called out explicitly in this file's "Post-MVP
+   hardening: output format changed from JSONL to a JSON array" entry
+   above - the reviewer's comment confirms it as a legitimate concern, not
+   news, and the reasoning for accepting it stands: a genuine unhandled
+   crash is already outside the intended per-record-isolation contract.
+
+**No action (informational):**
+
+6. Praise/confirmation that the `problem_statement.txt` vs. `BACKLOG.md`
+   distinction was reasoned correctly - no change requested.
+7. A security note that `UnsafeRelaxedJsonEscaping` leaves `<`, `>`, `&`
+   unescaped, with the caveat "fine for files and API payloads, not for
+   raw HTML embedding" - correct, and this JSON is never embedded in HTML,
+   so no change needed.
+
+Also resolved a real merge conflict (PR #9's branch had fallen behind `dev`
+after PR #7 and #8 merged) - only `TalkingPoints.md` conflicted, since the
+code changes touched disjoint files; the two "Post-MVP hardening" sections
+were combined in chronological order.
+
+Final: 122 tests, 100% line/branch/method coverage across `Agent.Tests`
+and `Agent.Cli.Tests`.

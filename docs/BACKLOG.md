@@ -98,8 +98,11 @@ Suggested timebox for a roughly four-hour window is in brackets per sprint.
   - Run the pipeline, assemble `AgentOutput`, carry diagnostics (states, violations).
   - Acceptance: sample 1 produces sms + `start_cadence`; sample 2 produces email + `follow_up_in_days`.
 - **5.2 CLI.**
-  - `--input`, `--output`, `--composer template|openai`. Read JSONL, write JSONL.
-  - Acceptance: `dotnet run -- --input sample.jsonl --output out.jsonl` writes 2 valid output lines.
+  - `--input`, `--output`, `--composer template|openai`. Read JSONL (required by
+    `problem_statement.txt`); write a single indented JSON array (our own choice, amended
+    post-MVP for readability - the problem statement only constrains the input format).
+  - Acceptance: `dotnet run -- --input sample.jsonl --output out.json` writes a
+    2-element JSON array of valid output records.
 
 ## Sprint 6: Eval harness [30 min]
 
