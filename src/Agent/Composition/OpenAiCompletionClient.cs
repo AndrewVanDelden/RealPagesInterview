@@ -10,25 +10,30 @@ public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey,
 
     public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default)
     {
-        var requestBody = new
-        {
+        var requestBody = new OpenAiChatRequest(
             model,
-            messages = new object[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt },
-            },
-            response_format = new { type = "json_object" },
-        };
+            [
+                new OpenAiChatRequestMessage("system", systemPrompt),
+                new OpenAiChatRequestMessage("user", userPrompt),
+            ],
+            new OpenAiResponseFormat("json_object"));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, CompletionsEndpoint)
         {
-            Content = JsonContent.Create(requestBody),
+            Content = JsonContent.Create(requestBody, options: AgentJsonOptions.Default),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
         using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"OpenAI request failed with status {(int)response.StatusCode} ({response.StatusCode}): {errorBody}",
+                inner: null,
+                response.StatusCode);
+        }
 
         OpenAiChatResponse? chatResponse = await response.Content.ReadFromJsonAsync<OpenAiChatResponse>(AgentJsonOptions.Default, cancellationToken);
 

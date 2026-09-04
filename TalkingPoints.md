@@ -452,6 +452,90 @@ Confirmed green:
   pattern as Sprint 1 and 2's coverage-gate catches, a real gap in test
   variety, not a coverage-exclusion problem.
 - Final: 53 tests total, 100% line/branch/method coverage.
+- Post-PR review (`/code-review` on PR #3, plus Antigravity/Gemini's parallel
+  review on the same branch) surfaced 17 findings across the two reviews,
+  several overlapping. Fixed under the same TDD discipline as prior sprints:
+  - `TemplateMessageComposer` and `OpenAiMessageComposer` both set
+    `Cta.Type` to the raw `primary_cta` value ("book_tour"), but
+    `sample.jsonl`'s ground truth expects `cta.type` to be "schedule_tour"
+    - a distinct output-vocabulary value, not the compliance-label string.
+    Added `PrimaryCtaVocabulary.ToCtaType`, a small mapping table (the only
+    known mapping, "book_tour" -> "schedule_tour", with unrecognized values
+    passed through unchanged per the working agreement's "under-determined,
+    make it configurable" clause). `TemplateMessageComposer` uses it
+    directly; `OpenAiMessageComposer` now tells the model the required
+    `cta_type` explicitly in the prompt instead of leaving it to guess.
+  - `OpenAiMessageComposer.ComposeAsync` let `HttpRequestException` and
+    `InvalidOperationException` from `ICompletionClient.CompleteAsync`
+    propagate unhandled, defeating the whole point of `Result<NextMessage>`.
+    Now wrapped in a `catch` that converts both to `Result.Failure`, with
+    tests proving it for both exception types.
+  - `OpenAiCompletionClient`'s outbound request used an anonymous object
+    with `JsonContent.Create(requestBody)` and no explicit options, so it
+    silently used `System.Net.Http.Json`'s own camelCase default instead of
+    `AgentJsonOptions.Default`'s snake_case policy - correct today only
+    because the anonymous type's C# property names were hand-typed already
+    snake_case. Replaced with typed `OpenAiChatRequest`/
+    `OpenAiChatRequestMessage`/`OpenAiResponseFormat` records (closing a
+    separate Pillar 2 "Extreme Explicit Typing" finding at the same time)
+    serialized with `AgentJsonOptions.Default` explicitly, so a future field
+    addition renders correctly by policy, not by coincidence.
+  - `EnsureSuccessStatusCode()` discarded OpenAI's actual error JSON body
+    (rate-limit reason, invalid-key detail) before it could be read. Now
+    reads the body on a non-success response and includes it in the thrown
+    `HttpRequestException`'s message. Considered introducing a dedicated
+    exception type per Antigravity's suggestion, but decided against it:
+    once `OpenAiMessageComposer` catches and converts to `Result.Failure`
+    at the boundary, callers of `IMessageComposer` never see the raw BCL
+    exception type anyway, so a bespoke exception hierarchy would add
+    surface area without a caller that needs to distinguish further.
+  - `BuildUserPrompt` interpolated ingested data (first name, property,
+    interest, primary CTA) directly into the LLM prompt with no boundary
+    between data and instructions - a prompt-injection surface, since this
+    data originates from an unseen hold-out file. Wrapped it in a labeled
+    `<prospect_data>...</prospect_data>` block with an explicit instruction
+    to treat its contents as data, never as directives, and echoed the same
+    warning in the system prompt.
+  - `TemplateMessageComposer.ComposeAsync` had no validation that
+    `FirstName`, `PropertyName`, or `PrimaryCta` were non-empty - ingest
+    only rejects JSON `null`, not `""`. An empty `primary_cta` would have
+    produced a body like "Reply to  at Oak Ridge Apartments." while still
+    returning `Result.Success`. Added a guard returning `Result.Failure`
+    for any of the three being null/whitespace.
+  - `OpenAiMessageComposer`'s system prompt hardcoded "opt-out instructions
+    always required," ignoring `CaseConstraints.IncludeOptOutInstructions`
+    (a real per-case field). `NoPiiLeak`/`NoSensitiveDiscrimination` stay a
+    static always-on baseline (defensible - there's no case where a leasing
+    message should discriminate), but opt-out is now a per-case directive
+    in the user prompt, since a legitimately opt-out-exempt transactional
+    message is realistic and the field exists specifically to vary.
+  - `TemplateMessageComposer.BuildInterestPhrase` and
+    `OpenAiMessageComposer.BuildUserPrompt` both independently re-derived
+    the same "amenity beats city beats nothing" precedence rule - and, per
+    Antigravity's finding, that precedence silently dropped city interest
+    whenever amenity interest was also present, losing real personalization
+    context. Added `ProspectProfile.HasAmenityInterest`/`HasCityInterest`
+    (trivial, testable presence checks) and rewrote both composers to
+    mention amenity interest AND city interest whenever each is present,
+    instead of picking one exclusively. This removes both the duplication
+    (no more shared either/or decision to keep in sync) and the
+    drops-city-interest bug in one fix.
+  - Antigravity also flagged `TemplateMessageComposer`'s `Cta.Options`/
+    `Cta.Link` always being `null`, differing from `sample.jsonl`'s CTA
+    shapes (tour time slots, a booking link). Investigated and left
+    unchanged: no field on `ProspectCase`/`ProspectContext`/
+    `ProspectProfile` carries tour-slot or booking-URL data anywhere -
+    those sample values are the LLM's own invented/business-supplied
+    content. Fabricating them in the deterministic template composer would
+    contradict the system prompt's own "never invent availability" rule
+    applied to the wrong composer; the honest `null` is correct until a
+    real domain field exists to populate them.
+  - `docs/BACKLOG.md`'s Sprint 2.3 bullet still said "quiet-hours window"
+    with no pointer to the scope-out decision recorded in
+    `docs/CODE_REVIEW.md` and `docs/DESIGN.md`. Added a one-line
+    cross-reference rather than leaving the acceptance bullet unexplained.
+  - Final: 71 tests, 100% line/branch/method coverage, confirmed via
+    `.\test.ps1`.
 
 ---
 

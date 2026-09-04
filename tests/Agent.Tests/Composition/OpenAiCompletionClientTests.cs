@@ -35,6 +35,42 @@ public class OpenAiCompletionClientTests
     }
 
     [Fact]
+    public async Task CompleteAsync_ErrorStatusCodeWithBody_ExceptionMessageIncludesResponseBody()
+    {
+        const string errorJson = """{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}""";
+        using var httpResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+        {
+            Content = new StringContent(errorJson, Encoding.UTF8, "application/json"),
+        };
+        using var httpClient = new HttpClient(new FakeHttpMessageHandler(httpResponse));
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        HttpRequestException exception = await Assert.ThrowsAsync<HttpRequestException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Contains("Rate limit reached", exception.Message);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_RequestBody_UsesSnakeCaseFieldNames()
+    {
+        const string responseJson = """{"choices":[{"message":{"content":"ok"}}]}""";
+        using var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
+        };
+        var handler = new FakeHttpMessageHandler(httpResponse);
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        await client.CompleteAsync("system prompt", "user prompt");
+
+        Assert.NotNull(handler.LastRequestBody);
+        Assert.Contains("\"response_format\"", handler.LastRequestBody);
+        Assert.Contains("\"model\"", handler.LastRequestBody);
+        Assert.Contains("\"messages\"", handler.LastRequestBody);
+    }
+
+    [Fact]
     public async Task CompleteAsync_NoChoicesReturned_ThrowsInvalidOperationException()
     {
         const string responseJson = """{"choices":[]}""";

@@ -9,7 +9,8 @@ internal static class SampleProspectCases
         string propertyName = "Oak Ridge Apartments",
         string? cityInterest = "Richardson, TX",
         IReadOnlyList<string>? amenityInterest = null,
-        string primaryCta = "book_tour")
+        string primaryCta = "book_tour",
+        bool includeOptOutInstructions = true)
     {
         var profile = new ProspectProfile(firstName, cityInterest, amenityInterest);
         var context = new ProspectContext(
@@ -20,7 +21,7 @@ internal static class SampleProspectCases
             "en",
             profile);
         var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: false);
-        var constraints = new CaseConstraints(NoPiiLeak: true, NoSensitiveDiscrimination: null, IncludeOptOutInstructions: true, primaryCta);
+        var constraints = new CaseConstraints(NoPiiLeak: true, NoSensitiveDiscrimination: null, includeOptOutInstructions, primaryCta);
         var assertions = new CaseAssertions(RequiredStates: [], constraints);
         var thresholds = new CaseThresholds(2000, 0.85, 0.9, 0);
 

@@ -10,6 +10,13 @@ public sealed class TemplateMessageComposer : IMessageComposer
         string firstName = prospectCase.Input.Profile.FirstName;
         string propertyName = prospectCase.Input.PropertyName;
         string primaryCta = prospectCase.Assertions.Constraints.PrimaryCta;
+
+        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(propertyName) || string.IsNullOrWhiteSpace(primaryCta))
+        {
+            return Task.FromResult(Result<NextMessage>.Failure(
+                "Prospect case is missing a required field (first name, property name, or primary CTA)."));
+        }
+
         string interestPhrase = BuildInterestPhrase(prospectCase.Input.Profile);
         string ctaPhrase = primaryCta.Replace('_', ' ');
 
@@ -21,7 +28,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
             ? $"Tour {propertyName}"
             : null;
 
-        var cta = new Cta(primaryCta, null, null);
+        var cta = new Cta(PrimaryCtaVocabulary.ToCtaType(primaryCta), null, null);
         var message = new NextMessage(channel, null, subject, body, cta);
 
         return Task.FromResult(Result<NextMessage>.Success(message));
@@ -29,16 +36,20 @@ public sealed class TemplateMessageComposer : IMessageComposer
 
     private static string BuildInterestPhrase(ProspectProfile profile)
     {
-        if (profile.AmenityInterest is { Count: > 0 } amenities)
+        var clauses = new List<string>();
+
+        if (profile.HasAmenityInterest)
         {
-            return $"We heard you're interested in {string.Join(" and ", amenities)}. ";
+            clauses.Add($"interested in {string.Join(" and ", profile.AmenityInterest!)}");
         }
 
-        if (profile.CityInterest is { Length: > 0 } city)
+        if (profile.HasCityInterest)
         {
-            return $"We heard you're looking in {city}. ";
+            clauses.Add($"looking in {profile.CityInterest}");
         }
 
-        return string.Empty;
+        return clauses.Count > 0
+            ? $"We heard you're {string.Join(" and ", clauses)}. "
+            : string.Empty;
     }
 }

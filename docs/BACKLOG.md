@@ -52,6 +52,7 @@ Suggested timebox for a roughly four-hour window is in brackets per sprint.
   - Acceptance: sample 1 returns sms; sample 2 returns email; none-consented returns none.
 - **2.3 Send scheduler.**
   - Timezone-aware, quiet-hours window, channel default hour (sms 09:00, email 10:00).
+    Quiet-hours window scoped out; see [CODE_REVIEW.md](CODE_REVIEW.md#known-deliberate-scope-decisions).
   - Acceptance: sms case resolves 09:00 local; email case resolves 10:00 local; a
     late-night `last_interaction` pushes into the allowed window.
 - **2.4 Next-action planner.**
