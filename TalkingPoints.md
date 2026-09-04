@@ -287,11 +287,120 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+- `ConsentGate.Evaluate` and `ChannelSelector.Select` share one source of
+  truth for "is this channel opted in": `ConsentPreferencesExtensions.IsOptedIn`,
+  a switch expression over `CommunicationChannel` in `Agent.Domain` (DRY -
+  the per-channel bool lookup used to live in two places during design).
+- `ChannelSelector` returns `Option<CommunicationChannel>` (from
+  `Agent.Common`, already introduced during Sprint 1 code review) rather than
+  a nullable enum, now that the codebase has an established option type -
+  one convention for "value or absence," not two.
+- `SendScheduler`: channel default hour (sms 09:00, email 10:00, voice 09:00
+  as an unproven default - no sample covers voice) plus a single rollover
+  rule (if today's default-hour slot has already passed relative to
+  `last_interaction`, use tomorrow instead). Correction from a later review:
+  the phrase "quiet-hours window" is not only DESIGN.md elaboration, it is
+  in BACKLOG.md's own 2.3 acceptance bullet ("Timezone-aware, quiet-hours
+  window, channel default hour"), so the original rationale here
+  misattributed where the requirement came from. It genuinely is absent
+  from `problem_statement.txt` and from sample.jsonl's assertions/
+  thresholds, and Andrew's actual call - scoping it out in favor of the
+  simpler default-hour-plus-rollover rule - stands; it independently
+  satisfies all three of 2.3's stated acceptance criteria (sms → 09:00,
+  email → 10:00, late-night last_interaction pushes to next day). What
+  changed is only the stated reason, not the decision.
+- `NextActionPlanner`: horizon = days between `move_date_target` and
+  `last_interaction` (`DateOnly.DayNumber` difference), threshold defaults
+  to 45 days per DESIGN.md's assumptions log. The short-horizon cadence name
+  (`prospect_welcome_short_horizon`) and long-horizon follow-up interval (3
+  days) are single-sample-derived constants, made configurable via
+  `NextActionPlannerOptions` rather than asserted as a general rule, per the
+  working agreement's "say so explicitly and make it configurable" clause.
 
 ### After
 
-_Pending._
+- All four components green on the first real `dotnet test` run except one
+  gap the coverage gate caught: `ConsentPreferencesExtensions.IsOptedIn`'s
+  switch expression triggered CS8524 (non-exhaustive) even though all three
+  named `CommunicationChannel` values are handled - the compiler treats enum
+  switches as open because any underlying int is castable to the enum type,
+  and generates an untested fallback branch. Fixed properly, not by
+  suppressing the warning: added an explicit
+  `ArgumentOutOfRangeException` guard arm and a test that casts an
+  out-of-range enum value to exercise it. Real coverage of real defensive
+  code, not a coverage exclusion.
+- Final: 27 tests total (16 new for Sprint 2 plus its 1 guard-clause test),
+  100% line/branch/method coverage.
+- Workflow: `gh pr merge` is blocked by Claude Code's own permission
+  classifier, not by Andrew - Andrew merges each sprint's PR himself on
+  GitHub going forward; Claude still creates the branch, commits, pushes,
+  and opens the PR.
+- Post-PR code review (`/code-review` on PR #2, plus a separate Antigravity/
+  Gemini review running against the same branch) surfaced 15 findings
+  across the two reviews, several overlapping. Fixed under the same TDD
+  discipline as Sprint 1's review-fix round:
+  - `Agent.Common.Option<TValue>.Value` and `Result<TValue>.Value`/`Error`
+    returned `default(TValue)` on `None()`/`Failure()` instead of throwing.
+    For a value-type `TValue` (e.g. `CommunicationChannel`, whose zero
+    member is `Sms`), `Option<CommunicationChannel>.None().Value` silently
+    returned `Sms` - a real channel, not an empty marker - confirmed with a
+    standalone repro. Both types now throw `InvalidOperationException` on
+    invalid access, matching `Nullable<T>.Value`'s convention.
+  - `coverlet.collector` had been removed again in this Sprint 2 branch,
+    reintroducing the exact regression Sprint 1's review fixed and merged
+    into `dev`. Re-added alongside `coverlet.msbuild`. No rationale for the
+    removal was ever found; it reads as branching from a working copy that
+    predated the Sprint 1 fix.
+  - `SendScheduler.Resolve` threw a raw, unhandled `TimeZoneNotFoundException`
+    for a malformed timezone id, and `DefaultSendHour[channel]` threw a raw
+    `KeyNotFoundException` for an unmapped channel - two different BCL
+    exceptions for what's the same class of problem
+    (`ConsentPreferencesExtensions.IsOptedIn` already throws
+    `ArgumentOutOfRangeException` for the equivalent case). Extracted a
+    shared `Agent.Common.TimeZones.Resolve` helper that wraps
+    `FindSystemTimeZoneById` and throws `ArgumentException` with the bad id
+    in the message; `DefaultSendHour` now uses `TryGetValue` and throws
+    `ArgumentOutOfRangeException` for consistency with `IsOptedIn`.
+  - `NextActionPlanner.Plan` had no floor check on `horizonDays`, so a
+    `moveDateTarget` before `lastInteractionDate` silently produced
+    `start_cadence` - identical to a legitimate near-term prospect. Now
+    throws `ArgumentOutOfRangeException`.
+  - `INextActionPlanner.Plan` took a bare `DateOnly lastInteractionDate`,
+    with no timezone-aware derivation from `ProspectContext.LastInteraction`
+    (a `DateTimeOffset`), unlike `SendScheduler.Resolve`'s established
+    pattern. Changed the interface to `Plan(DateOnly moveDateTarget,
+    DateTimeOffset lastInteraction, string timeZoneId)`, converting via the
+    same `TimeZones.Resolve` + `TimeZoneInfo.ConvertTime` used by
+    `SendScheduler`. Added a regression test with `last_interaction =
+    2025-12-25T02:30:00Z` in `America/Los_Angeles`: naive UTC-based date
+    extraction gives a 45-day horizon (`start_cadence`); the correct local
+    date gives 46 (`follow_up_in_days`) - proving the fix actually changes
+    behavior, not just the signature.
+  - `NextActionPlannerOptions` accepted any integer with no validation.
+    Converted from a bare positional record to one with a validating
+    constructor: negative `ShortHorizonThresholdDays` or non-positive
+    `LongHorizonFollowUpDays` now throw `ArgumentOutOfRangeException`. Also
+    added a test proving the configurability itself works (a custom
+    threshold flips a sample case's classification), which no prior test
+    exercised.
+  - Test coverage gaps closed: `ChannelSelector` fallback (first preference
+    not consented, second one is), `ConsentGate` with empty channel
+    preferences, `SendScheduler` with the `Voice` channel.
+  - The "quiet-hours window" gap and its documentation misattribution (see
+    correction above, Sprint 2 "Before") - decision unchanged, rationale
+    corrected.
+  - `SendSchedulerTests.Resolve_EmailSampleCase_ResolvesToTenAmLocal` only
+    ever asserted the time-of-day, not the date, which one review flagged
+    as potentially masking a bug. Investigated directly against
+    `docs/DESIGN.md`'s sequence diagram and assumption #2 ("horizon is
+    carried by `next_action`, not the timestamp"; `Resolve` is called with
+    the raw `last_interaction`, not a follow-up-shifted date) and confirmed
+    this is intended, documented scope, not a defect - composing the
+    follow-up offset with the time-of-day resolution is an orchestrator
+    concern for Sprint 5. Added a comment to the test explaining why, left
+    the assertion as-is.
+  - Final: 41 tests, 100% line/branch/method coverage, confirmed via
+    `.\test.ps1`.
 
 ---
 
