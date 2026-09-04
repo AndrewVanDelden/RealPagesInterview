@@ -723,11 +723,12 @@ section 6's original wording, made explicit rather than silently
 implemented differently:
 
 - **`no_pii_leak` and `safety_violations == 0` collapse into one field**
-  (`SafetyViolationsWithinBudget`). `SafetyValidator` produces a single
-  unified violation count across PII, opt-out, and steering checks - not
-  independently distinguishable categories - so scoring them as two
-  separate signals would report a distinction the system doesn't actually
-  have.
+  (`SafetyViolationsWithinBudget`). `SafetyValidator` itself returns
+  per-category violation messages, but `LeasingMessageAgent` collapses
+  them into a single count (`AgentDiagnostics.SafetyViolationCount`)
+  before they reach the evaluator - scoring PII and safety-violation-count
+  as two separate signals isn't supported by the diagnostics contract this
+  evaluator actually receives.
 - **The "horizon cue" personalization token is dropped.** First name,
   property, and interest are each a concrete, checkable string. "Horizon
   cue" names no specific pattern - scoring it would mean inventing a rule
@@ -748,14 +749,11 @@ Action | ...`), not a table library - a handful of columns read by a human
 during the live review doesn't need a dependency.
 
 CLI: new `--eval-report <file>` flag. When present, prints the scorecard to
-the console and writes it to the file. This runs the batch a *second* time
-through the agent (`Evaluator` owns its own `agent.RunAsync` calls,
-independent of the main `--output` pass) - harmless for `--composer
-template` (deterministic, no cost), doubles latency/cost for `--composer
-openai`. Accepted deliberately: eval mode is a rehearsal/diagnostic step
-against labeled data, not the production hold-out path, so the two passes
-serve genuinely different purposes rather than being redundant work worth
-engineering away under time pressure.
+the console and writes it to the file, scored from the same results already
+captured during the main `--output` pass - `Evaluator` takes precomputed
+`ScoredRun`s (case, result, latency) rather than calling `agent.RunAsync`
+itself, so the report describes exactly what was persisted, not a second,
+possibly different sample.
 
 ### After
 
@@ -780,10 +778,50 @@ engineering away under time pressure.
   would have been a real DRY violation, not a stylistic one.
 - Verified against the actual `sample.jsonl` file end-to-end (not just
   unit tests): both records pass every column - channel, action, opt-out,
-  CTA, safety, personalization (1.00 on both), latency - matching BACKLOG
-  6.1's literal acceptance criterion exactly.
+  CTA, safety, personalization (1.00 on both), latency - exceeding
+  BACKLOG 6.1's narrower literal acceptance criterion (channel, action,
+  personalization only).
 - Final: 147 tests in `Agent.Tests`, 11 in `Agent.Cli.Tests`, 100%
   line/branch/method coverage on both.
+
+### Post-review fix round
+
+A code review (own findings plus Antigravity/Gemini's) surfaced several
+real gaps, addressed together since fixing the most substantive one
+(the double-run) reshaped how the others were fixed:
+
+- **`Evaluator` no longer drives its own `agent.RunAsync` loop.** It now
+  takes precomputed `ScoredRun`s (case, result, latency) captured once by
+  `CliRunner` during the main batch pass, and `Evaluate` is a synchronous,
+  pure scoring function. This closes three findings at once: the eval
+  report can no longer describe a different (non-deterministic) sample
+  than what was persisted to `--output`; a `--composer openai` run no
+  longer pays for the batch twice; and per-record isolation is no longer
+  Evaluator's problem to solve, since it never touches the agent at all.
+- **A case missing its labeled `expected` outcome is now an unscoreable
+  row, not a crash.** `RecordScore.Unscoreable` records the reason;
+  `CliRunner` logs it to stderr for visibility but no longer lets it
+  override the main pass's exit code - a labeling gap in the optional eval
+  rehearsal and a broken production batch are no longer indistinguishable
+  from the exit code alone.
+- **`ComputePersonalizationScore`'s `AmenityInterest`/`CityInterest` check
+  changed from `if/else if` to two independent `if`s** (and now reads
+  through `ProspectProfile.Amenities`/`City`, the same normalized
+  properties the composers already use) - a prospect with both no longer
+  has city interest silently dropped from scoring.
+- **`ContainsOptOutPhrase` now checks Subject+Body**, mirroring
+  `SafetyValidator.Validate`'s own search text, instead of Body alone.
+- **`ScorecardFormatter` now pads columns to a computed width** so rows
+  align regardless of `TaskId` length, and renders unscoreable rows with
+  their reason instead of blank columns.
+- **`SafetyValidator.OptOutPhrases` is now `IReadOnlyList<string>`**
+  instead of a mutable `string[]`, per Pillar 2 (immutability).
+- Not changed: the per-record latency check against `P95LatencyMs`
+  remains a per-record ceiling, not a computed percentile - that's
+  DESIGN.md's own long-standing wording ("wall-clock per record against
+  p95_latency_ms"), inherited from the problem's own threshold field name,
+  and a true percentile isn't a meaningful calculation over a 2-12 record
+  batch anyway.
 
 ---
 

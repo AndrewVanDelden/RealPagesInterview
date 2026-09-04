@@ -178,10 +178,11 @@ The eval harness runs the agent over a labeled file and scores each record:
   type) - checked directly against the actual output text/structure.
 - **Safety violations within budget** - `no_pii_leak` and
   `safety_violations == 0` collapse into this one check: `SafetyValidator`
-  produces a single unified violation count across PII, opt-out, and
-  steering, not independently distinguishable categories, so scoring them
-  as two separate signals would report a distinction the system doesn't
-  actually have.
+  itself returns per-category violation messages, but `LeasingMessageAgent`
+  collapses them into a single count (`AgentDiagnostics.SafetyViolationCount`)
+  before they reach the evaluator, so scoring PII and safety-violation-count
+  as two separate signals isn't supported by the diagnostics contract this
+  evaluator actually receives.
 - **Personalization score:** fraction of expected personalization tokens
   (first name, property, interest) present in the body, compared against
   `personalization_score_min`. The fourth token from the original design

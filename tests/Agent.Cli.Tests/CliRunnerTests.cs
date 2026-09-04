@@ -292,8 +292,11 @@ public class CliRunnerTests
         }
     }
 
+    // A record missing its labeled expected outcome no longer aborts the whole eval report -
+    // it shows up as an unscoreable row (logged to stderr for visibility), and the CLI's
+    // exit code still reflects the main --output pass, not the optional eval rehearsal.
     [Fact]
-    public async Task RunAsync_EvalReportRequestedButRecordHasNoExpectedOutcome_WritesCleanErrorAndReturnsPartialFailure()
+    public async Task RunAsync_EvalReportRequestedButRecordHasNoExpectedOutcome_ReportsUnscoreableRowAndStillSucceeds()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
@@ -307,13 +310,53 @@ public class CliRunnerTests
         {
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
 
-            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            Assert.Contains("Eval report failed", errorWriter.ToString());
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("could not be scored", errorWriter.ToString());
+            string fileContent = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("ERROR", fileContent);
         }
         finally
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // The main --output pass never requires Expected to be populated, so a perfectly normal
+    // mixed-label input file must not crash eval-reporting: the labeled record scores
+    // normally and the unlabeled one shows up as an unscoreable row, side by side.
+    [Fact]
+    public async Task RunAsync_EvalReportWithMixedLabeledAndUnlabeledRecords_ScoresLabeledAndFlagsUnlabeled()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("labeled", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("unlabeled", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: false));
+        await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            string fileContent = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("labeled", fileContent);
+            Assert.Contains("unlabeled", fileContent);
+            Assert.Contains("ERROR", fileContent);
+            Assert.Contains("PASS", fileContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
         }
     }
 }

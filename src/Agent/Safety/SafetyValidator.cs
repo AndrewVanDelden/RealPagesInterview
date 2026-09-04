@@ -19,7 +19,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // Internal, not private: Agent.Evaluation.Evaluator reuses this exact list so the
     // eval harness checks the same opt-out phrasing the validator actually enforces,
     // rather than an independently-maintained (and possibly drifting) duplicate.
-    internal static readonly string[] OptOutPhrases = ["reply stop", "text stop", "opt out", "opt-out", "unsubscribe"];
+    internal static readonly IReadOnlyList<string> OptOutPhrases = ["reply stop", "text stop", "opt out", "opt-out", "unsubscribe"];
 
     private static readonly string[] ProtectedClassAndSteeringTerms =
     [

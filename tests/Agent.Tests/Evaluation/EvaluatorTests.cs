@@ -9,9 +9,10 @@ namespace Agent.Tests.Evaluation;
 public class EvaluatorTests
 {
     private static readonly NextAction BaselineAction = new("start_cadence", "welcome", null);
+    private static readonly Evaluator Evaluator = new();
 
-    private static NextMessage Message(CommunicationChannel? channel, string body, string? ctaType = "schedule_tour") =>
-        new(channel, null, null, body, ctaType is null ? null : new Cta(ctaType, null, null));
+    private static NextMessage Message(CommunicationChannel? channel, string body, string? subject = null, string? ctaType = "schedule_tour") =>
+        new(channel, null, subject, body, ctaType is null ? null : new Cta(ctaType, null, null));
 
     private static ExpectedOutcome BaselineExpected(NextMessage? message = null, NextAction? action = null) =>
         new(message ?? Message(CommunicationChannel.Sms, "expected body"), action ?? BaselineAction);
@@ -35,223 +36,274 @@ public class EvaluatorTests
     private static AgentRunResult SuppressedResult(NextAction? action = null) =>
         new(new AgentOutput(null, action ?? BaselineAction), new AgentDiagnostics(true, null, false, 0));
 
+    private static ScoredRun Run(ProspectCase prospectCase, AgentRunResult result, double latencyMs = 1) =>
+        new(prospectCase, result, latencyMs);
+
     [Fact]
-    public async Task EvaluateAsync_ChannelMatches_ScoresTrue()
+    public void Evaluate_ChannelMatches_ScoresTrue()
     {
         ProspectCase prospectCase = BaselineCase();
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].ChannelMatches);
     }
 
     [Fact]
-    public async Task EvaluateAsync_ChannelMismatch_ScoresFalse()
+    public void Evaluate_ChannelMismatch_ScoresFalse()
     {
         ProspectCase prospectCase = BaselineCase(BaselineExpected(Message(CommunicationChannel.Sms, "expected")));
-        var actual = SuccessfulResult(Message(CommunicationChannel.Email, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Email, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.False(scorecard.RecordScores[0].ChannelMatches);
     }
 
     [Fact]
-    public async Task EvaluateAsync_NextActionTypeMatches_ScoresTrue()
+    public void Evaluate_NextActionTypeMatches_ScoresTrue()
     {
         ProspectCase prospectCase = BaselineCase();
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), BaselineAction);
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), BaselineAction);
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].NextActionTypeMatches);
     }
 
     [Fact]
-    public async Task EvaluateAsync_NextActionTypeMismatch_ScoresFalse()
+    public void Evaluate_NextActionTypeMismatch_ScoresFalse()
     {
         ProspectCase prospectCase = BaselineCase();
-        var actual = SuccessfulResult(
+        AgentRunResult actual = SuccessfulResult(
             Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."),
             new NextAction("follow_up_in_days", null, 3));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.False(scorecard.RecordScores[0].NextActionTypeMatches);
     }
 
     [Fact]
-    public async Task EvaluateAsync_OptOutRequiredAndPresent_ScoresTrue()
+    public void Evaluate_OptOutRequiredAndPresent_ScoresTrue()
     {
         ProspectCase prospectCase = BaselineCase(includeOptOutInstructions: true);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].OptOutPresent);
     }
 
     [Fact]
-    public async Task EvaluateAsync_OptOutRequiredButMissing_ScoresFalse()
+    public void Evaluate_OptOutRequiredButMissing_ScoresFalse()
     {
         ProspectCase prospectCase = BaselineCase(includeOptOutInstructions: true);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.False(scorecard.RecordScores[0].OptOutPresent);
     }
 
+    // Mirrors SafetyValidator.Validate's own search text: opt-out phrasing in the Subject
+    // is just as valid as in the Body, since that's what the real validator (the actual
+    // ship/suppress gate) checks.
     [Fact]
-    public async Task EvaluateAsync_OptOutNotRequiredAndMissing_ScoresTrue()
+    public void Evaluate_OptOutPhraseOnlyInSubject_ScoresPresent()
     {
-        ProspectCase prospectCase = BaselineCase(includeOptOutInstructions: false);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        ProspectCase prospectCase = BaselineCase(includeOptOutInstructions: true);
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Email, "Hi Taylor, book tour at Oak Ridge Apartments.", subject: "Reply STOP to opt out"));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].OptOutPresent);
     }
 
     [Fact]
-    public async Task EvaluateAsync_PrimaryCtaMatchesRequiredMapping_ScoresTrue()
+    public void Evaluate_OptOutNotRequiredAndMissing_ScoresTrue()
+    {
+        ProspectCase prospectCase = BaselineCase(includeOptOutInstructions: false);
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments."));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.True(scorecard.RecordScores[0].OptOutPresent);
+    }
+
+    [Fact]
+    public void Evaluate_PrimaryCtaMatchesRequiredMapping_ScoresTrue()
     {
         ProspectCase prospectCase = BaselineCase(primaryCta: "book_tour");
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour. Reply STOP to opt out.", ctaType: "schedule_tour"));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour. Reply STOP to opt out.", ctaType: "schedule_tour"));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].PrimaryCtaPresent);
     }
 
     [Fact]
-    public async Task EvaluateAsync_PrimaryCtaWrongType_ScoresFalse()
+    public void Evaluate_MessageHasNoCta_PrimaryCtaPresentScoresFalse()
     {
         ProspectCase prospectCase = BaselineCase(primaryCta: "book_tour");
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, call us. Reply STOP to opt out.", ctaType: "call_now"));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out.", ctaType: null));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.False(scorecard.RecordScores[0].PrimaryCtaPresent);
     }
 
     [Fact]
-    public async Task EvaluateAsync_SafetyViolationsWithinMax_ScoresTrue()
+    public void Evaluate_PrimaryCtaWrongType_ScoresFalse()
+    {
+        ProspectCase prospectCase = BaselineCase(primaryCta: "book_tour");
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, call us. Reply STOP to opt out.", ctaType: "call_now"));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.False(scorecard.RecordScores[0].PrimaryCtaPresent);
+    }
+
+    [Fact]
+    public void Evaluate_SafetyViolationsWithinMax_ScoresTrue()
     {
         ProspectCase prospectCase = BaselineCase(safetyViolationsMax: 1);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), violationCount: 1);
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), violationCount: 1);
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].SafetyViolationsWithinBudget);
     }
 
     [Fact]
-    public async Task EvaluateAsync_SafetyViolationsExceedMax_ScoresFalse()
+    public void Evaluate_SafetyViolationsExceedMax_ScoresFalse()
     {
         ProspectCase prospectCase = BaselineCase(safetyViolationsMax: 0);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), violationCount: 1);
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."), violationCount: 1);
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.False(scorecard.RecordScores[0].SafetyViolationsWithinBudget);
     }
 
     [Fact]
-    public async Task EvaluateAsync_AllPersonalizationTokensPresent_ScoresOne()
+    public void Evaluate_AllPersonalizationTokensPresent_ScoresOne()
     {
         ProspectCase prospectCase = BaselineCase(personalizationScoreMin: 1.0);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments near Richardson, TX. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments near Richardson, TX. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.Equal(1.0, scorecard.RecordScores[0].PersonalizationScore);
         Assert.True(scorecard.RecordScores[0].PersonalizationScoreMet);
     }
 
     [Fact]
-    public async Task EvaluateAsync_NoStatedInterestAtAll_PersonalizationScoreOnlyChecksNameAndProperty()
+    public void Evaluate_NoStatedInterestAtAll_PersonalizationScoreOnlyChecksNameAndProperty()
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: null) with
         {
             Expected = BaselineExpected(),
             Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
         };
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.Equal(1.0, scorecard.RecordScores[0].PersonalizationScore);
     }
 
+    // Regression test: AmenityInterest and CityInterest must both be checked when both are
+    // stated, not treated as alternatives - both TemplateMessageComposer and
+    // OpenAiMessageComposer mention both when both are present.
     [Fact]
-    public async Task EvaluateAsync_NoPersonalizationTokensPresent_ScoresZeroAndFailsThreshold()
+    public void Evaluate_BothAmenityAndCityInterestPresent_PersonalizationChecksBoth()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: "Richardson, TX", amenityInterest: ["pool"]) with
+        {
+            Expected = BaselineExpected(),
+            Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
+        };
+        AgentRunResult missingCity = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments near the pool. Reply STOP to opt out."));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, missingCity)]);
+
+        Assert.False(scorecard.RecordScores[0].PersonalizationScoreMet, "city interest was omitted from the message but the score didn't drop");
+    }
+
+    [Fact]
+    public void Evaluate_NoPersonalizationTokensPresent_ScoresZeroAndFailsThreshold()
     {
         ProspectCase prospectCase = BaselineCase(personalizationScoreMin: 0.5);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hello. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hello. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.Equal(0.0, scorecard.RecordScores[0].PersonalizationScore);
         Assert.False(scorecard.RecordScores[0].PersonalizationScoreMet);
     }
 
     [Fact]
-    public async Task EvaluateAsync_FastAgent_LatencyWithinBudget()
+    public void Evaluate_FastRun_LatencyWithinBudget()
     {
         ProspectCase prospectCase = BaselineCase(p95LatencyMs: 5000);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual, latencyMs: 10)]);
 
         Assert.True(scorecard.RecordScores[0].LatencyWithinBudget);
     }
 
     [Fact]
-    public async Task EvaluateAsync_SlowAgent_LatencyExceedsBudget()
+    public void Evaluate_SlowRun_LatencyExceedsBudget()
     {
         ProspectCase prospectCase = BaselineCase(p95LatencyMs: 5);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual, delay: TimeSpan.FromMilliseconds(50)));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual, latencyMs: 50)]);
 
         Assert.False(scorecard.RecordScores[0].LatencyWithinBudget);
     }
 
     [Fact]
-    public async Task EvaluateAsync_CaseHasNoExpectedOutcome_ThrowsArgumentException()
+    public void Evaluate_CaseHasNoExpectedOutcome_ReturnsUnscoreableRecordScore()
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal();
-        var evaluator = new Evaluator(new FakeMessageAgent(SuccessfulResult(Message(CommunicationChannel.Sms, "hi"))));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "hi"));
 
-        await Assert.ThrowsAsync<ArgumentException>(() => evaluator.EvaluateAsync([prospectCase]));
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.NotNull(score.ScoringError);
+        Assert.False(score.Passed);
+    }
+
+    // Demonstrates per-record isolation: one unscoreable case among several does not
+    // prevent the others from being scored normally.
+    [Fact]
+    public void Evaluate_OneUnscoreableAmongMultiple_StillScoresTheOthers()
+    {
+        ProspectCase unlabeledCase = SampleProspectCases.Minimal();
+        ProspectCase labeledCase = BaselineCase();
+        AgentRunResult unlabeledActual = SuccessfulResult(Message(CommunicationChannel.Sms, "hi"));
+        AgentRunResult labeledActual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(unlabeledCase, unlabeledActual), Run(labeledCase, labeledActual)]);
+
+        Assert.Equal(2, scorecard.TotalCount);
+        Assert.NotNull(scorecard.RecordScores[0].ScoringError);
+        Assert.Null(scorecard.RecordScores[1].ScoringError);
+        Assert.True(scorecard.RecordScores[1].ChannelMatches);
     }
 
     [Fact]
-    public async Task EvaluateAsync_BothActualAndExpectedSuppressed_ScoresMessageShapeChecksAsPassed()
+    public void Evaluate_BothActualAndExpectedSuppressed_ScoresMessageShapeChecksAsPassed()
     {
         ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(NextMessage: null, BaselineAction));
-        var actual = SuppressedResult();
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuppressedResult();
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         RecordScore score = scorecard.RecordScores[0];
         Assert.True(score.ChannelMatches);
@@ -262,13 +314,12 @@ public class EvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_AllChecksPass_RecordScorePassedIsTrue()
+    public void Evaluate_AllChecksPass_RecordScorePassedIsTrue()
     {
         ProspectCase prospectCase = BaselineCase(personalizationScoreMin: 0.5, p95LatencyMs: 5000);
-        var actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual, latencyMs: 10)]);
 
         Assert.True(scorecard.RecordScores[0].Passed);
         Assert.Equal(1, scorecard.PassedCount);
@@ -277,13 +328,12 @@ public class EvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_OneFailingRecord_AllPassedIsFalse()
+    public void Evaluate_OneFailingRecord_AllPassedIsFalse()
     {
         ProspectCase prospectCase = BaselineCase(BaselineExpected(Message(CommunicationChannel.Sms, "expected")));
-        var actual = SuccessfulResult(Message(CommunicationChannel.Email, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
-        var evaluator = new Evaluator(new FakeMessageAgent(actual));
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Email, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
 
-        Scorecard scorecard = await evaluator.EvaluateAsync([prospectCase]);
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.Equal(0, scorecard.PassedCount);
         Assert.Equal(1, scorecard.TotalCount);
@@ -291,19 +341,31 @@ public class EvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_RealComponentsAgainstSampleJsonl_BothRecordsPassChannelActionAndPersonalization()
+    public async Task Evaluate_RealComponentsAgainstSampleJsonl_BothRecordsPassEveryCheck()
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadSampleCases();
-        var evaluator = new Evaluator(RealAgentFactory.BuildRealAgent());
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        var runs = new List<ScoredRun>(cases.Count);
 
-        Scorecard scorecard = await evaluator.EvaluateAsync(cases);
+        foreach (ProspectCase prospectCase in cases)
+        {
+            AgentRunResult result = await agent.RunAsync(prospectCase);
+            runs.Add(new ScoredRun(prospectCase, result, LatencyMs: 1));
+        }
+
+        Scorecard scorecard = Evaluator.Evaluate(runs);
 
         Assert.Equal(2, scorecard.TotalCount);
+        Assert.True(scorecard.AllPassed, string.Join("; ", scorecard.RecordScores.Where(score => !score.Passed).Select(score => score.TaskId)));
         foreach (RecordScore score in scorecard.RecordScores)
         {
             Assert.True(score.ChannelMatches, $"{score.TaskId}: channel mismatch");
             Assert.True(score.NextActionTypeMatches, $"{score.TaskId}: next_action.type mismatch");
+            Assert.True(score.OptOutPresent, $"{score.TaskId}: opt-out missing");
+            Assert.True(score.PrimaryCtaPresent, $"{score.TaskId}: CTA mismatch");
+            Assert.True(score.SafetyViolationsWithinBudget, $"{score.TaskId}: safety violations over budget");
             Assert.True(score.PersonalizationScoreMet, $"{score.TaskId}: personalization {score.PersonalizationScore} below minimum");
+            Assert.True(score.LatencyWithinBudget, $"{score.TaskId}: latency over budget");
         }
     }
 }

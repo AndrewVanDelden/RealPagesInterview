@@ -63,9 +63,9 @@ mattered more than a self-imposed symmetry once we noticed the problem statement
 required it.
 
 Add `--eval-report <file>` against a labeled file (one with `expected` populated,
-like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds —
+like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds -
 channel, `next_action.type`, opt-out/CTA presence, safety, personalization, and
-latency, per record and overall — printed to the console and written to that file.
+latency, per record and overall - printed to the console and written to that file.
 
 ## Documentation
 

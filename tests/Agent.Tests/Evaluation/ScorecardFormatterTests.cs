@@ -55,4 +55,27 @@ public class ScorecardFormatterTests
 
         Assert.Contains("0/0", report);
     }
+
+    [Fact]
+    public void Format_UnscoreableRecord_ShowsErrorMessageInsteadOfColumns()
+    {
+        var scorecard = new Scorecard([RecordScore.Unscoreable("t3", "no expected outcome")]);
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("t3", report);
+        Assert.Contains("ERROR: no expected outcome", report);
+    }
+
+    [Fact]
+    public void Format_VaryingTaskIdLengths_PadsColumnsToAlign()
+    {
+        var scorecard = new Scorecard([PassingScore("t1"), PassingScore("prospect_welcome_day0")]);
+
+        string[] lines = ScorecardFormatter.Format(scorecard).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+
+        int shortRowFirstPipeIndex = lines[1].IndexOf('|');
+        int longRowFirstPipeIndex = lines[2].IndexOf('|');
+        Assert.Equal(shortRowFirstPipeIndex, longRowFirstPipeIndex);
+    }
 }

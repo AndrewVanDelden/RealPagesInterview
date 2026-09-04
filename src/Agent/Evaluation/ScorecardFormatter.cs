@@ -12,13 +12,28 @@ public static class ScorecardFormatter
 
     public static string Format(Scorecard scorecard)
     {
-        var builder = new StringBuilder();
-        builder.AppendLine(string.Join(" | ", Headers));
+        string[][] rows = scorecard.RecordScores.Select(FormatRow).ToArray();
+        int[] widths = ComputeColumnWidths(rows);
 
-        foreach (RecordScore score in scorecard.RecordScores)
+        var builder = new StringBuilder();
+        builder.AppendLine(FormatLine(Headers, widths));
+
+        foreach (string[] row in rows)
         {
-            builder.AppendLine(string.Join(
-                " | ",
+            builder.AppendLine(FormatLine(row, widths));
+        }
+
+        builder.AppendLine();
+        builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
+
+        return builder.ToString();
+    }
+
+    private static string[] FormatRow(RecordScore score) =>
+        score.ScoringError is { } error
+            ? [score.TaskId, "-", "-", "-", "-", "-", "-", "-", $"ERROR: {error}"]
+            :
+            [
                 score.TaskId,
                 Symbol(score.ChannelMatches),
                 Symbol(score.NextActionTypeMatches),
@@ -27,14 +42,31 @@ public static class ScorecardFormatter
                 Symbol(score.SafetyViolationsWithinBudget),
                 score.PersonalizationScore.ToString("0.00"),
                 score.LatencyMs.ToString("0"),
-                score.Passed ? "PASS" : "FAIL"));
+                score.Passed ? "PASS" : "FAIL",
+            ];
+
+    private static int[] ComputeColumnWidths(string[][] rows)
+    {
+        var widths = new int[Headers.Length];
+
+        for (int column = 0; column < Headers.Length; column++)
+        {
+            widths[column] = Headers[column].Length;
         }
 
-        builder.AppendLine();
-        builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
+        foreach (string[] row in rows)
+        {
+            for (int column = 0; column < row.Length; column++)
+            {
+                widths[column] = Math.Max(widths[column], row[column].Length);
+            }
+        }
 
-        return builder.ToString();
+        return widths;
     }
+
+    private static string FormatLine(string[] cells, int[] widths) =>
+        string.Join(" | ", cells.Select((cell, column) => cell.PadRight(widths[column])));
 
     private static string Symbol(bool value) => value ? "OK" : "FAIL";
 }

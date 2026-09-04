@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
@@ -79,10 +80,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
+        var scoredRuns = new List<ScoredRun>();
         int failureCount = 0;
 
         foreach (ProspectCase prospectCase in cases)
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;
             try
             {
@@ -98,8 +101,10 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
                 continue;
             }
 
+            stopwatch.Stop();
             outputs.Add(result.Output);
             diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
+            scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
         }
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
@@ -113,20 +118,20 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
         if (evalReportPath is not null)
         {
-            // Runs the whole batch a second time through the agent (Evaluator owns its own
-            // agent.RunAsync calls, independent of the pass above). Acceptable for --composer
-            // template (deterministic, no cost); doubles latency/cost for --composer openai.
-            // Eval mode is a rehearsal/diagnostic step against labeled data (Expected must be
-            // present), not the production hold-out path, so that tradeoff is deliberate.
-            Scorecard scorecard;
-            try
+            // Scores the results already captured above - never re-runs the agent, so the
+            // report describes exactly what was persisted to --output, not a second,
+            // possibly different sample (this matters for non-deterministic composers).
+            // A case missing its labeled expected outcome shows up as an unscoreable row
+            // rather than aborting the whole report.
+            IEvaluator evaluator = new Evaluator();
+            Scorecard scorecard = evaluator.Evaluate(scoredRuns);
+
+            foreach (RecordScore score in scorecard.RecordScores)
             {
-                scorecard = await new Evaluator(agent).EvaluateAsync(cases, cancellationToken);
-            }
-            catch (ArgumentException ex)
-            {
-                error.WriteLine($"Eval report failed: {ex.Message}");
-                return CliExitCodes.PartialFailure;
+                if (score.ScoringError is not null)
+                {
+                    error.WriteLine($"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
+                }
             }
 
             string report = ScorecardFormatter.Format(scorecard);
