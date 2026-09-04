@@ -1,0 +1,1 @@
+dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=./coverage/ /p:Threshold=100 /p:ThresholdType=line%2cbranch%2cmethod /p:ThresholdStat=total /p:ExcludeByAttribute=CompilerGeneratedAttribute --logger "console;verbosity=detailed" 2>&1 | Tee-Object -FilePath "test-output.txt"

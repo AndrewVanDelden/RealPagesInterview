@@ -14,6 +14,10 @@ out/
 .DS_Store
 Thumbs.db
 
+# Test run output
+test-output.txt
+tests/**/coverage/
+
 # Secrets - user-secrets live outside the repo by design, these are defense in depth
 *.env
 .env
