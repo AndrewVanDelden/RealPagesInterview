@@ -796,3 +796,36 @@ rather than letting it fail the whole record.
   folds that into the same "suppressed" output/diagnostics shape as a
   genuine no-consent case, conflating two different situations.
 - Final: 107 tests, 100% line/branch/method coverage.
+
+---
+
+## Post-MVP hardening: readable JSON output
+
+### Before
+
+Andrew's reaction to the actual CLI output file: unreadable. `System.Text
+.Json`'s default encoder escapes ordinary punctuation and every non-ASCII
+character to `\uXXXX` sequences as an HTML/XSS precaution - an apostrophe
+in a composed message became `'`, an accented name like "Lucía" became
+"Lucía". None of our JSON is ever embedded in a web page; it is a
+JSONL file read by our own reader and, just as importantly, by a human
+reviewing it. The precaution had no benefit here and made every composed
+message harder to read than the actual text the LLM or template wrote.
+
+This is a readability fix, not a format change: the output stays valid
+JSONL (one JSON object per line, per BACKLOG 5.2's contract) - only the
+*content* of the strings changes, from escaped to literal characters.
+
+### After
+
+- `AgentJsonOptions.Default` (the single shared options object used by
+  ingestion, output serialization, and the OpenAI request/response bodies)
+  now sets `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping`. Because
+  every JSON touchpoint in the codebase already went through this one
+  shared options object (a Sprint 1 decision), fixing it in one place fixed
+  it everywhere - ingestion, CLI output, and the OpenAI wire format all read
+  cleanly now, not just the output file.
+- Verified against the actual CLI output: the body text now reads
+  `you're looking in Richardson, TX` instead of the previous escaped
+  form (a backslash-u sequence in place of the apostrophe).
+- Final: 111 tests, 100% line/branch/method coverage.
