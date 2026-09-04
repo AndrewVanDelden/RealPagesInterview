@@ -46,14 +46,14 @@ public sealed class TemplateMessageComposer : IMessageComposer
     {
         var clauses = new List<string>();
 
-        if (profile.HasAmenityInterest)
+        if (profile.AmenityInterest is { Count: > 0 } amenities)
         {
-            clauses.Add($"interested in {string.Join(" and ", profile.AmenityInterest!)}");
+            clauses.Add($"interested in {string.Join(" and ", amenities)}");
         }
 
-        if (profile.HasCityInterest)
+        if (profile.CityInterest is { Length: > 0 } cityInterest)
         {
-            clauses.Add($"looking in {profile.CityInterest}");
+            clauses.Add($"looking in {cityInterest}");
         }
 
         return clauses.Count > 0

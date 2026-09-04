@@ -11,7 +11,7 @@ public class OpenAiMessageComposerTests
     [Fact]
     public async Task ComposeAsync_ValidJsonResponse_ReturnsSuccessWithTypedMessage()
     {
-        const string json = """{"subject":"Tour Oak Ridge","body":"Hi Taylor, book a tour!","cta_type":"book_tour","cta_options":["Thu","Fri"],"cta_link":null}""";
+        const string json = """{"subject":"Tour Oak Ridge","body":"Hi Taylor, book a tour!","cta_type":"schedule_tour","cta_options":["Thu","Fri"],"cta_link":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
@@ -21,7 +21,7 @@ public class OpenAiMessageComposerTests
         NextMessage message = result.Value!;
         Assert.Equal("Hi Taylor, book a tour!", message.Body);
         Assert.Equal("Tour Oak Ridge", message.Subject);
-        Assert.Equal("book_tour", message.Cta!.Type);
+        Assert.Equal("schedule_tour", message.Cta!.Type);
         Assert.Equal(["Thu", "Fri"], message.Cta.Options);
         Assert.Null(message.Cta.Link);
         Assert.Equal(CommunicationChannel.Sms, message.Channel);
@@ -65,7 +65,7 @@ public class OpenAiMessageComposerTests
     [Fact]
     public async Task ComposeAsync_ProspectWithAmenityInterest_StillComposesSuccessfully()
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"book_tour","cta_options":null,"cta_link":null}""";
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: ["pool", "fitness"]);
 
@@ -77,7 +77,7 @@ public class OpenAiMessageComposerTests
     [Fact]
     public async Task ComposeAsync_ProspectWithNoStatedInterest_StillComposesSuccessfully()
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"book_tour","cta_options":null,"cta_link":null}""";
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: null);
 
@@ -204,5 +204,34 @@ public class OpenAiMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.DoesNotContain("previous attempt", fakeClient.LastUserPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // We tell the model exactly which cta_type is required in the prompt, but until now
+    // nothing checked that it actually returned that value - the only check was
+    // "is cta_type non-empty." A model returning a plausible-looking but wrong CTA
+    // (e.g. call_now when schedule_tour was required) passed silently.
+    [Fact]
+    public async Task ComposeAsync_ModelReturnsWrongCtaType_ReturnsFailure()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"call_now","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "book_tour");
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("call_now", result.Error);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_ModelReturnsRequiredCtaType_Succeeds()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"call_now","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "call_now");
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
     }
 }
