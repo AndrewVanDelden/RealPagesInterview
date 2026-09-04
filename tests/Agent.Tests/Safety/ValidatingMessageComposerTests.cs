@@ -60,7 +60,7 @@ public class ValidatingMessageComposerTests
         Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        ValidationResult finalValidation = Validator.Validate(result.Value!, prospectCase.Assertions.Constraints);
+        SafetyValidationResult finalValidation = Validator.Validate(result.Value!, prospectCase.Assertions.Constraints);
         Assert.Empty(finalValidation.Violations);
     }
 
@@ -87,5 +87,58 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Equal(2, innerComposer.CallCount);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FallbackAlsoUnsafe_ReturnsFailureRatherThanUnvalidatedMessage()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var unsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, unsafeFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FallbackComposerFailsToCompose_ReturnsFailure()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var failingFallback = new SequenceMessageComposer(Result<NextMessage>.Failure("fallback boom"));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, failingFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_RetryAttempt_ReceivesPriorViolationsFromFirstAttempt()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Success(BadMessage()),
+            Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.NotNull(innerComposer.LastPriorViolations);
+        Assert.NotEmpty(innerComposer.LastPriorViolations);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FirstAttempt_ReceivesNoPriorViolations()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Null(innerComposer.LastPriorViolations);
     }
 }

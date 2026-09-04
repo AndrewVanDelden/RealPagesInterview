@@ -8,8 +8,15 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
 {
     public int CallCount { get; private set; }
 
-    public Task<Result<NextMessage>> ComposeAsync(ProspectCase prospectCase, CommunicationChannel channel, CancellationToken cancellationToken = default)
+    public IReadOnlyList<string>? LastPriorViolations { get; private set; }
+
+    public Task<Result<NextMessage>> ComposeAsync(
+        ProspectCase prospectCase,
+        CommunicationChannel channel,
+        IReadOnlyList<string>? priorViolations = null,
+        CancellationToken cancellationToken = default)
     {
+        LastPriorViolations = priorViolations;
         Result<NextMessage> result = results[Math.Min(CallCount, results.Length - 1)];
         CallCount++;
         return Task.FromResult(result);

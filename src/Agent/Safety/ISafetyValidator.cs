@@ -4,5 +4,5 @@ namespace Agent.Safety;
 
 public interface ISafetyValidator
 {
-    ValidationResult Validate(NextMessage message, CaseConstraints constraints);
+    SafetyValidationResult Validate(NextMessage message, CaseConstraints constraints);
 }

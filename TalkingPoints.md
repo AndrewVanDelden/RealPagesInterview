@@ -580,6 +580,68 @@ Confirmed green:
   principle already applied to compiler-generated record members, just a
   different coverlet mechanism for source-generator output.
 - Final: 83 tests total, 100% line/branch/method coverage.
+- Post-PR review (`/code-review` on PR #4, plus Antigravity/Gemini's parallel
+  review on the same branch) surfaced 17 findings across the two reviews,
+  several overlapping. Fixed under the same TDD discipline as prior sprints:
+  - `ValidatingMessageComposer` validated every retry attempt but returned
+    `fallbackComposer`'s output directly with no validation at all - the one
+    exit path Sprint 4's stated goal ("nothing unsafe leaves the agent")
+    most needed checked. Now validates the fallback too; if even the
+    fallback fails, returns `Result.Failure` rather than shipping
+    unvalidated content.
+  - `SafetyValidator`'s protected-class/steering matching was unanchored
+    substring search, so legitimate data collided with short deny-list
+    terms: a prospect interested in "Colorado Springs" tripped "color", a
+    prospect named "Christian" tripped the term itself. Traced end to end
+    and confirmed both are realistic, not contrived. Switched steering-term
+    matching to word-boundary regex, which fixes the substring class
+    (Colorado/color, terrace/race, colorful/color) - it does not and cannot
+    fix the homonym class (a common first name that's also a religion name),
+    which is an inherent limit of keyword matching, not a bug; the
+    validate-the-fallback-too fix above means a false positive now fails
+    safe (`Result.Failure`) instead of either shipping unsafe content or
+    looping forever.
+  - `OptOutPhrases` included the bare word "stop", so "bus stop" satisfied
+    the opt-out requirement with no real opt-out language present - and
+    word-boundary anchoring alone doesn't fix this, since "stop" in "bus
+    stop" is already a complete word. Replaced the bare word with the
+    specific phrases the composers actually generate ("reply stop", "text
+    stop", "opt out", "opt-out", "unsubscribe").
+  - `LongDigitRunPattern` (`\b\d{13,19}\b`) only matched an unbroken digit
+    run, so a formatted card number ("4111-1111-1111-1111", the common
+    real-world format) evaded detection since each group is only 4 digits.
+    Rewrote to `\b\d(?:[- ]?\d){12,18}\b` - same 13-19 total digit
+    threshold, but tolerant of space/dash grouping.
+  - `Validate` only ever checked `message.Body`; `message.Subject` (real
+    content for Email messages, LLM-generated with no more sanitization
+    than Body) was never checked at all. Now checks Subject and Body
+    together, with tests for a clean body plus a steering/PII-leaking
+    subject.
+  - The compose-validate retry loop re-invoked the inner composer with
+    identical input on retry, no feedback about what was wrong - pointless
+    for `TemplateMessageComposer` (deterministic; a retry can never change
+    its output) and a blind re-roll for `OpenAiMessageComposer`. Added an
+    optional `priorViolations` parameter to `IMessageComposer.ComposeAsync`;
+    `ValidatingMessageComposer` now passes the first attempt's violations
+    into the second attempt, and `OpenAiMessageComposer` appends them to the
+    retry prompt as explicit correction feedback. `TemplateMessageComposer`
+    accepts and ignores the parameter (documented why).
+  - `ContainsAny`/`FindFirst` were near-duplicate iteration over the same
+    predicate. Collapsed to one `FindFirst`, with `ContainsAny` expressed
+    in terms of it.
+  - `docs/CODE_REVIEW.md`'s "Known, deliberate scope decisions" section
+    was missing the Sprint 4 entry that `SafetyValidator.cs`'s own comment
+    (and TalkingPoints.md's Sprint 4 "Before" section) both claimed existed
+    there - a broken cross-reference from two directions. Added the entry,
+    including the `NoSensitiveDiscrimination`-is-intentionally-unread
+    rationale.
+  - `Agent.Safety.ValidationResult` collided by name with
+    `System.ComponentModel.DataAnnotations.ValidationResult`, latent today
+    (nothing imports that namespace) but the same category of issue that
+    got `Channel` renamed to `CommunicationChannel` in Sprint 1. Renamed to
+    `SafetyValidationResult`.
+  - Final: 95 tests, 100% line/branch/method coverage, confirmed via
+    `.\test.ps1`.
 
 ---
 
