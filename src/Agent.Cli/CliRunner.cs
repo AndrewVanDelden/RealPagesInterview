@@ -69,6 +69,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
             cases = new JsonlRecordReader().ReadAll(inputReader);
         }
 
+        // Output streams are opened here, before the batch loop, deliberately: an invalid
+        // output/diagnostics path (bad directory, no write permission) must fail immediately,
+        // not after every record has already run through the composer and any LLM calls.
+        await using var outputStream = new StreamWriter(outputPath);
+        await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
+
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
         int failureCount = 0;
@@ -95,16 +101,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
         }
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
-        await using (var outputStream = new StreamWriter(outputPath))
-        {
-            outputWriter.WriteAll(outputStream, outputs);
-        }
+        await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
 
-        if (diagnosticsPath is not null)
+        if (diagnosticsStream is not null)
         {
             var diagnosticsWriter = new JsonArrayRecordWriter<TaskDiagnostics>();
-            await using var diagnosticsStream = new StreamWriter(diagnosticsPath);
-            diagnosticsWriter.WriteAll(diagnosticsStream, diagnosticsRecords);
+            await diagnosticsWriter.WriteAllAsync(diagnosticsStream, diagnosticsRecords, cancellationToken);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;

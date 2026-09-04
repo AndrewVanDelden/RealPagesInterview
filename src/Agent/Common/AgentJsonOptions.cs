@@ -14,8 +14,9 @@ public static class AgentJsonOptions
         RespectNullableAnnotations = true,
         // The default encoder escapes ordinary punctuation and every non-ASCII character
         // to \uXXXX as an HTML/XSS precaution. None of our JSON is ever embedded in a web
-        // page - it is a JSONL file read by humans and by our own reader - so that
-        // precaution only makes composed message text unreadable for no benefit.
+        // page - it is JSONL on ingestion and a formatted JSON array on output, both read
+        // by humans and by our own reader - so that precaution only makes composed message
+        // text unreadable for no benefit.
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 }

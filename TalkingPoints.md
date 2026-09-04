@@ -954,3 +954,68 @@ ask.
   in examples), consistent with the "can be amended" ruling.
 - Final: 112 tests, 100% line/branch/method coverage across `Agent.Tests`
   and `Agent.Cli.Tests`.
+
+---
+
+## PR #9 review response
+
+Andrew's own review (via the Antigravity/Gemini reviewer, per
+[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md)) on the escaping/JSON-array PR
+raised seven points. Triaged rather than blanket-applied:
+
+**Fixed:**
+
+1. **Fail-fast regression (a real bug the refactor introduced).**
+   Accumulating results and writing once at the end had moved
+   `new StreamWriter(outputPath)` to *after* the whole batch loop. An
+   invalid output path (bad directory, no permission) would only surface
+   once every record had already run through the composer and any LLM
+   calls - wasted latency and cost before an unrecoverable failure. Fixed
+   by opening both output streams before the loop (fail-fast restored,
+   verified by pointing `--output` at a nonexistent directory and
+   confirming it now fails immediately) while still deferring the actual
+   array *write* until after accumulation, so the JSON-array format is
+   unaffected.
+2. **Stale doc comment.** `AgentJsonOptions.Default`'s comment still said
+   "JSONL file" after this same PR changed output to a JSON array. Updated.
+3. **Synchronous I/O in an async pipeline.** `IRecordWriter<T>.WriteAll`
+   was a blocking synchronous call inside `CliRunner.RunAsync`. Changed to
+   `Task WriteAllAsync(TextWriter, IEnumerable<T>, CancellationToken)`,
+   using `TextWriter.WriteAsync(ReadOnlyMemory<char>, CancellationToken)`
+   so cancellation actually propagates through the write, not just the
+   agent calls.
+
+**Deferred, with reasoning recorded rather than silently dropped:**
+
+4. **LOH / intermediate string allocation in `JsonArrayRecordWriter`.**
+   True that `JsonSerializer.Serialize(records, options)` builds one
+   contiguous string before writing it. The suggested fix (serialize
+   directly to a stream/`Utf8JsonWriter`) would require `IRecordWriter<T>`
+   to stop being `TextWriter`-based - which is also what backs
+   `StringWriter` in every unit test for this writer. Reworking a public
+   interface to avoid an allocation that, for this project's actual data
+   (2-12 records), is a few KB, is disproportionate now. Recorded as a
+   real, known limitation rather than an oversight.
+5. **Crash/cancellation loses accumulated-but-unwritten output.** This is
+   the same tradeoff already called out explicitly in this file's "Post-MVP
+   hardening: output format changed from JSONL to a JSON array" entry
+   above - the reviewer's comment confirms it as a legitimate concern, not
+   news, and the reasoning for accepting it stands: a genuine unhandled
+   crash is already outside the intended per-record-isolation contract.
+
+**No action (informational):**
+
+6. Praise/confirmation that the `problem_statement.txt` vs. `BACKLOG.md`
+   distinction was reasoned correctly - no change requested.
+7. A security note that `UnsafeRelaxedJsonEscaping` leaves `<`, `>`, `&`
+   unescaped, with the caveat "fine for files and API payloads, not for
+   raw HTML embedding" - correct, and this JSON is never embedded in HTML,
+   so no change needed.
+
+Also resolved a real merge conflict (PR #9's branch had fallen behind `dev`
+after PR #7 and #8 merged) - only `TalkingPoints.md` conflicted, since the
+code changes touched disjoint files; the two "Post-MVP hardening" sections
+were combined in chronological order.
+
+Final: 122 tests, 100% line/branch/method coverage across `Agent.Tests`
+and `Agent.Cli.Tests`.

@@ -10,7 +10,7 @@ public class JsonArrayRecordWriterTests
     private static readonly IRecordWriter<AgentOutput> Writer = new JsonArrayRecordWriter<AgentOutput>();
 
     [Fact]
-    public void WriteAll_MultipleRecords_WritesSingleIndentedJsonArray()
+    public async Task WriteAllAsync_MultipleRecords_WritesSingleIndentedJsonArray()
     {
         var records = new[]
         {
@@ -19,7 +19,7 @@ public class JsonArrayRecordWriterTests
         };
         using var writer = new StringWriter();
 
-        Writer.WriteAll(writer, records);
+        await Writer.WriteAllAsync(writer, records);
 
         using JsonDocument document = JsonDocument.Parse(writer.ToString());
         Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
@@ -27,37 +27,48 @@ public class JsonArrayRecordWriterTests
     }
 
     [Fact]
-    public void WriteAll_Record_SerializesWithSnakeCaseFieldNames()
+    public async Task WriteAllAsync_Record_SerializesWithSnakeCaseFieldNames()
     {
         var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
         using var writer = new StringWriter();
 
-        Writer.WriteAll(writer, records);
+        await Writer.WriteAllAsync(writer, records);
 
         Assert.Contains("\"next_action\"", writer.ToString());
         Assert.Contains("\"next_message\"", writer.ToString());
     }
 
     [Fact]
-    public void WriteAll_Record_IsIndentedForHumanReadability()
+    public async Task WriteAllAsync_Record_IsIndentedForHumanReadability()
     {
         var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
         using var writer = new StringWriter();
 
-        Writer.WriteAll(writer, records);
+        await Writer.WriteAllAsync(writer, records);
 
         Assert.Contains(Environment.NewLine, writer.ToString());
     }
 
     [Fact]
-    public void WriteAll_NoRecords_WritesEmptyJsonArray()
+    public async Task WriteAllAsync_NoRecords_WritesEmptyJsonArray()
     {
         using var writer = new StringWriter();
 
-        Writer.WriteAll(writer, Array.Empty<AgentOutput>());
+        await Writer.WriteAllAsync(writer, Array.Empty<AgentOutput>());
 
         using JsonDocument document = JsonDocument.Parse(writer.ToString());
         Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
         Assert.Equal(0, document.RootElement.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task WriteAllAsync_CancellationRequested_ThrowsOperationCanceledException()
+    {
+        var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
+        using var writer = new StringWriter();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Writer.WriteAllAsync(writer, records, cts.Token));
     }
 }

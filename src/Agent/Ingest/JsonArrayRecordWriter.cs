@@ -14,6 +14,9 @@ public sealed class JsonArrayRecordWriter<T> : IRecordWriter<T>
         WriteIndented = true,
     };
 
-    public void WriteAll(TextWriter writer, IEnumerable<T> records) =>
-        writer.Write(JsonSerializer.Serialize(records, IndentedOptions));
+    public async Task WriteAllAsync(TextWriter writer, IEnumerable<T> records, CancellationToken cancellationToken = default)
+    {
+        string json = JsonSerializer.Serialize(records, IndentedOptions);
+        await writer.WriteAsync(json.AsMemory(), cancellationToken);
+    }
 }
