@@ -543,11 +543,43 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+- `ISafetyValidator.Validate(NextMessage, CaseConstraints)` returns
+  `ValidationResult(Violations, FairHousingCheckPassed)`. Assumption made
+  explicit (BACKLOG bundles opt-out/PII/steering under one validator but
+  only names one required-state, `fair_housing_check_passed`, for all
+  three): `FairHousingCheckPassed = Violations.Count == 0`, i.e. it means
+  the check came back clean, not merely "the check ran" (that distinction
+  matters: `ConsentGate.ConsentVerified` means the check ran regardless of
+  outcome, which is a deliberately different semantic for a deliberately
+  different question).
+- Three checks: opt-out presence (keyword match, gated on
+  `IncludeOptOutInstructions`), PII leak (SSN pattern + long-digit-run regex,
+  gated on `NoPiiLeak`), protected-class/steering language (keyword
+  deny-list). All three are heuristics, not a comprehensive fair-housing
+  compliance system - explicitly noted as a scope limitation in the code
+  itself and in `docs/CODE_REVIEW.md`, not silently presented as complete.
+- `ValidatingMessageComposer` is a decorator over `IMessageComposer` (DIP/OCP
+  - wraps any composer, including a fake, without modifying it): try the
+  inner composer, validate; if clean, return it; otherwise retry the inner
+  composer exactly once; if still unclean (or the composer itself fails),
+  hard-stop at a separate fallback composer. Bounded by construction (a
+  `for` loop capped at 2 attempts), not by a manually-tracked counter that
+  could be gotten wrong.
 
 ### After
 
-_Pending._
+- Regexes for the PII checks used `[GeneratedRegex]` (.NET 7+ source
+  generator - Pillar 2's cutting-edge-over-legacy call over `new
+  Regex(pattern, RegexOptions.Compiled)`), which surfaced a real coverage
+  tooling gap: the generator emits a whole state-machine file
+  (`RegexGenerator.g.cs`) that `ExcludeByAttribute=CompilerGeneratedAttribute`
+  does not exclude, and its internal branches for regex edge cases our two
+  simple patterns never trigger counted against the 100% gate (dropped to
+  84% line / 64% branch on the first run). Standard fix, not a metric dodge:
+  added `/p:ExcludeByFile="**/*.g.cs"` to `test.ps1`, the same exclusion
+  principle already applied to compiler-generated record members, just a
+  different coverlet mechanism for source-generator output.
+- Final: 83 tests total, 100% line/branch/method coverage.
 
 ---
 
