@@ -270,6 +270,16 @@ Confirmed green:
       string literal (working agreement: no em dashes in code).
     - Final: 14 tests, 100% line/branch/method coverage, confirmed via
       `.\test.ps1`.
+  - A later autonomous pass caught that Antigravity's 9th finding
+    ("redundant disk reads across sample parsing tests") had been claimed as
+    incidentally fixed but wasn't: the `TextReader` refactor changed how
+    `sample.jsonl` gets opened, not how many times. The three
+    `ReadAll_ParsesSampleJsonl_*` facts each still called `ReadSample()`
+    independently. Consolidated to a single `static readonly SampleCases`
+    field computed once; all three facts read from it instead. With this,
+    the remaining Antigravity/Gemini review threads on PR #1 no longer
+    describe anything true about the code, so they were replied to and
+    resolved alongside this one.
 
 ---
 

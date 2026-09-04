@@ -25,18 +25,18 @@ public class JsonlRecordReaderTests
         return Reader.ReadAll(reader);
     }
 
+    private static readonly IReadOnlyList<ProspectCase> SampleCases = ReadSample();
+
     [Fact]
     public void ReadAll_ParsesSampleJsonl_ReturnsExactlyTwoCases()
     {
-        IReadOnlyList<ProspectCase> cases = ReadSample();
-
-        Assert.Equal(2, cases.Count);
+        Assert.Equal(2, SampleCases.Count);
     }
 
     [Fact]
     public void ReadAll_ParsesSampleJsonl_PopulatesShortHorizonSmsCase()
     {
-        ProspectCase shortHorizonCase = ReadSample()[0];
+        ProspectCase shortHorizonCase = SampleCases[0];
 
         Assert.Equal("prospect_welcome_day0", shortHorizonCase.TaskId);
         Assert.Equal("prospect", shortHorizonCase.Persona);
@@ -65,7 +65,7 @@ public class JsonlRecordReaderTests
     [Fact]
     public void ReadAll_ParsesSampleJsonl_PopulatesLongHorizonEmailCase()
     {
-        ProspectCase longHorizonCase = ReadSample()[1];
+        ProspectCase longHorizonCase = SampleCases[1];
 
         Assert.Equal("prospect_long_horizon_day3", longHorizonCase.TaskId);
         Assert.False(longHorizonCase.Consent.SmsOptIn);
