@@ -164,6 +164,15 @@ Confirmed green:
   BACKLOG 1.2 acceptance criteria that were implemented but not
   test-driven the first time; the coverage gate caught the gap.
 - Final: 5 tests, 100% line/branch/method coverage.
+- Branch workflow finalized: each sprint lands on its own feature branch cut
+  from `dev` (e.g. `sprint-1-domain-models-ingest`), opened as a PR into
+  `dev` via `gh pr create`, not committed to `dev` directly. `main` stays
+  untouched until the full epic (all sprints) is complete and merges in one
+  step. Sprint 1: [PR #1](https://github.com/AndrewVanDelden/RealPagesInterview/pull/1).
+- Andrew handed git/gh command execution to Claude as well ("you do it. not
+  me"), on top of the earlier test-command carve-out. `dotnet user-secrets`
+  remains Andrew-run, since that is the only command touching the raw
+  OpenAI key.
 
 ---
 
