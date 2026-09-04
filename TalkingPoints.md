@@ -408,11 +408,50 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+- `IMessageComposer.ComposeAsync` returns `Result<NextMessage>` (from
+  `Agent.Common`), not a bare `NextMessage` or a thrown exception. LSP
+  reasoning: `TemplateMessageComposer` can never fail (always
+  `Result.Success`), `OpenAiMessageComposer` can (malformed/incomplete model
+  output), so both must honor the same contract for either to be a true drop-in
+  swap in the orchestrator - a bare-`NextMessage` interface would force the
+  OpenAI implementation to either throw (violating BACKLOG 3.3's "rejected,
+  not crashed") or silently paper over failure.
+- `TemplateMessageComposer`: deterministic, personalizes with first name,
+  property, and interest (amenity interest if present, else city interest,
+  else omitted gracefully), embeds `assertions.constraints.primary_cta`
+  both literally as `Cta.Type` (for structured comparison) and as a
+  human-readable phrase in the body (`book_tour` -> "book tour", for the
+  literal "body contains primary CTA" acceptance wording), and always
+  includes opt-out text.
+- `ICompletionClient` is the one network-touching seam (`CompleteAsync`
+  returns the raw model text); `OpenAiMessageComposer` deserializes that text
+  as JSON into an internal `ComposedMessagePayload` and maps failures
+  (invalid JSON, missing `body`/`cta_type`) to `Result.Failure` rather than
+  letting an exception escape.
+- `OpenAiCompletionClient` calls the Chat Completions REST API directly over
+  `HttpClient` (no OpenAI SDK dependency - fewer moving parts, no version to
+  pin, consistent with Pillar 2's "native features over external libraries"
+  read in the direction of not adding a library where plain `HttpClient` +
+  `System.Net.Http.Json` suffices). API key and model are constructor
+  parameters, not read from configuration here - wiring those from
+  `dotnet user-secrets` is a Sprint 5 CLI/composition-root concern (DIP: this
+  class doesn't know or care where the key came from).
+- Test doubles (`FakeCompletionClient`, `FakeHttpMessageHandler`) and a
+  shared `SampleProspectCases.Minimal()` builder live in
+  `tests/Agent.Tests/TestSupport`, not in `src/Agent` - test infrastructure
+  doesn't ship in the production assembly.
 
 ### After
 
-_Pending._
+- All green on first real run except one coverage gap: `OpenAiMessageComposer
+  .BuildUserPrompt`'s interest-selection expression (amenity interest, else
+  city interest, else "no stated interest") was only ever exercised with the
+  "city interest present" case, since every existing test used the same
+  default sample case. Added two tests that vary the prospect's interest
+  fields (amenity-only, neither) to exercise the other branches - same
+  pattern as Sprint 1 and 2's coverage-gate catches, a real gap in test
+  variety, not a coverage-exclusion problem.
+- Final: 53 tests total, 100% line/branch/method coverage.
 
 ---
 
