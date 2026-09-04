@@ -649,11 +649,65 @@ Confirmed green:
 
 ### Before
 
-_Pending._
+- `LeasingMessageAgent` (`IMessageAgent`) holds no business rules of its own
+  (DESIGN.md section 5) - it only sequences the already-tested components:
+  consent gate, channel selector, composer, scheduler, planner, and a final
+  safety re-validation for diagnostics. `next_action` is planned on both the
+  suppressed and contactable paths, matching the pipeline diagram (both
+  branches feed into the planner).
+- Deliberately does not re-guard `Option<T>.Value` / `Result<T>.Value` with
+  its own null/failure checks before using them: both already throw a clear
+  `InvalidOperationException` on the "should never happen" case. Duplicating
+  that guard in the orchestrator would be dead code no honest test could
+  reach (SafetyGate and ChannelSelector share the same `IsOptedIn` source of
+  truth, so they cannot disagree in practice) - so `.Value` is used directly,
+  and the one failure path that _can_ genuinely occur (composer produces no
+  safe message even through the fallback) is exercised via a real case with
+  an empty first name, not a fake.
+- `FairHousingCheckPassed`/`SafetyViolationCount` in diagnostics come from
+  the orchestrator re-validating the final message itself, even though
+  `ValidatingMessageComposer` already validated internally. Small
+  duplicated, pure, no-I/O check, traded deliberately for not coupling the
+  orchestrator's diagnostics to whatever composer implementation happens to
+  be injected.
+- The CLI (`Agent.Cli/Program.cs`) is treated as composition-root wiring, not
+  business logic: `tests/Agent.Tests` only ever referenced `Agent`, never
+  `Agent.Cli` (a Sprint 0 decision), and BACKLOG 5.2's own acceptance
+  criterion is a manual run (`dotnet run -- --input ... --output ...`), not
+  a unit test - unlike every other sprint. So the CLI isn't unit-tested or
+  subject to the coverage gate; it's verified by actually running it.
+  `--composer` defaults to `template` (no network dependency); `--composer
+  openai` reads `OpenAI:ApiKey`/`OpenAI:Model` via
+  `Microsoft.Extensions.Configuration` (user-secrets + environment
+  variables) - added now since it's the official mechanism for reading
+  `dotnet user-secrets`, not a legacy pattern being avoided. The OpenAI path
+  always falls back to `TemplateMessageComposer` on unsafe/failed output,
+  never to another OpenAI call, so "safe fallback" stays actually safe. The
+  `--diagnostics <file>` flag from the kickoff decisions is implemented too.
 
 ### After
 
-_Pending._
+- Orchestrator: all tests green on the first run, 100% coverage, no
+  surprises - the two sample-based acceptance tests
+  (`RunAsync_Sample1_ProducesSmsAndStartCadence` /
+  `RunAsync_Sample2_ProducesEmailAndFollowUpInDays`) use the real
+  components end-to-end against the actual `sample.jsonl`, not fakes,
+  directly exercising BACKLOG 5.1's literal acceptance criterion.
+- Process error, not a design one: wrote all of Sprint 5 directly on `dev`
+  instead of branching first (forgot the branch-off step after syncing).
+  Caught before anything was committed - moved the uncommitted work to
+  `sprint-5-orchestrator-cli` with `git checkout -b`, which carries
+  uncommitted changes to the new branch and leaves `dev` untouched. No
+  commits were lost or needed to be undone.
+- Ran the actual CLI acceptance check from BACKLOG 5.2: `dotnet run
+  --project src/Agent.Cli -- --input sample.jsonl --output out.jsonl
+  --diagnostics diagnostics.jsonl`. Output matched both samples' expected
+  `next_message.channel` and `next_action.type` exactly (sms/start_cadence,
+  email/follow_up_in_days with value 3), and diagnostics showed clean
+  `consent_verified`/`fair_housing_check_passed`/`brand_style_applied` for
+  both records with zero safety violations. This is the MVP finish line per
+  the kickoff time-budget decision. Verification files (`out.jsonl`,
+  `diagnostics.jsonl`) were deleted after inspection, not committed.
 
 ---
 

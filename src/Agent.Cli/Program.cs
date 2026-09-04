@@ -1,2 +1,10 @@
-// Wired up in Sprint 5: --input, --output, --composer template|openai.
-Console.WriteLine("Agent.Cli scaffold. See docs/DESIGN.md and docs/BACKLOG.md.");
+using Agent.Cli;
+using Microsoft.Extensions.Configuration;
+
+IConfiguration configuration = new ConfigurationBuilder()
+    .AddUserSecrets<Program>(optional: true)
+    .AddEnvironmentVariables()
+    .Build();
+
+var runner = new CliRunner(configuration, Console.Error);
+return await runner.RunAsync(args);

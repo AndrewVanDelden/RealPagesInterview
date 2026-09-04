@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- Agent.dll's own coverage is gated separately by Agent.Tests; scope this
+         project's coverage run to the code it actually owns (Agent.Cli), so
+         Agent's unrelated surface (e.g. the OpenAI HTTP path) does not drag
+         this project's threshold below 100%. -->
+    <Include>[Agent.Cli]*</Include>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.msbuild" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Agent.Cli\Agent.Cli.csproj" />
+  </ItemGroup>
+
+</Project>
