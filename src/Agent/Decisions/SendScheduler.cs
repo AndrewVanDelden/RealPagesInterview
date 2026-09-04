@@ -3,6 +3,8 @@ using Agent.Domain;
 
 namespace Agent.Decisions;
 
+// No separate quiet-hours window: deliberately scoped out, see
+// docs/DESIGN.md assumptions log #2 and docs/CODE_REVIEW.md.
 public sealed class SendScheduler : ISendScheduler
 {
     private static readonly IReadOnlyDictionary<CommunicationChannel, TimeOnly> DefaultSendHour = new Dictionary<CommunicationChannel, TimeOnly>

@@ -8,6 +8,7 @@ expected result.
 - Design and architecture: [docs/DESIGN.md](docs/DESIGN.md)
 - Epic and sprint plan: [docs/BACKLOG.md](docs/BACKLOG.md)
 - Sprint-by-sprint decision log: [TalkingPoints.md](TalkingPoints.md)
+- Code review process and known scope decisions: [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md)
 
 ## Layout
 

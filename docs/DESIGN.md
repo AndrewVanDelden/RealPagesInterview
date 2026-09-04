@@ -215,9 +215,17 @@ early and the eval harness proves the thresholds at the end.
 
 1. Channel is the first preferred channel with consent. Ties break by
    preference order, not by any channel-quality heuristic.
-2. Send hour defaults by channel (sms 09:00, email 10:00 local) and respects a
-   configurable quiet-hours window. The exact calendar date rule is
-   under-determined by two samples and is configurable.
+2. Send hour defaults by channel (sms 09:00, email 10:00, voice 09:00 local),
+   with a single day-rollover rule: if today's default-hour slot has already
+   passed relative to `last_interaction`, resolve to tomorrow instead. A
+   separate "quiet-hours window" was considered (BACKLOG.md names it as a
+   Sprint 2.3 goal) and deliberately scoped out: it is not present in
+   `problem_statement.txt` or in `sample.jsonl`'s `assertions`/`thresholds`,
+   and the single rollover rule alone satisfies all three of 2.3's stated
+   acceptance criteria. This is a scope decision, not a gap; see
+   [CODE_REVIEW.md](CODE_REVIEW.md#known-deliberate-scope-decisions). The
+   exact calendar date rule beyond same-day-vs-next-day is under-determined
+   by two samples and stays configurable.
 3. Horizon threshold for cadence vs follow-up defaults to 45 days.
 4. Suppression output shape (no consented channel) is assumed, since no
    negative sample is provided.
