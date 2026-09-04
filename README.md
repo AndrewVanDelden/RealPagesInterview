@@ -55,9 +55,12 @@ dotnet build      # builds the whole solution (.slnx)
 .\test.ps1        # runs the suite with the coverage gate; fails the build under 100%
 ```
 
-The end-to-end CLI (`dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.jsonl`)
+The end-to-end CLI (`dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.json`)
 lands in the orchestrator sprint — see [TalkingPoints.md](TalkingPoints.md) for exactly what's
-built as of any given point in the log.
+built as of any given point in the log. Input stays JSONL (that part is in
+`problem_statement.txt`); output is a single indented JSON array, not JSONL — readability
+mattered more than a self-imposed symmetry once we noticed the problem statement never
+required it.
 
 ## Documentation
 

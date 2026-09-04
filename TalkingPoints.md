@@ -829,3 +829,51 @@ JSONL (one JSON object per line, per BACKLOG 5.2's contract) - only the
   `you're looking in Richardson, TX` instead of the previous escaped
   form (a backslash-u sequence in place of the apostrophe).
 - Final: 111 tests, 100% line/branch/method coverage.
+
+---
+
+## Post-MVP hardening: output format changed from JSONL to a JSON array
+
+### Before
+
+Andrew's principle for resolving this kind of question, stated directly:
+if it's in `problem_statement.txt`, it's law and gets done exactly as
+stated; if it only appears in our own planning documents (`BACKLOG.md`,
+`DESIGN.md`), it can be amended when something better is warranted.
+Re-checked `problem_statement.txt` against that test: it says "You are
+given a JSONL file" (input only) and never once constrains the *output*
+format. "Read JSONL, write JSONL" in BACKLOG.md 5.2 was purely our own
+invention, not a requirement - amendable, and Andrew confirmed amending it
+directly ("backlog can be ammended").
+
+Changed the CLI's `--output`/`--diagnostics` files from compact
+line-delimited JSONL to a single indented JSON array. Input parsing stays
+strict JSONL, unchanged - that half of the format *is* stated in the actual
+ask.
+
+### After
+
+- `JsonlRecordWriter<T>` (line-per-record) replaced with
+  `JsonArrayRecordWriter<T>` (one indented JSON array via
+  `JsonSerializer.Serialize(IEnumerable<T>, ...)` with `WriteIndented =
+  true` - the array wrapping is free, System.Text.Json serializes any
+  `IEnumerable<T>` as a JSON array natively). Empty input now correctly
+  produces `[]`, a valid JSON document, rather than an empty/zero-byte file.
+- `CliRunner` restructured: results now accumulate into `List<AgentOutput>`
+  / `List<TaskDiagnostics>` during the per-record loop (per-record error
+  isolation unchanged - one bad record still can't discard the others) and
+  the whole array is written once after the loop, instead of appending one
+  line per record as it completed. Traded away: true crash resilience (a
+  genuine unhandled crash mid-loop now loses the whole batch instead of
+  whatever had already been flushed) for a single well-formed JSON
+  document - deliberate, since a real crash is already an "something is
+  broken" scenario outside the intended contract either way.
+  `Agent.Cli.Tests` assertions that counted output lines (`File
+  .ReadAllLinesAsync(...).Length`) were rewritten to parse the file as JSON
+  and check `GetArrayLength()` / element properties instead - counting
+  lines was always really an assumption about JSONL, not what the tests
+  were actually trying to verify (record count, correct shape).
+  `docs/BACKLOG.md`, `README.md` amended to match (`out.jsonl` -> `out.json`
+  in examples), consistent with the "can be amended" ruling.
+- Final: 112 tests, 100% line/branch/method coverage across `Agent.Tests`
+  and `Agent.Cli.Tests`.

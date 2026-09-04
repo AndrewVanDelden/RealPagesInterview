@@ -31,7 +31,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
 
         if (inputPath is null || outputPath is null)
         {
-            error.WriteLine("Usage: --input <file.jsonl> --output <file.jsonl> [--composer template|openai] [--diagnostics <file.jsonl>]");
+            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--composer template|openai] [--diagnostics <file.json>]");
             return CliExitCodes.UsageError;
         }
 
@@ -69,12 +69,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
             cases = new JsonlRecordReader().ReadAll(inputReader);
         }
 
-        var outputWriter = new JsonlRecordWriter<AgentOutput>();
-        var diagnosticsWriter = new JsonlRecordWriter<TaskDiagnostics>();
-
-        await using var outputStream = new StreamWriter(outputPath);
-        await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
-
+        var outputs = new List<AgentOutput>();
+        var diagnosticsRecords = new List<TaskDiagnostics>();
         int failureCount = 0;
 
         foreach (ProspectCase prospectCase in cases)
@@ -94,12 +90,21 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter error)
                 continue;
             }
 
-            outputWriter.WriteAll(outputStream, [result.Output]);
+            outputs.Add(result.Output);
+            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
+        }
 
-            if (diagnosticsStream is not null)
-            {
-                diagnosticsWriter.WriteAll(diagnosticsStream, [new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics)]);
-            }
+        var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
+        await using (var outputStream = new StreamWriter(outputPath))
+        {
+            outputWriter.WriteAll(outputStream, outputs);
+        }
+
+        if (diagnosticsPath is not null)
+        {
+            var diagnosticsWriter = new JsonArrayRecordWriter<TaskDiagnostics>();
+            await using var diagnosticsStream = new StreamWriter(diagnosticsPath);
+            diagnosticsWriter.WriteAll(diagnosticsStream, diagnosticsRecords);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
