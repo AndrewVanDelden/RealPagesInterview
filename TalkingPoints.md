@@ -799,6 +799,83 @@ rather than letting it fail the whole record.
 
 ---
 
+## Post-MVP hardening: `OpenAiMessageComposer.cs` code-quality review
+
+### Before
+
+A code-quality pass (framed as "how would a senior C/C++ systems engineer
+review this file") raised nine points against `OpenAiMessageComposer.cs`.
+Assessed each on its actual merits rather than accepting or dismissing the
+critique wholesale - several were technically correct but misapplied
+performance concerns for I/O-bound code (a per-record prompt-build ahead of
+a multi-hundred-millisecond OpenAI call is not a hot loop); a couple were
+genuinely valid and worth fixing regardless of who raised them:
+
+1. **CTA-type validation gap (the most substantive finding).** The prompt
+   tells the model `required_cta_type: schedule_tour`, but nothing checked
+   the model's response actually matched - the only validation was
+   "`cta_type` is non-empty." A plausible-looking but wrong CTA
+   (`call_now` when `schedule_tour` was required) passed silently. This
+   was a real unenforced constraint, not a style nitpick.
+2. **Prose-only output format ("prompt-begging").** `response_format:
+   json_object` only guarantees syntactically valid JSON, not that it
+   matches our shape - shape compliance rested entirely on the model
+   choosing to follow English instructions. OpenAI's Structured Outputs
+   (`response_format: json_schema`, `strict: true`, GA since August 2024)
+   enforces the shape at the API level via constrained decoding.
+3. **Legacy string concatenation for `SystemPrompt`.** 11 lines of `+`
+   concatenation with escaped quotes, when C# 11 raw string literals
+   (`"""..."""`) exist for exactly this and are already used elsewhere in
+   this codebase - directly inconsistent with our own Pillar 2 ("cutting-
+   edge over legacy patterns").
+4. **Null-forgiving operator (`!`) instead of pattern matching.** `if
+   (profile.HasAmenityInterest) { ...AmenityInterest! }` relies on a human
+   keeping `HasAmenityInterest`'s definition in sync with actual
+   nullability, with no compiler enforcement - the pointer-dereference
+   analogy is apt, since `!` is explicitly "trust me" syntax. `if
+   (profile.AmenityInterest is { Count: > 0 } amenities)` gets the same
+   result with the compiler proving safety instead of a human promising it.
+
+Six other points (heap allocations from string building, `Deserialize<T>
+(string)`'s internal UTF-16-to-UTF-8 transcode, exceptions for JSON
+validation, `Enum.ToString()` cost, `var` vs. explicit types) were judged
+technically accurate but not worth acting on given this workload - see the
+interview-prep discussion for the full per-point reasoning. The
+stringly-typed-CTA point (raw `string CtaType`, no enum) was folded into
+fix #1 above: the real gap wasn't the type, it was the missing check.
+
+### After
+
+- Changed `ICompletionClient.CompleteAsync` to accept an optional
+  `responseJsonSchema` (raw JSON Schema text; null = plain `json_object`
+  mode) - the schema is owned by `OpenAiMessageComposer` (it knows
+  `ComposedMessagePayload`'s shape), while `OpenAiCompletionClient` owns
+  wrapping it in OpenAI's specific request envelope (`name`/`strict`), each
+  staying responsible for what it actually knows.
+- `OpenAiMessageComposer.ComposeAsync` now computes `requiredCtaType` once
+  (used both for the prompt and for validating the response) and returns
+  `Result.Failure` when the model's `cta_type` doesn't match it.
+- Fixing the null-forgiving pattern in `OpenAiMessageComposer` surfaced the
+  identical pattern in `TemplateMessageComposer.BuildInterestPhrase` -
+  fixed both for consistency, not just the one flagged. That in turn made
+  `ProspectProfile.HasAmenityInterest`/`HasCityInterest` genuinely dead code
+  (nothing called them anymore) - removed them and their dedicated test
+  file rather than leave unused public API behind.
+- One test assertion (`DoesNotContain("\"json_schema\"", ...)` for the
+  no-schema case) was wrong, not the production code: `OpenAiResponseFormat
+  .JsonSchema` still serializes as `"json_schema":null` when absent (a
+  harmless key OpenAI ignores when `type` is `json_object`) - fixed the
+  assertion to check what's actually guaranteed (`"type":"json_object"`
+  and `"json_schema":null`), not a substring that was never a real
+  contract.
+- Verified end-to-end against `sample.jsonl` with the template composer
+  after all changes: still produces the correct sms/`start_cadence` and
+  email/`follow_up_in_days` outputs.
+- Final: 109 tests, 100% line/branch/method coverage across both `Agent
+  .Tests` and `Agent.Cli.Tests`.
+
+---
+
 ## Post-MVP hardening: readable JSON output
 
 ### Before
