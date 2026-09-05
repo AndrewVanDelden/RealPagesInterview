@@ -23,3 +23,6 @@ tests/**/coverage/
 .env
 secrets.json
 appsettings.*.local.json
+
+# Personal agent instructions
+CLAUDE.local.md
