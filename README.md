@@ -67,10 +67,15 @@ like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds -
 channel, `next_action.type`, opt-out/CTA presence, safety, personalization, and
 latency, per record and overall - printed to the console and written to that file.
 
+Add `--log-file <file>` for a real, structured log of what the process did
+while producing that output - full flag reference, log format, and how to
+debug a bad run: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 ## Documentation
 
 - [docs/DESIGN.md](docs/DESIGN.md) — architecture, interface table, inferred decision rules and their evidence, assumptions log, security/governance posture.
 - [docs/BACKLOG.md](docs/BACKLOG.md) — the epic and sprint plan with acceptance criteria.
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — how to run it, how to debug a bad run, how the logging actually works, and how to read one log line.
 - [TalkingPoints.md](TalkingPoints.md) — the running Before/After decision log, one entry per sprint. The source of truth for "what's actually done right now."
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — what the two automated PR reviewers check for, and the scope decisions they should not re-flag.
 
