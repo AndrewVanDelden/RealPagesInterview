@@ -21,7 +21,7 @@ dotnet run --project src/Agent.Cli -- --input <file> --output <file> [options]
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
 | `--diagnostics <file.json>` | no | Per-record domain diagnostics (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`) — what the agent decided and why, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
-| `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console (see section 3) — this only adds a second, durable sink. |
+| `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3) — this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
 `--input` + `--output`; add the others as the question changes from
@@ -44,12 +44,13 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    configuration. This is the CLI's stable, always-on contract — usage
    errors, which record failed and why (type + message, no stack trace), and
    which eval-report rows were unscoreable. Sufficient for "what broke."
-2. **The log** (console JSON, or `--log-file` if given) for "why, exactly,
-   and what led up to it." Every stderr-reported failure has a matching
-   `Error`-level log entry carrying the *full* exception object — type,
-   message, and stack trace — not just the one-line summary stderr gets.
-   Search the log for the failing record's `TaskId`; every log line emitted
-   anywhere during that record's processing carries it (see section 3).
+2. **The log** (console, interleaved with the plain stderr text above, or
+   `--log-file` if given) for "why, exactly, and what led up to it." Every
+   stderr-reported failure has a matching `Error`-level log entry carrying
+   the *full* exception object — type, message, and stack trace — not just
+   the one-line summary stderr gets. Search the log for the failing
+   record's `TaskId`; every log line emitted anywhere during that record's
+   processing carries it (see section 3).
 3. **`--diagnostics`**, only if the question is "why did the agent decide
    X for this record" rather than "why did the process fail." A `null`
    `fair_housing_check_passed` means the message was suppressed before
@@ -57,17 +58,26 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
 
 ## 3. How logging actually works
 
-Built on `Microsoft.Extensions.Logging`. Two independent sinks, both
-structured JSON, both carrying the same information:
+Built on `Microsoft.Extensions.Logging`. Two independent sinks, both plain
+text, both rendering the exact same format (section 4), both carrying the
+same information:
 
-- **Console**, always on. JSON-formatted (`ConsoleFormatterNames.Json`),
-  written to stdout via the standard console log provider.
+- **Console**, always on, via `Agent.Cli.Logging.ConsoleLoggerProvider`,
+  written through the CLI's own injected `error` stream (`Console.Error` in
+  production) — not a raw stdout console provider. Two reasons for that:
+  `--eval-report`'s scorecard text goes to stdout, and a console provider
+  hardwired to the real `Console.Out`/`Console.Error` would collide with it;
+  and `CliRunnerTests` injects its own `TextWriter` for `output`/`error`
+  specifically to avoid touching the real console, which a hardwired
+  provider would defeat.
 - **File**, only when `--log-file <path>` is given. A from-scratch
-  `Agent.Cli.Logging.FileLoggerProvider` — plain text lines, not JSON (see
-  section 4 for the exact shape), appended to the given path.
+  `Agent.Cli.Logging.FileLoggerProvider`, appended to the given path -
+  functionally the same sink as Console, just durable across runs and
+  written to a path instead of a stream.
 
-Both sinks render the same `ILogger` calls and the same log scopes; nothing
-is console-only or file-only.
+Both sinks share their line-formatting code (`Agent.Cli.Logging.LogLineFormatter`)
+and render the same `ILogger` calls and the same log scopes; nothing is
+console-only or file-only.
 
 **This is not the same thing as `--diagnostics`.** `--diagnostics` is a
 domain artifact — the agent's own record of what it decided
@@ -77,14 +87,15 @@ perfect diagnostics and a log full of retries, or a suppressed message with
 a totally quiet log (no consent, nothing went wrong, there was just nothing
 to do).
 
-**Correlation:** `LeasingMessageAgent.RunAsync` and `Evaluator.Evaluate`
-each open a log scope carrying `TaskId` at the start of processing one
-record. Every log line emitted anywhere downstream during that record's
-processing — inside `ValidatingMessageComposer`, `OpenAiMessageComposer`,
-the CLI's own per-record lines — carries that `TaskId`, without any of those
-classes needing to accept or pass it explicitly. This is why searching a log
-for one `TaskId` gives the complete story of that one record, not a mix of
-every record interleaved.
+**Correlation:** `CliRunner`'s own per-record loop, `LeasingMessageAgent.RunAsync`,
+and `Evaluator.Evaluate` each open a log scope carrying `TaskId` at the start
+of processing one record. Every log line emitted anywhere downstream during
+that record's processing — inside `ValidatingMessageComposer`,
+`OpenAiMessageComposer`, the CLI's own per-record lines — carries that
+`TaskId` via the scope, without any of those classes needing to accept or
+pass it explicitly, and without restating it in their own message text
+(rule 3, section 5). This is why searching a log for one `TaskId` gives the
+complete story of that one record, not a mix of every record interleaved.
 
 **Log levels, and what each one means here:**
 
@@ -100,43 +111,32 @@ system failing.
 
 ## 4. How to read one log line
 
-**Console (JSON):**
-
-```json
-{"EventId":0,"LogLevel":"Error","Category":"Agent.Cli.CliRunner","Message":"Record 't2' failed.","Exception":"System.ArgumentOutOfRangeException: Move date target cannot precede the last interaction date. (Parameter 'moveDateTarget')\n   at Agent.Decisions.NextActionPlanner.Plan(...)\n   at ...","State":{"Message":"Record 't2' failed.","TaskId":"t2","{OriginalFormat}":"Record '{TaskId}' failed."},"Scopes":[]}
-```
-
-- `Category` — the fully-qualified class that logged this, e.g.
-  `Agent.Cli.CliRunner` or `Agent.Orchestration.LeasingMessageAgent`. Tells
-  you which layer this line came from.
-- `Message` — the rendered text, already substituted (`{TaskId}` filled in).
-- `State.{OriginalFormat}` — the unsubstituted template, plus each named
-  parameter (`TaskId`, `ElapsedMs`, etc.) as its own field. This is the part
-  worth grepping/filtering on programmatically — `Message` is for a human,
-  `State`'s named fields are for a script.
-- `Exception` — present only on `Error`/`Warning` calls that logged one.
-  Full `ToString()`: type, message, and stack trace. This is the field that
-  makes a log line strictly more useful than the plain stderr text, which
-  only ever gets type + message.
-- `Scopes` — every `BeginScope` active when this line was logged. A record
-  processed inside `LeasingMessageAgent.RunAsync`'s scope will show `TaskId`
-  here (nested inside the scope entry's own fields) even though this
-  particular `Category` (`CliRunner`) never explicitly logged it — that's
-  the correlation ID working as designed.
-
-**File (`--log-file`):**
+Both sinks (console via stderr, and `--log-file` if given) render the exact
+same format, since both go through `Agent.Cli.Logging.LogLineFormatter`:
 
 ```
 2026-09-05T00:12:42.8090022+00:00 [Information] Agent.Orchestration.LeasingMessageAgent: Message composed: channel=Sms, nextAction=start_cadence. TaskId=t1
-2026-09-05T00:12:42.8098765+00:00 [Error] Agent.Cli.CliRunner: Record 't2' failed.
+2026-09-05T00:12:42.8098765+00:00 [Error] Agent.Cli.CliRunner: Record failed. TaskId=t2
 System.ArgumentOutOfRangeException: Move date target cannot precede the last interaction date. (Parameter 'moveDateTarget')
    at Agent.Decisions.NextActionPlanner.Plan(DateOnly moveDateTarget, DateTimeOffset lastInteraction, String timeZoneId) in ...
    at Agent.Orchestration.LeasingMessageAgent.RunAsync(...)
 ```
 
 One line per log call: `{ISO-8601 UTC timestamp} [{Level}] {Category}: {Message}{scope pairs, space-separated Key=Value}`.
-An exception, if present, is appended as its full `ToString()` on the
-following line(s) — not truncated, not summarized.
+
+- `{Category}` — the fully-qualified class that logged this, e.g.
+  `Agent.Cli.CliRunner` or `Agent.Orchestration.LeasingMessageAgent`. Tells
+  you which layer this line came from.
+- `{Message}` — the rendered text. Never restates `TaskId` (rule 3) - that
+  comes from the scope suffix instead.
+- `TaskId=...` — the active `BeginScope` value, appended after the message
+  (rule 3, section 5). Both lines above carry it even though `CliRunner`'s
+  own line never explicitly logged it - that's the correlation ID working
+  as designed, the same way it does for every other line in the system.
+- An exception, if present, is appended as its full `ToString()` on the
+  following line(s) - not truncated, not summarized - which is what makes a
+  log line strictly more useful than the plain stderr text, which only ever
+  gets type + message.
 
 ## 5. The rules that keep this readable
 
@@ -160,10 +160,12 @@ here so a change that violates one gets caught on sight:
    copies drifting (one updated, one not) if the record's identity ever
    needs to change mid-flight.
 4. **Plain CLI stderr text and the structured log are two different
-   channels serving two different readers — never fold one into the
-   other.** stderr is the stable, human-first contract a person watches
-   while the CLI runs and that `Agent.Cli.Tests` asserts against directly;
-   the log is the detailed, machine-parseable record for after the fact.
+   contracts serving two different readers — never fold one into the
+   other, even though both happen to write to the same stream by default.**
+   stderr's plain-text lines are the stable, human-first contract a person
+   watches while the CLI runs and that `Agent.Cli.Tests` asserts against
+   directly; the log is the detailed, timestamped, scope-correlated record
+   for after the fact - a different shape, not just a different stream.
    A change that removes the plain-text line because "it's all in the log
    now" breaks the first reader to save duplicating effort for the second.
 5. **No log line is truncated or summarized to "keep it clean."** A long

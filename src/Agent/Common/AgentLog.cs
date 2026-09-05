@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Common;
 
@@ -23,7 +22,7 @@ public static class AgentLog
     }
 
     public static ILogger CreateLogger(string categoryName) =>
-        (CurrentFactory.Value ?? NullLoggerFactory.Instance).CreateLogger(categoryName);
+        CurrentFactory.Value.OrNullFactory().CreateLogger(categoryName);
 
     private sealed class RestoreOnDispose(ILoggerFactory? previous) : IDisposable
     {

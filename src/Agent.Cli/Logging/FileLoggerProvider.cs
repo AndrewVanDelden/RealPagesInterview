@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Agent.Cli.Logging;
@@ -20,46 +19,26 @@ public sealed class FileLoggerProvider(string path) : ILoggerProvider, ISupportE
 
     public ILogger CreateLogger(string categoryName) => new FileLogger(categoryName, this);
 
-    public void Dispose() => writer.Dispose();
+    // Takes the same lock the write path uses: without it, a write in flight on another
+    // thread could race writer.Dispose() (see WriteEntry's lock below) and throw
+    // ObjectDisposedException, or truncate the final line.
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            writer.Dispose();
+        }
+    }
 
     private void WriteEntry(string categoryName, LogLevel logLevel, string message, Exception? exception)
     {
-        var line = new StringBuilder()
-            .Append(DateTimeOffset.UtcNow.ToString("O"))
-            .Append(" [").Append(logLevel).Append("] ")
-            .Append(categoryName)
-            .Append(": ").Append(message);
-
-        // A scope built from a key/value collection (BeginScope(new Dictionary<string, object>{...}),
-        // the shape LeasingMessageAgent and Evaluator both push a TaskId through) renders its
-        // pairs directly - the default ToString() on a Dictionary is just its type name, which
-        // would make the one thing this scope exists for (surfacing the TaskId in the log line)
-        // invisible.
-        scopeProvider.ForEachScope(
-            (scope, sb) =>
-            {
-                if (scope is IEnumerable<KeyValuePair<string, object>> pairs)
-                {
-                    foreach (KeyValuePair<string, object> pair in pairs)
-                    {
-                        sb.Append(' ').Append(pair.Key).Append('=').Append(pair.Value);
-                    }
-                }
-                else
-                {
-                    sb.Append(" => ").Append(scope);
-                }
-            },
-            line);
-
-        if (exception is not null)
-        {
-            line.Append(Environment.NewLine).Append(exception);
-        }
+        System.Text.StringBuilder line = LogLineFormatter.Format(categoryName, logLevel, message, exception, scopeProvider);
 
         lock (sync)
         {
-            writer.WriteLine(line.ToString());
+            // Writes the StringBuilder directly (TextWriter.WriteLine(StringBuilder?), .NET 8+)
+            // instead of line.ToString(), avoiding a throwaway string allocation per logged line.
+            writer.WriteLine(line);
         }
     }
 

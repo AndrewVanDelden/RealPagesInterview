@@ -4,7 +4,6 @@ using Agent.Domain;
 using Agent.Orchestration;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Evaluation;
 
@@ -25,7 +24,7 @@ namespace Agent.Evaluation;
 // a rule with no evidence behind it.
 public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 {
-    private readonly ILogger<Evaluator> log = logger ?? NullLogger<Evaluator>.Instance;
+    private readonly ILogger<Evaluator> log = logger.OrNullLogger();
 
     public Scorecard Evaluate(IReadOnlyList<ScoredRun> runs)
     {
@@ -33,7 +32,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
         foreach (ScoredRun run in runs)
         {
-            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { ["TaskId"] = run.ProspectCase.TaskId });
+            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = run.ProspectCase.TaskId });
 
             // Per-record isolation, same principle as CliRunner's main batch loop: a bug in
             // scoring one record (this project's own history includes exactly such a bug -

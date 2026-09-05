@@ -1664,3 +1664,108 @@ tying together log lines emitted by two *different* CLI invocations (e.g. a
 retry from a queue) - `TaskId` is unique within one run's input file, not
 globally, which is the right scope for a CLI batch tool and would be the
 first thing to revisit if this ever became a hosted service instead.
+
+## Post-review fix round: PR #12 (code review + Antigravity/Gemini)
+
+### Scope
+
+Both an automated code review and the Antigravity (Gemini 3.8 Flash) reviewer
+left findings on PR #12 (Sprint 9's logging build-out). Of Gemini's eight
+comments, only one asked for a change (the rest were commendations); the
+other seven confirmed findings all came from the code review.
+
+### Fixed
+
+1. **Console logging no longer touches the real console.** `BuildLoggerFactory`
+   called `builder.AddConsole(...)`, which is hardwired to the real
+   `Console.Out`/`Console.Error` and can't be redirected - this both
+   collided with `--eval-report`'s own stdout output and defeated every
+   `CliRunnerTests` test's attempt to isolate itself via injected
+   `StringWriter`s (confirmed empirically: running the suite flooded the
+   real test-runner console with JSON log lines). Added
+   `Agent.Cli.Logging.ConsoleLoggerProvider`, which writes through the CLI's
+   own injected `error` stream instead - the same reasoning `FileLoggerProvider`
+   already cites for keeping `TextWriter output/error` as constructor
+   parameters, applied to where logs go. Extracted the line-formatting logic
+   both providers share into `LogLineFormatter` rather than duplicating it.
+   Since `Microsoft.Extensions.Logging.Console`'s JSON formatter can't target
+   an arbitrary `TextWriter`, console output is now plain text, identical in
+   shape to the file sink - removing the format distinction resolved the
+   docs finding below as a side effect rather than a separate patch, and let
+   the `Microsoft.Extensions.Logging.Console` package be removed entirely
+   (it was only ever used for `AddConsole`).
+2. **A cancelled batch no longer keeps processing every remaining record.**
+   Nothing in the default (template) composer path observes
+   `cancellationToken` itself, so the per-record loop's `catch (Exception ex)`
+   was the only thing standing between a cancelled run and finishing the
+   whole batch anyway - it would swallow `OperationCanceledException` (a
+   subclass, `TaskCanceledException`, only surfaced once the final
+   output-writing step happened to check the token). Added
+   `cancellationToken.ThrowIfCancellationRequested()` at the top of the loop
+   - provably testable (an already-cancelled token now throws before any
+   record is touched), unlike a type-based catch filter would have been
+   here, since `CliRunner` has no seam to inject a composer that actually
+   throws `OperationCanceledException` mid-flight.
+3. **`CliRunner`'s own per-record log lines now actually carry `TaskId` via
+   scope**, closing the gap between what `docs/OPERATIONS.md` already
+   claimed ("carries that TaskId... without needing to pass it explicitly")
+   and what the code did (never opened a scope of its own, re-stated
+   `TaskId` as a bare message parameter instead - the one place in the
+   system doing that). Fixed the code to match the documented contract
+   rather than the other way around.
+4. **`LeasingMessageAgent` now logs an unhandled exception at its own
+   source**, closing the exact gap Sprint 8's audit named: neither it nor
+   `ValidatingMessageComposer` had a catch of their own, so a future caller
+   integrating `LeasingMessageAgent` directly (without CliRunner's try/catch)
+   would get zero log signal that anything went wrong. Added a catch that
+   logs (`Error`, full exception) then rethrows unchanged - callers still
+   see the identical exception, they're no longer the only place it's ever
+   recorded. Filtered to exclude `OperationCanceledException` (cancellation
+   isn't a bug). Did not duplicate this in `ValidatingMessageComposer`: every
+   path to it in this codebase runs through `LeasingMessageAgent`, so the one
+   fix already covers the audit's concrete example.
+5. **`AgentLog`'s unconfigured-caller gap closed at its one live instance.**
+   `RealAgentFactory.ReadSampleCases()` called `JsonlRecordReader.ReadAll`
+   without ever configuring `AgentLog`, silently discarding
+   `LenientExpectedOutcomeConverter`'s warning if `sample.jsonl` ever gained
+   a malformed `expected` field - exactly the "fully-silent catch" Sprint 8
+   flagged, reopened by a test helper nobody meant to leave unconfigured. Now
+   wraps the call in `AgentLog.Configure(NullLoggerFactory.Instance)`,
+   making the no-logger state explicit instead of accidental.
+6. **Bad `--log-file` path now fails cleanly.** `new FileLoggerProvider(path)`
+   ran unguarded, so a missing parent directory or a permission error crashed
+   the whole process with a raw stack trace instead of the
+   `CliExitCodes.UsageError` + stderr pattern every other bad argument gets.
+   Wrapped in a try/catch mapping `IOException`/`UnauthorizedAccessException`
+   to that same pattern.
+7. **`FileLoggerProvider.Dispose()` now takes the same lock the write path
+   does**, closing a real (if currently dormant) race between a write in
+   flight and disposal.
+8. **`OpenAiMessageComposer`'s `Result.Failure` strings now use
+   `ExceptionFormatting.ToDiagnosticString()`** instead of bare `ex.Message`,
+   matching the log line right next to it that already captures the full
+   exception - the same inconsistency this project fixed elsewhere in PR #11,
+   left behind in the two catch blocks this sprint touched to add logging.
+9. **Duplicated logger-fallback and scope-key patterns extracted.** The
+   `logger ?? NullLogger<T>.Instance` idiom (four classes plus a near-twin in
+   `AgentLog`) became `Agent.Common.LoggerDefaults.OrNullLogger()`/
+   `OrNullFactory()`; the `"TaskId"` scope-key magic string (duplicated
+   between `Evaluator.cs`, `LeasingMessageAgent.cs`, and now `CliRunner.cs`)
+   became `Agent.Common.LogKeys.TaskId`.
+10. **Gemini's allocation suggestion applied**: `writer.WriteLine(line)`
+    (the `StringBuilder` overload, .NET 8+) instead of `line.ToString()`,
+    avoiding a throwaway string per logged line - folded into the
+    `LogLineFormatter`/provider extraction above rather than patched twice.
+
+### Declined
+
+Gemini's other seven comments were commendations with no requested change
+(the `Lock` type choice, `FileLoggerProvider`'s disposal ownership, `AsyncLocal`
+isolation, `AutoFlush`'s durability trade-off, `ValidatingMessageComposer`'s
+log-level discipline, and `docs/OPERATIONS.md` itself) - acknowledged, no
+code change needed.
+
+### After
+
+176 tests in `Agent.Tests`, 33 in `Agent.Cli.Tests`, 100% line/branch/method
+coverage on both, zero build warnings.

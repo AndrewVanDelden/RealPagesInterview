@@ -9,9 +9,7 @@ using Agent.Ingest;
 using Agent.Orchestration;
 using Agent.Safety;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 
 namespace Agent.Cli;
 
@@ -49,12 +47,23 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         // is not one the DI container underneath LoggerFactory.Create constructed itself,
         // and is therefore not reliably disposed alongside it - a real leak this project
         // hit first as a locked log file in its own tests, not as a hypothetical.
-        using FileLoggerProvider? fileLoggerProvider = logFilePath is not null ? new FileLoggerProvider(logFilePath) : null;
+        FileLoggerProvider? fileLoggerProvider;
+        try
+        {
+            fileLoggerProvider = logFilePath is not null ? new FileLoggerProvider(logFilePath) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error.WriteLine($"Could not open --log-file '{logFilePath}': {ex.ToDiagnosticString()}");
+            return CliExitCodes.UsageError;
+        }
+
+        using FileLoggerProvider? disposableFileLoggerProvider = fileLoggerProvider;
 
         // AgentLog.Configure covers the whole run, including the JsonlRecordReader parse
         // below - LenientExpectedOutcomeConverter has no constructor-injection path of its
         // own (see AgentLog's own remarks) and reaches a logger only through this.
-        using ILoggerFactory loggerFactory = BuildLoggerFactory(fileLoggerProvider);
+        using ILoggerFactory loggerFactory = BuildLoggerFactory(error, fileLoggerProvider);
         using IDisposable agentLogScope = AgentLog.Configure(loggerFactory);
         ILogger<CliRunner> log = loggerFactory.CreateLogger<CliRunner>();
 
@@ -111,6 +120,15 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
         foreach (ProspectCase prospectCase in cases)
         {
+            // Nothing in the default (template) composer path observes cancellationToken
+            // itself, so without this check a cancelled run kept grinding through every
+            // remaining record instead of stopping - the only sign anything was wrong was
+            // an exception from the output-writing step at the very end, after all the
+            // work was already done.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
+
             Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;
             try
@@ -123,13 +141,13 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
                 // timezone, an unsalvageable compose-validate failure) must not discard the
                 // output already produced for every other record in the batch.
                 failureCount++;
-                log.LogError(ex, "Record '{TaskId}' failed.", prospectCase.TaskId);
+                log.LogError(ex, "Record failed.");
                 error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.ToDiagnosticString()}");
                 continue;
             }
 
             stopwatch.Stop();
-            log.LogInformation("Record '{TaskId}' processed in {ElapsedMs}ms.", prospectCase.TaskId, stopwatch.Elapsed.TotalMilliseconds);
+            log.LogInformation("Record processed in {ElapsedMs}ms.", stopwatch.Elapsed.TotalMilliseconds);
             outputs.Add(result.Output);
             diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
             scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
@@ -190,17 +208,20 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
     }
 
-    // Console gets structured JSON with scopes so a record's TaskId (see
-    // LeasingMessageAgent.RunAsync and Evaluator.Evaluate) is attached to every line
-    // emitted while processing it. --log-file additionally persists the same lines to a
-    // real file via FileLoggerProvider - the "a log file" gap TalkingPoints.md's Sprint 8
-    // audit flagged as missing from this codebase entirely.
-    private static ILoggerFactory BuildLoggerFactory(ILoggerProvider? fileLoggerProvider) =>
+    // Console goes through ConsoleLoggerProvider(error), not Microsoft.Extensions.Logging.Console's
+    // AddConsole: AddConsole is hardwired to the real Console.Out/Error and can't be
+    // redirected, which would both collide with --eval-report's own stdout output and
+    // defeat every test's attempt to isolate itself via injected StringWriters (see
+    // ConsoleLoggerProvider's own remarks). Scopes carry a record's TaskId (see
+    // LeasingMessageAgent.RunAsync and Evaluator.Evaluate) onto every line emitted while
+    // processing it. --log-file additionally persists the same lines to a real file via
+    // FileLoggerProvider - the "a log file" gap TalkingPoints.md's Sprint 8 audit flagged
+    // as missing from this codebase entirely.
+    private static ILoggerFactory BuildLoggerFactory(TextWriter error, ILoggerProvider? fileLoggerProvider) =>
         LoggerFactory.Create(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);
-            builder.AddConsole(options => options.FormatterName = ConsoleFormatterNames.Json);
-            builder.Services.Configure<JsonConsoleFormatterOptions>(options => options.IncludeScopes = true);
+            builder.AddProvider(new ConsoleLoggerProvider(error));
 
             if (fileLoggerProvider is not null)
             {

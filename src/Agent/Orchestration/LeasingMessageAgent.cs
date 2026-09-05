@@ -4,7 +4,6 @@ using Agent.Decisions;
 using Agent.Domain;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Orchestration;
 
@@ -25,15 +24,36 @@ public sealed class LeasingMessageAgent(
     INextActionPlanner planner,
     ILogger<LeasingMessageAgent>? logger = null) : IMessageAgent
 {
-    private readonly ILogger<LeasingMessageAgent> log = logger ?? NullLogger<LeasingMessageAgent>.Instance;
+    private readonly ILogger<LeasingMessageAgent> log = logger.OrNullLogger();
 
     public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, CancellationToken cancellationToken = default)
     {
         // Correlation ID for every log line emitted anywhere downstream of this call
         // (ValidatingMessageComposer, OpenAiMessageComposer) - opened here, not by the
         // caller, so any caller (the CLI today, a future API) gets it for free.
-        using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { ["TaskId"] = prospectCase.TaskId });
+        using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
+        // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
+        // (which happens to wrap agent.RunAsync in its own try/catch) ever sees an
+        // unhandled exception. A future caller (a web API, a queue worker) integrating
+        // this class directly, without its own try/catch, would get zero log signal that
+        // anything went wrong. Logged here, at the source, then rethrown unchanged -
+        // callers still see the exact same exception; they're no longer the only place
+        // it's ever recorded. Cancellation is excluded: it isn't a bug, and logging it as
+        // Error would make a clean shutdown indistinguishable from a real crash.
+        try
+        {
+            return await RunUnguardedAsync(prospectCase, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogError(ex, "Unhandled exception during record processing.");
+            throw;
+        }
+    }
+
+    private async Task<AgentRunResult> RunUnguardedAsync(ProspectCase prospectCase, CancellationToken cancellationToken)
+    {
         ConsentDecision consentDecision = consentGate.Evaluate(prospectCase.Consent, prospectCase.ChannelPreferences);
         NextAction nextAction = planner.Plan(prospectCase.Input.MoveDateTarget, prospectCase.Input.LastInteraction, prospectCase.Input.TimeZoneId);
 

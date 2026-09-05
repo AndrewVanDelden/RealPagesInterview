@@ -127,6 +127,39 @@ public class CliRunnerTests
         }
     }
 
+    // Without this check, a cancelled batch kept grinding through every remaining record -
+    // nothing in the default (template) composer path observes cancellationToken itself, so
+    // the only way the CLI can honor a cancellation request between records is to check it
+    // proactively, rather than relying on agent.RunAsync to throw for it.
+    [Fact]
+    public async Task RunAsync_TokenAlreadyCancelled_ThrowsRatherThanProcessingAnyRecords()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        try
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cts.Token));
+
+            Assert.DoesNotContain("failed", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_OneRecordFailsPlanning_OtherRecordStillWrittenAndReturnsPartialFailure()
     {
@@ -390,6 +423,67 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    // docs/OPERATIONS.md states the correlation ID is a scope, never a repeated parameter,
+    // and that CliRunner's own per-record lines carry TaskId "without needing to pass it
+    // explicitly" - this was previously false (CliRunner never opened its own scope). Now
+    // that logs route through the injected error TextWriter (ConsoleLoggerProvider), this
+    // is directly observable: the rendered line carries TaskId via the scope-rendering
+    // "Key=Value" suffix, not embedded in the message text.
+    [Fact]
+    public async Task RunAsync_RecordProcessed_LogLineCarriesTaskIdViaScopeNotMessageText()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            string logContent = errorWriter.ToString();
+            Assert.Contains("Record processed", logContent);
+            Assert.DoesNotContain("Record 't1' processed", logContent);
+            Assert.Contains("TaskId=t1", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // Every other bad-argument case (unknown --composer, missing API key) maps to a clean
+    // UsageError + stderr message rather than crashing with a raw unhandled exception -
+    // --log-file previously didn't, since FileLoggerProvider's StreamWriter construction
+    // ran outside any try/catch.
+    [Fact]
+    public async Task RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "run.log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains(logFilePath, errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
         }
     }
 

@@ -2,7 +2,6 @@ using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Safety;
 
@@ -17,7 +16,7 @@ public sealed class ValidatingMessageComposer(
     IMessageComposer fallbackComposer,
     ILogger<ValidatingMessageComposer>? logger = null) : IMessageComposer
 {
-    private readonly ILogger<ValidatingMessageComposer> log = logger ?? NullLogger<ValidatingMessageComposer>.Instance;
+    private readonly ILogger<ValidatingMessageComposer> log = logger.OrNullLogger();
 
     public async Task<Result<NextMessage>> ComposeAsync(
         ProspectCase prospectCase,

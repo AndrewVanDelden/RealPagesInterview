@@ -137,6 +137,55 @@ public class LeasingMessageAgentTests
             Equals(value, "correlation-check"));
     }
 
+    // Sprint 8's audit named this exact gap: neither LeasingMessageAgent nor
+    // ValidatingMessageComposer had a catch of their own, so a caller other than CliRunner
+    // (which only sees the exception after it has already propagated all the way up) would
+    // get zero log visibility into an unhandled exception. Logs it here, at the source,
+    // then rethrows unchanged - callers still see the same exception, they just aren't the
+    // only place it's ever recorded.
+    [Fact]
+    public async Task RunAsync_ComposerThrowsUnhandledException_LogsErrorAndRethrows()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new ThrowsComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => agent.RunAsync(prospectCase));
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error && entry.Exception is InvalidOperationException);
+    }
+
+    // Cancellation is not a bug: it must still propagate (unchanged from before this catch
+    // existed), but it must not be recorded as an Error-level "unhandled exception" - that
+    // would make a clean shutdown indistinguishable from a real crash in the log.
+    [Fact]
+    public async Task RunAsync_CancellationRequested_DoesNotLogAsError()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new ThrowsOnCancellationComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => agent.RunAsync(prospectCase, cts.Token));
+
+        Assert.DoesNotContain(capturingLogger.Entries, entry => entry.Level == LogLevel.Error);
+    }
+
     [Fact]
     public async Task RunAsync_NoConsentedChannel_LogsInformationForSuppression()
     {
