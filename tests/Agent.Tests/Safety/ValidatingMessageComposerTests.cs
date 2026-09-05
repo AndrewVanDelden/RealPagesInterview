@@ -3,6 +3,7 @@ using Agent.Composition;
 using Agent.Domain;
 using Agent.Safety;
 using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Agent.Tests.Safety;
@@ -159,5 +160,64 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Null(innerComposer.LastPriorViolations);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptBad_LogsWarningBeforeRetrying()
+    {
+        var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Success(BadMessage()),
+            Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer, capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptResultFailure_LogsWarningWithTheFailureReason()
+    {
+        var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Failure("Model returned cta_type 'call_now' but 'schedule_tour' was required."),
+            Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer, capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("call_now", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ComposeAsync_BothAttemptsBad_LogsWarningBeforeFallingBack()
+    {
+        var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer, capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("falling back", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ComposeAsync_FallbackAlsoUnsafe_LogsError()
+    {
+        var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var unsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, unsafeFallback, capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error);
     }
 }

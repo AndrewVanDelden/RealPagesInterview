@@ -2,11 +2,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Agent.Common;
 using Agent.Domain;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Composition;
 
-public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : IMessageComposer
+public sealed class OpenAiMessageComposer(ICompletionClient completionClient, ILogger<OpenAiMessageComposer>? logger = null) : IMessageComposer
 {
+    private readonly ILogger<OpenAiMessageComposer> log = logger ?? NullLogger<OpenAiMessageComposer>.Instance;
+
     private const string SystemPrompt = """
         You write short, compliant leasing messages for a residential property management company.
         Always keep the brand voice warm and professional. Every message must include a clear call
@@ -73,6 +77,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
         {
+            log.LogWarning(ex, "Completion request failed.");
             return Result<NextMessage>.Failure($"Completion request failed: {ex.Message}");
         }
 
@@ -83,6 +88,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient) : 
         }
         catch (JsonException ex)
         {
+            log.LogWarning(ex, "Model response was not valid JSON.");
             return Result<NextMessage>.Failure($"Model response was not valid JSON: {ex.Message}");
         }
 

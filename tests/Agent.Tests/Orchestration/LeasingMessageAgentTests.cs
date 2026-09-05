@@ -5,6 +5,7 @@ using Agent.Ingest;
 using Agent.Orchestration;
 using Agent.Safety;
 using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Agent.Tests.Orchestration;
@@ -109,5 +110,72 @@ public class LeasingMessageAgentTests
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => agent.RunAsync(prospectCase, cts.Token));
+    }
+
+    // Correlation ID: any caller (the CLI today, a future API) gets the TaskId attached to
+    // every log line emitted anywhere downstream of RunAsync for free, without needing to
+    // pass it through composer/validator method signatures.
+    [Fact]
+    public async Task RunAsync_AnyOutcome_OpensLogScopeCarryingTaskId()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal() with { TaskId = "correlation-check" };
+
+        await agent.RunAsync(prospectCase);
+
+        Assert.Contains(capturingLogger.Scopes, scope =>
+            scope is IReadOnlyDictionary<string, object> dict &&
+            dict.TryGetValue("TaskId", out object? value) &&
+            Equals(value, "correlation-check"));
+    }
+
+    [Fact]
+    public async Task RunAsync_NoConsentedChannel_LogsInformationForSuppression()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase suppressedCase = SampleProspectCases.Minimal() with
+        {
+            Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
+        };
+
+        await agent.RunAsync(suppressedCase);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Information);
+    }
+
+    [Fact]
+    public async Task RunAsync_FinalSafetyValidationFindsViolations_LogsWarning()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var violatingResult = new SafetyValidationResult(["Body contains protected-class or steering language: 'disability'."], FairHousingCheckPassed: false);
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new FixedSafetyValidator(violatingResult),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await agent.RunAsync(prospectCase);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 }

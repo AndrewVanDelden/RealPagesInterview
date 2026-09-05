@@ -3,6 +3,8 @@ using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
 using Agent.Safety;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Orchestration;
 
@@ -20,15 +22,24 @@ public sealed class LeasingMessageAgent(
     IMessageComposer composer,
     ISafetyValidator validator,
     ISendScheduler scheduler,
-    INextActionPlanner planner) : IMessageAgent
+    INextActionPlanner planner,
+    ILogger<LeasingMessageAgent>? logger = null) : IMessageAgent
 {
+    private readonly ILogger<LeasingMessageAgent> log = logger ?? NullLogger<LeasingMessageAgent>.Instance;
+
     public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, CancellationToken cancellationToken = default)
     {
+        // Correlation ID for every log line emitted anywhere downstream of this call
+        // (ValidatingMessageComposer, OpenAiMessageComposer) - opened here, not by the
+        // caller, so any caller (the CLI today, a future API) gets it for free.
+        using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { ["TaskId"] = prospectCase.TaskId });
+
         ConsentDecision consentDecision = consentGate.Evaluate(prospectCase.Consent, prospectCase.ChannelPreferences);
         NextAction nextAction = planner.Plan(prospectCase.Input.MoveDateTarget, prospectCase.Input.LastInteraction, prospectCase.Input.TimeZoneId);
 
         if (!consentDecision.IsContactable)
         {
+            log.LogInformation("Suppressing message: prospect is not contactable.");
             return Suppressed(consentDecision, nextAction);
         }
 
@@ -38,6 +49,7 @@ public sealed class LeasingMessageAgent(
 
         if (!composeResult.IsSuccess)
         {
+            log.LogWarning("Suppressing message: composition failed ({Error}).", composeResult.Error);
             return Suppressed(consentDecision, nextAction);
         }
 
@@ -55,9 +67,14 @@ public sealed class LeasingMessageAgent(
         // ValidatingMessageComposer already guarantees a clean message under normal
         // wiring, but this is the orchestrator's own gate, not borrowed trust in the
         // composer's cooperation.
-        NextMessage? outputMessage = validation.Violations.Count == 0 ? finalMessage : null;
+        if (validation.Violations.Count > 0)
+        {
+            log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
+            return new AgentRunResult(new AgentOutput(NextMessage: null, nextAction), diagnostics);
+        }
 
-        return new AgentRunResult(new AgentOutput(outputMessage, nextAction), diagnostics);
+        log.LogInformation("Message composed: channel={Channel}, nextAction={NextAction}.", channel, nextAction.Type);
+        return new AgentRunResult(new AgentOutput(finalMessage, nextAction), diagnostics);
     }
 
     private static AgentRunResult Suppressed(ConsentDecision consentDecision, NextAction nextAction)

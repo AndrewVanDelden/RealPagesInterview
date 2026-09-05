@@ -3,6 +3,8 @@ using Agent.Composition;
 using Agent.Domain;
 using Agent.Orchestration;
 using Agent.Safety;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Evaluation;
 
@@ -21,14 +23,18 @@ namespace Agent.Evaluation;
 // personalization token ("horizon cue") is dropped: unlike first name, property, and
 // interest, it names no concrete, checkable text pattern - scoring it would mean inventing
 // a rule with no evidence behind it.
-public sealed class Evaluator : IEvaluator
+public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 {
+    private readonly ILogger<Evaluator> log = logger ?? NullLogger<Evaluator>.Instance;
+
     public Scorecard Evaluate(IReadOnlyList<ScoredRun> runs)
     {
         var scores = new List<RecordScore>(runs.Count);
 
         foreach (ScoredRun run in runs)
         {
+            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { ["TaskId"] = run.ProspectCase.TaskId });
+
             // Per-record isolation, same principle as CliRunner's main batch loop: a bug in
             // scoring one record (this project's own history includes exactly such a bug -
             // see TalkingPoints.md Sprint 7) must not discard every other record's score.
@@ -40,6 +46,7 @@ public sealed class Evaluator : IEvaluator
             }
             catch (Exception ex)
             {
+                log.LogError(ex, "Scoring failed.");
                 scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, ex.ToDiagnosticString()));
             }
         }

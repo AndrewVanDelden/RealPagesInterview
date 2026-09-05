@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Agent.Cli;
+using Agent.Cli.Tests.TestSupport;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -357,6 +358,148 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             File.Delete(evalReportPath);
+        }
+    }
+
+    // Closes the "no log file exists anywhere" gap TalkingPoints.md's Sprint 8 audit
+    // flagged: --log-file wires Agent.Cli.Logging.FileLoggerProvider into the run, so a
+    // real file - not just the plain stderr text every other test in this file asserts
+    // against - captures what happened, with the record's TaskId attached via log scope.
+    [Fact]
+    public async Task RunAsync_LogFilePathProvided_WritesStructuredLogLinesToARealFile()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("t1", logContent);
+            Assert.Contains("Batch complete", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_NoLogFilePathProvided_DoesNotThrow()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_UnknownComposer_LogFileStillWritesTheComposerSelectionFailure()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "mock", "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("Composer selection failed", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_RecordFailsPlanning_LogFileCapturesTheFailureWithExceptionType()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2025-01-01", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("t2", logContent);
+            Assert.Contains("ArgumentOutOfRangeException", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_EvalReportRecordUnscoreable_LogFileCapturesTheWarning()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        string logFilePath = TempFilePath(".log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: false));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath, "--log-file", logFilePath]);
+
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("could not be scored", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+            TestFiles.DeleteWithRetry(logFilePath);
         }
     }
 }

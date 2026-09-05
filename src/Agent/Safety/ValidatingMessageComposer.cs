@@ -1,6 +1,8 @@
 using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Safety;
 
@@ -12,8 +14,11 @@ namespace Agent.Safety;
 public sealed class ValidatingMessageComposer(
     IMessageComposer innerComposer,
     ISafetyValidator validator,
-    IMessageComposer fallbackComposer) : IMessageComposer
+    IMessageComposer fallbackComposer,
+    ILogger<ValidatingMessageComposer>? logger = null) : IMessageComposer
 {
+    private readonly ILogger<ValidatingMessageComposer> log = logger ?? NullLogger<ValidatingMessageComposer>.Instance;
+
     public async Task<Result<NextMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
@@ -35,6 +40,10 @@ public sealed class ValidatingMessageComposer(
                     return attemptResult;
                 }
 
+                log.LogWarning(
+                    "Compose attempt {Attempt} failed safety validation: {Violations}.",
+                    attempt + 1,
+                    string.Join("; ", validation.Violations));
                 violationsForNextAttempt = validation.Violations;
             }
             else
@@ -43,10 +52,12 @@ public sealed class ValidatingMessageComposer(
                 // know about - otherwise a retry after a Result.Failure (a wrong cta_type,
                 // a malformed completion) repeats the exact same prompt with no corrective
                 // signal, wasting the one retry this loop has.
+                log.LogWarning("Compose attempt {Attempt} failed: {Error}.", attempt + 1, attemptResult.Error);
                 violationsForNextAttempt = [attemptResult.Error];
             }
         }
 
+        log.LogWarning("Both compose attempts were rejected; falling back to the safe fallback composer.");
         Result<NextMessage> fallbackResult = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         if (fallbackResult.IsSuccess &&
@@ -55,6 +66,7 @@ public sealed class ValidatingMessageComposer(
             return fallbackResult;
         }
 
+        log.LogError("Fallback composer output also failed composition or safety validation; suppressing.");
         return Result<NextMessage>.Failure("Fallback composer output failed safety validation.");
     }
 }

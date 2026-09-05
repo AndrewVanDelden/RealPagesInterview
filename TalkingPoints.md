@@ -1511,3 +1511,156 @@ rejected in earlier sprints, documented above.
 
 159 tests in `Agent.Tests` (up from 156), 12 in `Agent.Cli.Tests`, 100%
 line/branch/method coverage on both, zero build warnings.
+
+## Sprint 9: Logging implementation
+
+Sprint 8 was analysis only - a full inventory of every catch block and the
+complete absence of a logging framework, with no source file touched. This
+sprint acts on that inventory: real `Microsoft.Extensions.Logging` is wired
+through the library and the CLI, closing every gap Sprint 8 named as
+"what would be needed for real production logging."
+
+### Scope decisions, made with the user before writing any code
+
+Two choices were confirmed up front rather than assumed, since both affect
+the shape of the change across nearly every file in `src/`:
+
+1. **Logging stack: `Microsoft.Extensions.Logging` + console JSON + a small
+   custom file provider**, not Serilog. This stays inside the
+   `Microsoft.Extensions.*` family already used for `IConfiguration`, adding
+   no new dependency family, and still closes the "a log file" gap Sprint 8
+   flagged via a purpose-built `FileLoggerProvider` rather than a
+   general-purpose logging package.
+2. **Fix the one fully-silent catch too** (`LenientExpectedOutcomeConverter`).
+   `JsonConverter<T>` instances are stateless and shared across every
+   deserialization call (`AgentJsonOptions.Default` is a static singleton),
+   so there is no constructor-injection path into it - closing this gap
+   required one narrow, explicitly-documented exception to the
+   constructor-injection pattern used everywhere else (`AgentLog`, below).
+
+### What was built
+
+**`Agent.Common.AgentLog`** - an `AsyncLocal<ILoggerFactory?>`-backed static
+accessor, used only by `LenientExpectedOutcomeConverter`. Not a plain static
+field: a plain static would let concurrently-running callers - parallel unit
+test runs included - stomp on each other's configured factory, since
+`AsyncLocal` only flows a value down the async call tree from where it was
+set, not across unrelated concurrent calls. `CliRunner.RunAsync` calls
+`AgentLog.Configure(loggerFactory)` once, covering the entire run including
+the `JsonlRecordReader.ReadAll` parse (where the converter runs).
+
+**`ILogger<T>` injected into every class Sprint 8's catch-block inventory
+named**, each via a trailing optional constructor parameter defaulting to
+`NullLogger<T>.Instance` (`ILogger<T>? logger = null`) rather than a required
+parameter - this is what kept the change additive: every existing test and
+every existing call site (`RealAgentFactory`, `Program.cs`, every other test
+file) kept compiling and passing completely unchanged, because C# allows
+omitting a trailing optional parameter. Only the handful of tests written to
+prove the new logging behavior needed to pass a real logger.
+
+- `LeasingMessageAgent.RunAsync` opens a log scope carrying `TaskId` at the
+  top of the method, covering every downstream call (composer, validator)
+  for the lifetime of that one record - so a correlation ID exists for the
+  first time in this codebase's logs, without threading `TaskId` through
+  every method signature down the call chain. Logs `Information` on a
+  successful compose, `Information` when suppressed for no consent,
+  `Warning` when composition fails, `Warning` when final safety validation
+  still finds a violation.
+- `ValidatingMessageComposer.ComposeAsync` logs `Warning` on each rejected
+  attempt (both a safety-violation rejection and a `Result.Failure` from the
+  inner composer, with the failure reason attached), `Warning` before
+  falling back to the safe composer, and `Error` if even the fallback fails
+  composition or safety validation - the retry/fallback behavior Sprint 8
+  noted had zero observability of its own now has all three outcomes visible.
+- `OpenAiMessageComposer.ComposeAsync` logs `Warning` with the full exception
+  object (not just `ex.Message`) in both of its existing catch blocks - the
+  completion-request failure and the malformed-JSON-response failure.
+- `Evaluator.Evaluate` opens a log scope carrying `TaskId` per record (same
+  pattern as the agent, applied to the separate eval-scoring pass) and logs
+  `Error` with the full exception in its per-record catch - the exact catch
+  block Sprint 7 added and Sprint 8 flagged as capturing only
+  `ex.GetType().Name` and `ex.Message` in the returned string, never a stack
+  trace anywhere.
+- `LenientExpectedOutcomeConverter`'s catch now logs `Warning` (via
+  `AgentLog`, not constructor injection - see above) before returning
+  `null`, closing the one path Sprint 8 identified as producing zero signal
+  of any kind on failure.
+
+**`Agent.Cli.Logging.FileLoggerProvider`** - a from-scratch `ILoggerProvider`
+implementing `ISupportExternalScope`, so a scope opened anywhere downstream
+(the `TaskId` scopes above) renders in the log file exactly the way the
+console provider renders it: `LoggerFactory` hands every
+`ISupportExternalScope` provider the one shared scope stack it manages.
+Special-cases a scope built from a key/value collection (what
+`BeginScope(new Dictionary<string, object>{...})` produces) to render its
+pairs directly, rather than the collection's bare `ToString()` (a
+`Dictionary`'s default `ToString()` is just its type name - the first
+version of this written for this sprint hit exactly that bug, caught by a
+test asserting the actual `TaskId` value appeared in the file content, not
+just that the file was non-empty).
+
+**`CliRunner`** wires it all together: a new `--log-file <path>` option,
+`BuildLoggerFactory` (console provider with the JSON formatter, scopes
+enabled, plus the file provider when `--log-file` is given), and every
+constructed component (`LeasingMessageAgent`, `ValidatingMessageComposer`,
+`OpenAiMessageComposer`, `Evaluator`) now receives its own `ILogger<T>` from
+that factory. The three existing `error.WriteLine` catch sites gained a
+matching `log.LogError`/`log.LogWarning` call **alongside**, not instead of,
+the existing text - the plain CLI error text is a stable contract every
+existing `CliRunnerTests` assertion depends on, and breaking that to
+"purify" the design into logging-only would have been scope creep against
+working tests, not a fix. The two channels serve different purposes: the
+plain text is the CLI's user-facing contract; the structured log is a
+separate, leveled, scope-carrying observability channel.
+
+**The `CliRunner.cs:54` inconsistency Sprint 8 flagged** (bare `ex.Message`
+where two sibling catch sites used `ex.ToDiagnosticString()`) was fixed as
+part of this sprint, not left for later - it is the literal code this
+sprint's `log.LogError(ex, "Composer selection failed.")` call sits next to,
+so fixing it here closes the exact gap it was flagged for rather than
+introducing a fourth inconsistent site.
+
+### A real bug found and fixed while building this
+
+`LoggerFactory.Create(...)`'s internal DI container does not reliably
+dispose an `ILoggerProvider` **instance** handed to it via `AddProvider` -
+it did not construct that instance itself, so it does not assume ownership
+of disposing it (a documented, if easy-to-miss, .NET DI behavior: the
+container only disposes what it created). The first version of
+`BuildLoggerFactory` constructed `FileLoggerProvider` inline inside the
+`LoggerFactory.Create` builder callback and trusted `loggerFactory`'s own
+`using` to dispose it - which left the log file's `StreamWriter` handle
+open, and every test that both wrote to `--log-file` and then tried to
+delete that file in its own cleanup failed with
+`IOException: ... being used by another process`. This was not a transient
+Windows file-locking flake (a bounded delete-retry helper was tried first
+and still failed every attempt) - it reproduced on every run. Fixed by
+having `CliRunner` construct and own the `FileLoggerProvider` itself in an
+explicit `using` declaration, independent of `loggerFactory`'s own
+lifetime; `StreamWriter.Dispose()` is idempotent, so the belt-and-suspenders
+double-dispose (ours, plus whatever `LoggerFactory` does or doesn't do) is
+harmless.
+
+### After
+
+198 tests total (174 in `Agent.Tests`, up from 159; 24 in
+`Agent.Cli.Tests`, up from 12), 100% line/branch/method coverage on both
+projects, zero build warnings. New packages:
+`Microsoft.Extensions.Logging.Abstractions` (`Agent`),
+`Microsoft.Extensions.Logging` and `Microsoft.Extensions.Logging.Console`
+(`Agent.Cli`) - all from the same `Microsoft.Extensions.*` family as the
+`Microsoft.Extensions.Configuration` packages already in use, version-pinned
+to 9.0.0 to match.
+
+Every claim in Sprint 8's "what real production logging would need" list is
+now true of this codebase: `ILogger<T>` is injected everywhere a catch block
+was inventoried, log levels distinguish a degraded-but-handled outcome
+(`Warning`) from a genuinely unexpected one (`Error`), `TaskId` is a real
+correlation ID carried via log scope rather than string-concatenated per
+call site, a real log file exists behind `--log-file`, and the
+`CliRunner.cs:54` inconsistency is gone. What remains out of scope, by
+choice: no example in this codebase yet demonstrates the correlation ID
+tying together log lines emitted by two *different* CLI invocations (e.g. a
+retry from a queue) - `TaskId` is unique within one run's input file, not
+globally, which is the right scope for a CLI batch tool and would be the
+first thing to revisit if this ever became a hosted service instead.
