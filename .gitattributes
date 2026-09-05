@@ -1,0 +1,4 @@
+# Agent instruction files: keep LF so Antigravity frontmatter parsing matches the verified state
+.agents/rules/*.md text eol=lf
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
