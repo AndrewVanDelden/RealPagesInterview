@@ -3,6 +3,7 @@ using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Agent.Tests.Composition;
@@ -332,5 +333,29 @@ public class OpenAiMessageComposerTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("anything_reasonable", result.Value!.Cta!.Type);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_CompletionClientThrows_LogsWarningWithTheException()
+    {
+        var capturingLogger = new CapturingLogger<OpenAiMessageComposer>();
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new HttpRequestException("503 Service Unavailable")), capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is HttpRequestException);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_ModelResponseNotValidJson_LogsWarningWithTheException()
+    {
+        var capturingLogger = new CapturingLogger<OpenAiMessageComposer>();
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json"), capturingLogger);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is JsonException);
     }
 }

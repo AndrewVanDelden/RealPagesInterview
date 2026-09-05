@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Agent.Common;
+using Microsoft.Extensions.Logging;
 
 namespace Agent.Domain;
 
@@ -20,8 +22,10 @@ public sealed class LenientExpectedOutcomeConverter : JsonConverter<ExpectedOutc
             using JsonDocument document = JsonDocument.ParseValue(ref reader);
             return document.Deserialize<ExpectedOutcome>(options);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            AgentLog.CreateLogger(nameof(LenientExpectedOutcomeConverter))
+                .LogWarning(ex, "Could not parse the 'expected' field; this record will be treated as unlabeled.");
             return null;
         }
     }

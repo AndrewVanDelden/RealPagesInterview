@@ -2,6 +2,7 @@ using Agent.Domain;
 using Agent.Evaluation;
 using Agent.Orchestration;
 using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Agent.Tests.Evaluation;
@@ -387,5 +388,35 @@ public class EvaluatorTests
         Assert.NotNull(score.ScoringError);
         Assert.Contains("NullReferenceException", score.ScoringError);
         Assert.False(score.Passed);
+    }
+
+    [Fact]
+    public void Evaluate_ScoringThrows_LogsErrorWithTheException()
+    {
+        var capturingLogger = new CapturingLogger<Evaluator>();
+        var evaluator = new Evaluator(capturingLogger);
+        ProspectCase prospectCase = BaselineCase();
+        var malformedMessage = new NextMessage(CommunicationChannel.Sms, null, null, null!, new Cta("schedule_tour", null, null));
+        AgentRunResult actual = SuccessfulResult(malformedMessage);
+
+        evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error && entry.Exception is NullReferenceException);
+    }
+
+    [Fact]
+    public void Evaluate_AnyRecord_OpensLogScopeCarryingTaskId()
+    {
+        var capturingLogger = new CapturingLogger<Evaluator>();
+        var evaluator = new Evaluator(capturingLogger);
+        ProspectCase prospectCase = BaselineCase() with { TaskId = "correlation-check" };
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor, book tour at Oak Ridge Apartments. Reply STOP to opt out."));
+
+        evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.Contains(capturingLogger.Scopes, scope =>
+            scope is IReadOnlyDictionary<string, object> dict &&
+            dict.TryGetValue("TaskId", out object? value) &&
+            Equals(value, "correlation-check"));
     }
 }

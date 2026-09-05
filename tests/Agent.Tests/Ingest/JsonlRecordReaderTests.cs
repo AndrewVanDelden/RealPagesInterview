@@ -1,6 +1,9 @@
 using System.Text.Json;
+using Agent.Common;
 using Agent.Domain;
 using Agent.Ingest;
+using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Agent.Tests.Ingest;
@@ -210,6 +213,28 @@ public class JsonlRecordReaderTests
         ProspectCase parsedCase = Reader.ReadAll(reader)[0];
 
         Assert.Null(parsedCase.Assertions.Constraints.PrimaryCta);
+    }
+
+    // LenientExpectedOutcomeConverter has no constructor-injection path (JsonConverter<T>
+    // instances are stateless and shared - see AgentLog's own remarks), so this is the one
+    // place in the codebase that reaches a logger through AgentLog's AsyncLocal accessor
+    // rather than a constructor parameter. Proves the wiring actually fires, not just that
+    // parsing doesn't throw (already covered by the sibling tests above).
+    [Fact]
+    public void ReadAll_ExpectedFailsToParse_LogsWarningThroughAgentLog()
+    {
+        var capturingLogger = new CapturingLogger<JsonlRecordReaderTests>();
+        string lineWithUnknownChannel = MinimalValidLine.Replace(
+            "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
+            "\"expected\":{\"next_message\":{\"channel\":\"none\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
+        using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
+
+        using (AgentLog.Configure(new FakeLoggerFactory(capturingLogger)))
+        {
+            Reader.ReadAll(reader);
+        }
+
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
     [Fact]
