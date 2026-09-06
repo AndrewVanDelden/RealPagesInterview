@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = $PSScriptRoot
 $srcPath  = Join-Path $repoRoot 'AGENTS.md'
-$outDir   = Join-Path $repoRoot '.agents\rules'
+$outDir   = Join-Path (Join-Path $repoRoot '.agents') 'rules'   # nested: a literal backslash is not a separator on pwsh for Linux/macOS
 $outPath  = Join-Path $outDir 'project.md'
 
 if (-not (Test-Path -LiteralPath $srcPath)) { throw "Source not found: $srcPath" }
