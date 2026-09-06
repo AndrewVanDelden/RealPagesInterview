@@ -83,7 +83,8 @@ sets it. Never read, print, or write the value.
 ## Review criteria
 
 Reviews check correctness first, then the pillars in `~/.claude/CLAUDE.md` by acronym
-(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB). Report a finding only when it affects
+(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB; the key and the evidence for each are in
+`~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects
 correctness, a stated requirement, or a named pillar, and name which. Do not report
 style preferences, hypothetical future needs, or requests for more abstraction, defensive
 code, or tests for cases that cannot occur. A reviewer asked to find gaps will report
