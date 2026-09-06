@@ -21,27 +21,19 @@ A multi-agent PR review splits the task across eight specific perspectives:
 | 7 | Altitude Check | Steps back to macro-architecture: does the code match the high-level design, system boundaries, and business logic. |
 | 8 | Conventions Check | Strict adherence to project styling, formatting, and file structure (this repo's own working agreement and CLAUDE.md-equivalent rules). |
 
-## Gemini / Antigravity review: 2 pillars
+## Gemini / Antigravity review: criteria
 
-The second reviewer grades against the same two pillars used to evaluate
-this whole take-home (see `TalkingPoints.md` kickoff decisions):
+The second reviewer applies the review criteria in `AGENTS.md` (section
+"Review criteria") plus the universal code pillars loaded at user scope,
+cited by acronym: VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB. The
+pillar text is not reproduced here; `AGENTS.md` is the single project
+source and the pillars' source lives outside the repo. A finding must name a
+correctness defect, a stated requirement, or a pillar. An empty review
+outputs exactly "Nothing to report."
 
-**Pillar 1 - Foundational Architecture (SOLID & DRY)**
-
-- Single Responsibility (SRP): one reason to change per class/module.
-- Open/Closed (OCP): open for extension, closed for modification.
-- Liskov Substitution (LSP): subtypes substitutable for base types.
-- Interface Segregation (ISP): small, role-specific interfaces.
-- Dependency Inversion (DIP): depend on abstractions, not concretions.
-- DRY: eliminate duplication by extracting shared logic.
-
-**Pillar 2 - AI-Native Optimization & Syntax Recency**
-
-- Small Context Units (SCU): short, hyper-focused files.
-- Extreme Explicit Typing (EET): strict static typing everywhere.
-- High Semantic Clarity (HSC): highly descriptive, intention-revealing names.
-- Cutting-Edge Language Sync: the latest native language features over
-  legacy patterns or external libraries.
+The earlier version of this section listed a "SOLID and DRY" mandate and a
+"Cutting-Edge Language Sync" rule. Both were retired on 2026-09-05 and
+replaced by Earned Abstraction (EA) and Stable Current Sync (SCS).
 
 ## Known, deliberate scope decisions
 
