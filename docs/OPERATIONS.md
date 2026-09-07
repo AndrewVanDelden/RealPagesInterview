@@ -10,7 +10,7 @@ written so it stands on its own without that history.
 
 ```bash
 dotnet build                                                  # build the whole solution
-.\test.ps1                                                    # run the suite; fails the build under 100% coverage
+.\test.ps1                                                    # run the suite; fails the build under 100% coverage; exits with dotnet test's exit code
 dotnet run --project src/Agent.Cli -- --input <file> --output <file> [options]
 ```
 

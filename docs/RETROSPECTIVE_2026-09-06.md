@@ -276,6 +276,11 @@ cites the input field it keys on.
 - `.github/workflows/test.yml` runs `dotnet build` and `.\test.ps1` on every push and PR;
   branch protection on `dev` requires it.
 - The synthetic golden test is in the suite, so a rehearsal failure is a red PR.
+- `test.ps1` exits with `dotnet test`'s exit code. Until 2026-09-06 its pipeline ended in
+  `Tee-Object`, so `powershell -File .\test.ps1` returned 0 on a red suite and a CI step
+  calling it would have passed; found by the PR #1 review, fixed the same day. The same
+  fix stops Windows PowerShell 5.1 wrapping each stderr line in a `NativeCommandError`
+  block inside `test-output.txt`.
 - AGENTS.md gains the narration rehearsal rule as a workflow step.
 - Scopes: Sprint 1, Fix 9.
 
