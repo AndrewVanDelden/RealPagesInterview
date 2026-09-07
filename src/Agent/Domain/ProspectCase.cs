@@ -11,4 +11,4 @@ public sealed record ProspectCase(
     ProspectContext Input,
     CaseAssertions Assertions,
     CaseThresholds Thresholds,
-    [property: JsonConverter(typeof(LenientExpectedOutcomeConverter))] ExpectedOutcome? Expected);
+    [property: JsonConverter(typeof(LenientExpectedOutcomeConverter))] ExpectedOutcome? Expected = null);

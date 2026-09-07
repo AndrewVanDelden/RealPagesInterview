@@ -144,6 +144,38 @@ public class JsonlRecordReaderTests
         Assert.Contains("Line 1", result.Error);
     }
 
+    // RespectNullableAnnotations rejects only an explicit null. A property that is simply
+    // absent binds silently (a DateOnly to 0001-01-01, a bool to false, an object to null),
+    // which is what produced the year-0001 plans on the real hold-out (retrospective
+    // finding 4). Absence of a required property must be a failure row at the boundary.
+    [Fact]
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenRequiredValueTypePropertyIsAbsent()
+    {
+        string lineWithoutMoveDate = MinimalValidLine.Replace("\"move_date_target\":\"2026-01-10\",", string.Empty);
+        using TextReader reader = new StringReader(lineWithoutMoveDate + Environment.NewLine);
+
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 1", result.Error);
+        Assert.Contains("move_date_target", result.Error);
+    }
+
+    [Fact]
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenRequiredObjectPropertyIsAbsent()
+    {
+        string lineWithoutConsent = MinimalValidLine.Replace(
+            "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false},",
+            string.Empty);
+        using TextReader reader = new StringReader(lineWithoutConsent + Environment.NewLine);
+
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 1", result.Error);
+        Assert.Contains("consent", result.Error);
+    }
+
     // Blank lines are skipped but still counted, or the reported line number stops
     // matching what an editor shows for the same file.
     [Fact]
