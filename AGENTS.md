@@ -47,7 +47,7 @@ Provisional: retrospective section 9 leaves open a restart at step 1, which woul
 Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7 and the two items in
 section 9; none written into `docs/DESIGN.md` yet.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
-review fixes (branch `fix/pr1-review-findings`, 2026-09-07) edited both on an explicit user
+review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
 D7 in the retrospective.
 Update this section at the end of every sprint. It is the first thing an agent reads.

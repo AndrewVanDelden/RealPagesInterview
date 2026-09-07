@@ -187,7 +187,7 @@ cites the input field it keys on.
   records on the next unseen file; logging keeps them and makes the gap visible.
 - Reference time: a `--now` CLI flag; default is the latest `last_interaction` in the
   batch, else UTC now. Logged once per run.
-- Landed 2026-09-07 on `fix/pr1-review-findings` (PR #1 review fixes, Phase 0 gate
+- Landed 2026-09-07 on this branch, PR #14 (PR #1 review fixes, Phase 0 gate
   overridden by Andrew): absence of any required member is a failure row via
   `RespectRequiredConstructorParameters` on `AgentJsonOptions.Default` rather than the
   `required` modifier, which positional records cannot carry; the reader returns one
@@ -316,7 +316,7 @@ Each sprint implements decisions already written. Each names the check that prov
 | 7 Structure and narration | D7: interface removal, one output file, orchestrator step comments; `docs/NARRATION.md` filled and spoken; DESIGN.md final; both numbers final | CI green; narration delivered without notes; the appendix of this file carries before and after for both sets |
 
 **Taken early, 2026-09-07.** The PR #1 review (ten findings, all posted on the PR) was
-fixed on `fix/pr1-review-findings` before Phase 0 closed, on Andrew's explicit override of
+fixed on this branch, PR #14, before Phase 0 closed, on Andrew's explicit override of
 the AGENTS.md gate: a deliberate PF violation, recorded here. It took from Sprint 3 the
 required-member enforcement, the per-line `Result`, `None`, and the nullable body (D1, D3),
 and from Sprint 7 the record reader interface (D7). It also fixed `test.ps1`'s exit code
