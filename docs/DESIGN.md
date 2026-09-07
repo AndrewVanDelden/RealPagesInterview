@@ -53,10 +53,10 @@ semantically matches the expected result in the dataset.
 ```json
 {
   "next_message": {
-    "channel": "sms | email | voice | null",
+    "channel": "sms | email | voice | none | null",
     "send_at": "ISO-8601 with local offset, or null",
     "subject": "string or null",
-    "body": "string",
+    "body": "string, or null when the message is suppressed",
     "cta": { "type": "schedule_tour", "options": ["Thu","Fri"], "link": "..." }
   },
   "next_action": { "type": "start_cadence | follow_up_in_days | ...", "name": "...", "value": 3 }
@@ -110,6 +110,15 @@ flowchart TD
     I --> J[Emit output JSON]
 ```
 
+The compose-validate loop (E to G) is bounded by construction: two attempts through
+the inner composer, then one pass through the template fallback, whose output is
+validated too. A draft that still fails, or model output that cannot be parsed into a
+typed message, exits as a `Result` failure and the record is suppressed; nothing throws
+and nothing loops. The two acceptance criteria this carries from the retired sprint
+plan (a seeded bad draft is corrected or replaced and the loop never runs unbounded;
+malformed model output is rejected, not crashed) are the contract
+`ValidatingMessageComposer` is tested against.
+
 ### Request sequence
 
 ```mermaid
@@ -147,7 +156,7 @@ it can be tested in isolation and swapped without touching the others.
 
 | Component | Responsibility | Interface | Notes |
 |---|---|---|---|
-| `JsonlReader` | Parse each line into a typed record. | `IRecordReader` | No logic beyond deserialization. |
+| `JsonlRecordReader` | Parse each line into a typed record, one `Result` per line. | none (concrete class: one implementation, no test double) | A bad line is a failure row naming its line number; the file is never aborted. |
 | `ConsentGate` | Decide contactability and record `consent_verified`. | `IConsentGate` | Pure function of consent + preferences. |
 | `ChannelSelector` | Pick the first preferred channel with consent. | `IChannelSelector` | Returns a channel or none. |
 | `SendScheduler` | Compute `send_at` from timezone, quiet hours, channel default hour. | `ISendScheduler` | Config-driven, no I/O. |
@@ -216,7 +225,9 @@ that proves the agent meets the thresholds rather than asserting it does.
 
 ## 8. Build plan
 
-The epic and sprint breakdown lives in [BACKLOG.md](./BACKLOG.md), sized for a
+The original sprint plan was retired on 2026-09-06; the decisions and sprints that
+replace it are in [RETROSPECTIVE_2026-09-06.md](./RETROSPECTIVE_2026-09-06.md) section 7.
+The paragraph below describes the original plan, sized for a
 focused multi-hour build and ordered so there is a runnable end-to-end path
 early and the eval harness proves the thresholds at the end.
 
@@ -229,7 +240,7 @@ early and the eval harness proves the thresholds at the end.
 2. Send hour defaults by channel (sms 09:00, email 10:00, voice 09:00 local),
    with a single day-rollover rule: if today's default-hour slot has already
    passed relative to `last_interaction`, resolve to tomorrow instead. A
-   separate "quiet-hours window" was considered (BACKLOG.md names it as a
+   separate "quiet-hours window" was considered (the original sprint plan named it as a
    Sprint 2.3 goal) and deliberately scoped out: it is not present in
    `problem_statement.txt` or in `sample.jsonl`'s `assertions`/`thresholds`,
    and the single rollover rule alone satisfies all three of 2.3's stated

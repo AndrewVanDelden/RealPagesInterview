@@ -2,8 +2,8 @@ namespace Agent.Domain;
 
 public sealed record ProspectProfile(
     string FirstName,
-    string? CityInterest,
-    IReadOnlyList<string>? AmenityInterest)
+    string? CityInterest = null,
+    IReadOnlyList<string>? AmenityInterest = null)
 {
     // Normalized, always-non-null views of the two interest fields, used by every
     // composer that describes stated interest - the null/empty-vs-non-empty guard lives

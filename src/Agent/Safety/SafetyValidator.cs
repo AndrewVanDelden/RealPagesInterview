@@ -4,7 +4,7 @@ using Agent.Domain;
 namespace Agent.Safety;
 
 // Keyword/pattern heuristic, not a comprehensive fair-housing compliance system: see
-// docs/CODE_REVIEW.md and TalkingPoints.md Sprint 4 for the explicit scope note.
+// docs/CODE_REVIEW.md for the explicit scope note.
 //
 // NoSensitiveDiscrimination (CaseConstraints) is intentionally never read here: the
 // protected-class/steering check always runs regardless of its value. Fair housing law
@@ -34,7 +34,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
         var violations = new List<string>();
         string text = message.Subject is { Length: > 0 }
             ? $"{message.Subject} {message.Body}"
-            : message.Body;
+            : message.Body ?? string.Empty;
 
         if (constraints.IncludeOptOutInstructions && FindFirst(text, OptOutPhrases) is null)
         {

@@ -36,9 +36,26 @@ sets it. Never read, print, or write the value.
   `Ingest/` reader and writer; `Common/` `Option`, `Result`, logging helpers.
 - `src/Agent.Cli`: thin shell, `CliRunner` is the composition root.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
-- `docs/DESIGN.md` architecture and assumptions log. `docs/BACKLOG.md` sprint plan.
-  `docs/CODE_REVIEW.md` review angles and deliberate scope decisions. `TalkingPoints.md`
-  per-sprint decision log.
+- `docs/DESIGN.md` architecture and assumptions log. `docs/CODE_REVIEW.md` review angles
+  and deliberate scope decisions. `TalkingPoints.md` one sentence per decision, the
+  walkthrough. `docs/RETROSPECTIVE_2026-09-06.md` why the hold-out scored 2 of 12, decisions
+  D1 to D8, and the plan to completion.
+
+## Current phase
+
+Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, redone after the hold-out retrospective.
+Check: the design doc's assumptions log has an evidence column with no blanks. Status: not passed;
+`docs/DESIGN.md` section 9 is a prose list today and becomes that table in Sprint 1 (retrospective
+section 7).
+Next step: 4, inventory every input with type, nullability, and which sample it appears in.
+Provisional: retrospective section 9 leaves open a restart at step 1, which would change this line to 1.
+Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7 and the two items in
+section 9; none written into `docs/DESIGN.md` yet.
+No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
+review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
+override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
+D7 in the retrospective.
+Update this section at the end of every sprint. It is the first thing an agent reads.
 
 ## Workflow
 
@@ -48,6 +65,9 @@ sets it. Never read, print, or write the value.
   build under 100 percent; do not lower the threshold, exclude files, or add tests that
   exist only to hit a line.
 - One sprint at a time. Do not start the next until the current one is green.
+- Before a PR merges: narrate one record through the code aloud, file by file, without
+  notes (playbook Appendix B). A hop "through an interface to its only
+  implementation" is a finding.
 - All work on `dev`. Never commit to `main`. One PR per sprint, `gh pr create` against
   `dev`.
 - Every substantive decision, bug, or run/debug fact lands in a repo doc before the turn
@@ -64,6 +84,9 @@ sets it. Never read, print, or write the value.
 - `[GeneratedRegex]` for every regex. No `new Regex(...)`.
 - `Option<T>` and `Result<T>` from `Agent.Common` for expected absence and expected
   failure. Exceptions are for bugs.
+- `JsonlRecordReader.ReadAll` returns one `Result<ProspectCase>` per non-blank line. A bad
+  line is a failure row naming its line number; the file is never aborted, and `CliRunner`
+  counts the row toward exit code 2.
 - Domain types never reuse a BCL name. Rename at the source, never alias.
 - `ILogger<T>` is optional on every constructor and defaults to `NullLogger`. `TaskId` is
   a log scope value, never repeated in message text.
@@ -73,12 +96,21 @@ sets it. Never read, print, or write the value.
 
 ## Gotchas
 
-- Missing JSON properties on non-nullable value types (`DateOnly`, `DateTimeOffset`) do
-  not throw. They default silently. This caused the real hold-out failures. Declare
-  anything optional in real data as nullable.
-- `expected.next_message.channel` can be `"none"` in real data. `CommunicationChannel`
-  has no such member, so `LenientExpectedOutcomeConverter` sets `Expected` to null and
-  the record scores as unscoreable.
+- Missing JSON properties never default silently: `AgentJsonOptions.Default` sets
+  `RespectRequiredConstructorParameters`, so every constructor parameter without a default
+  is required and its absence is a failure row from the reader. An optional member carries
+  `= null`, or the record has a `[JsonConstructor]` listing only its required members
+  where C# forbids a default before a required parameter (`CaseConstraints`,
+  `ExpectedOutcome`, `AgentOutput`). Silent year-0001 dates were the real hold-out failure;
+  `move_date_target` and `last_interaction` stay required until D2 and D4 define what runs
+  without them.
+- `expected.next_message.channel` can be `"none"` in real data. `CommunicationChannel.None`
+  (first in the enum, so the default value is the absence) and a nullable `Body` let that
+  shape parse, and the evaluator scores the agent's null message, the oracle's `none`, and
+  a null channel as one channel. Any other unlisted value still makes
+  `LenientExpectedOutcomeConverter` set `Expected` to null and the record scores as
+  unscoreable. The agent itself still emits a null `next_message` on suppression; D3's
+  object shape is Sprint 3 and 6 work.
 - The safety validator's whole-word check calls static `Regex.IsMatch` per term (about
   25 terms) against a 15-entry cache, so patterns recompile on every message. Known,
   unfixed.
@@ -88,7 +120,8 @@ sets it. Never read, print, or write the value.
 ## Review criteria
 
 Reviews check correctness first, then the pillars in `~/.claude/CLAUDE.md` by acronym
-(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB). Report a finding only when it affects
+(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB, PF, DBT; the key and the evidence for each are in
+`~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects
 correctness, a stated requirement, or a named pillar, and name which. Do not report
 style preferences, hypothetical future needs, or requests for more abstraction, defensive
 code, or tests for cases that cannot occur. A reviewer asked to find gaps will report

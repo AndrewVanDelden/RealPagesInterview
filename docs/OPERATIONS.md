@@ -1,16 +1,16 @@
 # Operations: running, debugging, and reading logs
 
 This is the one place that answers "how do I actually run this thing, and
-when it does something wrong, where do I look." [TalkingPoints.md](../TalkingPoints.md)
-explains *why* the logging system looks the way it does (Sprint 8's audit,
-Sprint 9's build-out); this document is the reference for *using* it,
+when it does something wrong, where do I look." PR #12 (Sprint 9, real logging) and the
+Sprint 8 audit in the pre-2026-09-06 history of `TalkingPoints.md` explain *why* the
+logging system looks the way it does; this document is the reference for *using* it,
 written so it stands on its own without that history.
 
 ## 1. Running it
 
 ```bash
 dotnet build                                                  # build the whole solution
-.\test.ps1                                                    # run the suite; fails the build under 100% coverage
+.\test.ps1                                                    # run the suite; fails the build under 100% coverage; exits with dotnet test's exit code
 dotnet run --project src/Agent.Cli -- --input <file> --output <file> [options]
 ```
 
