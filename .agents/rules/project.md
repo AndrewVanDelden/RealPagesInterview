@@ -44,10 +44,13 @@ sets it. Never read, print, or write the value.
 ## Current phase
 
 Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, redone after the hold-out retrospective.
-Check: the design doc's assumptions log has an evidence column with no blanks. Status: not passed.
+Check: the design doc's assumptions log has an evidence column with no blanks. Status: not passed;
+`docs/DESIGN.md` section 9 is a prose list today and becomes that table in Sprint 1 (retrospective
+section 7).
 Next step: 4, inventory every input with type, nullability, and which sample it appears in.
-Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7; none written into
-`docs/DESIGN.md` yet.
+Provisional: retrospective section 9 leaves open a restart at step 1, which would change this line to 1.
+Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7 and the two items in
+section 9; none written into `docs/DESIGN.md` yet.
 No edits under `src/` or `tests/` while the phase is 0 or 1.
 Update this section at the end of every sprint. It is the first thing an agent reads.
 

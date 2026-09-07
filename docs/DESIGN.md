@@ -110,6 +110,15 @@ flowchart TD
     I --> J[Emit output JSON]
 ```
 
+The compose-validate loop (E to G) is bounded by construction: two attempts through
+the inner composer, then one pass through the template fallback, whose output is
+validated too. A draft that still fails, or model output that cannot be parsed into a
+typed message, exits as a `Result` failure and the record is suppressed; nothing throws
+and nothing loops. The two acceptance criteria this carries from the retired sprint
+plan (a seeded bad draft is corrected or replaced and the loop never runs unbounded;
+malformed model output is rejected, not crashed) are the contract
+`ValidatingMessageComposer` is tested against.
+
 ### Request sequence
 
 ```mermaid

@@ -25,8 +25,9 @@ A multi-agent PR review splits the task across eight specific perspectives:
 
 The second reviewer applies the review criteria in `AGENTS.md` (section
 "Review criteria") plus the universal code pillars loaded at user scope,
-cited by acronym: VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB. The
-pillar text is not reproduced here; `AGENTS.md` is the single project
+cited by acronym: VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB, PF, DBT;
+the key and the evidence for each are in `~/.agent-rules/CODE_PILLARS.md`.
+The pillar text is not reproduced here; `AGENTS.md` is the single project
 source and the pillars' source lives outside the repo. A finding must name a
 correctness defect, a stated requirement, or a pillar. An empty review
 outputs exactly "Nothing to report."

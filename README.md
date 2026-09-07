@@ -46,7 +46,7 @@ interface table, and the SOLID mapping: [docs/DESIGN.md](docs/DESIGN.md).
 | `src/Agent` | The library: domain records, decision logic, composition, safety. No I/O beyond the completion client. |
 | `src/Agent.Cli` | Console entry point — thin shell over `Agent`. |
 | `tests/Agent.Tests` | xUnit tests. One suite, 100% line/branch/method coverage, enforced as a build-breaking gate (not just reported). |
-| `docs/` | Design, backlog, and code-review-process documentation (see below). |
+| `docs/` | Design, operations, code-review-process, and retrospective documentation (see below). |
 
 ## Getting started
 
@@ -76,6 +76,7 @@ debug a bad run: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — how to run it, how to debug a bad run, how the logging actually works, and how to read one log line.
 - [TalkingPoints.md](TalkingPoints.md) - one sentence per decision, grouped from the 60-second answer down; the walkthrough script.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — what the two automated PR reviewers check for, and the scope decisions they should not re-flag.
+- [docs/RETROSPECTIVE_2026-09-06.md](docs/RETROSPECTIVE_2026-09-06.md) - why the hold-out scored 2 of 12, decisions D1 to D8, and the plan to completion.
 
 ## Engineering notes
 

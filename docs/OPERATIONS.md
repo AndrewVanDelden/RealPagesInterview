@@ -1,9 +1,10 @@
 # Operations: running, debugging, and reading logs
 
 This is the one place that answers "how do I actually run this thing, and
-when it does something wrong, where do I look." The history of PRs #11 and #12
-explains *why* the logging system looks the way it does; this document is the
-reference for *using* it, written so it stands on its own without that history.
+when it does something wrong, where do I look." PR #12 (Sprint 9, real logging) and the
+Sprint 8 audit in the pre-2026-09-06 history of `TalkingPoints.md` explain *why* the
+logging system looks the way it does; this document is the reference for *using* it,
+written so it stands on its own without that history.
 
 ## 1. Running it
 

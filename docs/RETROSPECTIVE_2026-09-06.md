@@ -51,7 +51,7 @@ Each names the pillar (key: `~/.agent-rules/CODE_PILLARS.md`) and the fix item i
    `ConsentVerified: true` in the gate. Fair housing is "no keyword hit." Fix 7.
 7. **Consent gate and channel selector compute the same thing twice**, and `.Value` at
    line 66 depends on a contract between them that the type system does not hold. Fix 3
-   and D7, Sprint 7.
+   and D2, Sprint 4.
 8. **The second safety validation at line 79 is provably redundant.** The validating
    composer already ran the same pure function on the same subject and body; line 77
    changes only `SendAt`. The branch at line 90 is reachable only by injecting a raw
@@ -110,8 +110,8 @@ Each names the pillar (key: `~/.agent-rules/CODE_PILLARS.md`) and the fix item i
 
 Project-agnostic versions live in the playbook and its appendices. Applied to this repo:
 
-- Narrate one record through the code aloud before any PR merges. Belongs in AGENTS.md as
-  a workflow step (not yet added, see section 7).
+- Narrate one record through the code aloud before any PR merges. In AGENTS.md as a
+  workflow step.
 - A rehearsal-set failure blocks the sprint.
 - The scorer is complete and proven able to fail before any agent change is measured.
 - Optional in real data means nullable, and absence is logged per record.
@@ -138,7 +138,8 @@ Listed here so this file is complete:
 1. Complete the evaluator: `send_at` to the day and hour window, CTA type against
    `expected.cta.type`, presence of options or link when expected, action payload.
 2. Nullable dates, observed optional fields on the context record, per-record report of
-   absent and unrecognized fields.
+   absent and unrecognized fields; a reflection test that fails on any value-type record
+   property that is neither `required` nor nullable.
 3. Planner keyed on persona, lifecycle stage, and consent outcome; action payload shapes;
    `Result` instead of throw; plan after the consent check.
 4. A nameable no-channel value so `"none"` round-trips.
@@ -176,6 +177,12 @@ cites the input field it keys on.
   `last_interaction`, `missed_tour_time`, `cancellation_reason`, `lease_end_date`,
   `move_in_date`, `unit`, `renewal_offer_id`, `constraints.primary_cta`,
   `constraints.respect_consent`, `constraints.locale_applied`.
+- The rule behind the two lists, enforced for every field: a value-type property on an
+  input record is either `required` (the C# modifier; System.Text.Json throws on a missing
+  member, which becomes the error row) or `Nullable<T>`. A reflection test in the suite
+  walks every record type under `Domain/` and fails on a value-type property that is
+  neither, so the next optional field cannot be added non-nullable by omission. The eleven
+  names above are today's instances; the test is what holds for the twelfth.
 - Unknown members: log at Information per record, do not reject. Rejecting would drop
   records on the next unseen file; logging keeps them and makes the gap visible.
 - Reference time: a `--now` CLI flag; default is the latest `last_interaction` in the
@@ -190,6 +197,11 @@ cites the input field it keys on.
   data in one file, not branches spread across classes.
 - Horizon (`move_date_target` minus reference time) is read only inside the prospect `new`
   and `open` rows to choose short versus long cadence and follow-up days.
+- Absent `move_date_target` in a `new` or `open` row: the action type is unchanged, since
+  the oracle keys type on stage alone (appendix table); the horizon-dependent parameter
+  takes the row's default, recorded in the policy table and labeled under-determined; the
+  record's log line names the defaulted field. Not an error row: the stage rule exists,
+  only its parameter is missing an input.
 - No row for the key: `Result` failure "no policy for persona/stage". The record becomes an
   error row and a log line. The planner never applies the nearest rule.
 - `NextAction` becomes one record with `Type` and nullable `Name`, `Value`, `InDays`,
@@ -275,7 +287,7 @@ Each sprint implements decisions already written. Each names the check that prov
 |---|---|---|
 | 1 Decisions and gates | D1 to D8 written into DESIGN.md; AGENTS.md rules and doc map; CI file; branch protection; commit today's docs | DESIGN.md section 3 cites a field for every rule; the doc PR shows the `test` check green |
 | 2 Harness | D6: scorer fields, scorer proof test, second synthetic set written and frozen, stage-shaped fixtures | scorer proven able to fail; baseline numbers for both sets recorded in section 1 of this file |
-| 3 Contracts | D1, D3, logging (Fix 2, 4, 8): nullable fields, per-record gap log, `None`, suppression reason, one scope owner, decision-input log line | hold-out log shows defaulted fields on ten records, no duplicated task id; opt-out record is a scored row |
+| 3 Contracts | D1, D3, logging (Fix 2, 4, 8): nullable fields, per-record gap log, `None`, suppression reason, one scope owner, decision-input log line | hold-out log shows defaulted fields on ten records, no duplicated task id; opt-out record is a scored row; the nullability test was seen red against one non-nullable field before it went green |
 | 4 Decision model | D2 (Fix 3): policy table, merged gate and selector, orchestrator reorder, `Result` from the planner | Action column OK on all twelve; no-consent plans `no_op`; past move date is a row, not exit 2 |
 | 5 Scheduling | D4 (Fix 5): reference time, floor, assumptions log | `send_at` OK to day and hour on the 2025-12-09 records; the rest listed with the missing field |
 | 6 Composition and states | D5, D3 states (Fix 6, 7): template set, channel shape, Spanish, default CTA, prompt inputs, earned states | both suppressed emails compose; CTA payload checks pass; `diag.json` names every suppression reason |
@@ -288,12 +300,15 @@ every under-determined item. `docs/NARRATION.md` is filled and has been spoken a
 
 ## 8. Files written or changed today
 
-Repo (branch `agent-instruction-files`, uncommitted): this file; `AGENTS.md` (Current phase,
-doc map, narration rule) and its generated copy; `TalkingPoints.md` rewritten as one
-sentence per point; `docs/BACKLOG.md`, `REBUILD_PLAN.md`, and `docs/HOLDOUT_REVIEW.md`
-deleted, the last merged into the appendix below. No changes under `src/` or `tests/`.
+Repo (branch `retrospective-2026-09-06`, PR #14 into `dev`, branched from
+`agent-instruction-files`, PR #13): this file; `AGENTS.md` (Current phase, doc map,
+narration rule) and its generated copy; `TalkingPoints.md` rewritten as one sentence per
+point; `docs/BACKLOG.md` deleted; two untracked drafts, `REBUILD_PLAN.md` and
+`docs/HOLDOUT_REVIEW.md`, discarded without ever being committed, the second merged into
+the appendix below. No changes under `src/` or `tests/`.
 
-`~/.agent-rules` (uncommitted): `CODE_PILLARS.md` (Pillar 3, VF for inferred rules),
+`~/.agent-rules` (branch `ordered-work-and-playbook-audit`, committed): `CODE_PILLARS.md`
+(Pillar 3, VF for inferred rules),
 `PROJECT_PLAYBOOK.md` (27 steps rewritten, three appendices), `templates/AGENTS.md`
 (Current phase, Next step), `README.md`.
 
@@ -304,7 +319,6 @@ tasks, and pasted output as evidence.
 
 - The CI workflow file and the branch protection rule (D8, Sprint 1). Not added; the file
   content is in the playbook's Appendix A under CI.
-- Commit the uncommitted files in both repos.
 - Whether the interview project restarts at Phase 0 step 1, in which case the AGENTS.md next
   step moves from 4 to 1.
 

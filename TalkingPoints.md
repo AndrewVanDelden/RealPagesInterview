@@ -96,8 +96,8 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 
 ## Decisions to finish the project
 
-- D1 Input contract: nine required fields, eleven nullable ones logged when absent, unknown fields logged, a `--now` reference time.
-- D2 Decision model: consent first, then a policy table keyed on persona and stage, horizon only inside the prospect rows, "no policy" as a result.
+- D1 Input contract: nine required fields, every other value-type field nullable and logged when absent, a test that fails on a field that is neither, unknown fields logged, a `--now` reference time.
+- D2 Decision model: consent first, then a policy table keyed on persona and stage, horizon only inside the prospect rows and the row's default when the move date is absent, "no policy" as a result.
 - D3 Output contract: a real `none` channel, a suppression reason in diagnostics, required states earned by checks that can fail.
 - D4 Scheduling: default slot on or after the later of reference time and last interaction, scored to day and hour.
 - D5 Composition: templates keyed on stage, channel, and language, options on SMS, link on email, missing CTA means the row's default.
