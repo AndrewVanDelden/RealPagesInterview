@@ -53,10 +53,10 @@ semantically matches the expected result in the dataset.
 ```json
 {
   "next_message": {
-    "channel": "sms | email | voice | null",
+    "channel": "sms | email | voice | none | null",
     "send_at": "ISO-8601 with local offset, or null",
     "subject": "string or null",
-    "body": "string",
+    "body": "string, or null when the message is suppressed",
     "cta": { "type": "schedule_tour", "options": ["Thu","Fri"], "link": "..." }
   },
   "next_action": { "type": "start_cadence | follow_up_in_days | ...", "name": "...", "value": 3 }
@@ -156,7 +156,7 @@ it can be tested in isolation and swapped without touching the others.
 
 | Component | Responsibility | Interface | Notes |
 |---|---|---|---|
-| `JsonlReader` | Parse each line into a typed record. | `IRecordReader` | No logic beyond deserialization. |
+| `JsonlRecordReader` | Parse each line into a typed record, one `Result` per line. | none (concrete class: one implementation, no test double) | A bad line is a failure row naming its line number; the file is never aborted. |
 | `ConsentGate` | Decide contactability and record `consent_verified`. | `IConsentGate` | Pure function of consent + preferences. |
 | `ChannelSelector` | Pick the first preferred channel with consent. | `IChannelSelector` | Returns a channel or none. |
 | `SendScheduler` | Compute `send_at` from timezone, quiet hours, channel default hour. | `ISendScheduler` | Config-driven, no I/O. |

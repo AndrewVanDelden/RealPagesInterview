@@ -187,6 +187,15 @@ cites the input field it keys on.
   records on the next unseen file; logging keeps them and makes the gap visible.
 - Reference time: a `--now` CLI flag; default is the latest `last_interaction` in the
   batch, else UTC now. Logged once per run.
+- Landed 2026-09-07 on `fix/pr1-review-findings` (PR #1 review fixes, Phase 0 gate
+  overridden by Andrew): absence of any required member is a failure row via
+  `RespectRequiredConstructorParameters` on `AgentJsonOptions.Default` rather than the
+  `required` modifier, which positional records cannot carry; the reader returns one
+  `Result` per line and `CliRunner` counts a failure row toward exit code 2. Deliberate
+  deviations from the lists above: `move_date_target` and `last_interaction` are required
+  for now, since what the planner and scheduler do without them is D2 and D4 and neither
+  is built; the reflection test, the per-record log of an absent optional field,
+  unknown-member logging, and `--now` remain Sprint 3.
 - Scopes: D2, D4, D5, Fix 2.
 
 **D2. Decision model.** How `next_action` is chosen.
@@ -221,6 +230,12 @@ cites the input field it keys on.
   record; `fair_housing_check_passed` stays the validator's verdict; `brand_style_applied`
   becomes a check that can fail (property name present, channel-correct opt-out phrasing,
   no invented pricing pattern), applied to template and model output alike.
+- Landed 2026-09-07 (same branch as D1's note): `CommunicationChannel.None`, serialized
+  `"none"` and first in the enum so the default value is the absence; `Body` nullable; the
+  validator and evaluator treat a null body as empty text; the evaluator scores the agent's
+  null message, the oracle's `none`, and a null channel as one channel, so the suppressed
+  oracle rows are scoreable. Still open: the agent's own suppressed output is a null object,
+  not the object with `none`; `suppression_reason` and the earned states are unchanged.
 - Scopes: Fix 4, Fix 7, the scorer's handling of the opt-out record.
 
 **D4. Scheduling.** What `send_at` is a function of.
@@ -270,6 +285,8 @@ cites the input field it keys on.
 - Orchestrator: six steps, one comment naming each, plan after consent, one validation, one
   exit builder that takes a reason. Output records (`AgentOutput`, `NextMessage`, `Cta`,
   `NextAction`) move into one file, since they are one concept: the output contract.
+- Landed 2026-09-07 (same branch as D1's note): `IRecordReader` removed, `JsonlRecordReader`
+  is concrete. The rest of the list is unchanged.
 - Scopes: Sprint 7, the narration.
 
 **D8. Gates.** What runs without a person remembering.
@@ -297,6 +314,15 @@ Each sprint implements decisions already written. Each names the check that prov
 | 5 Scheduling | D4 (Fix 5): reference time, floor, assumptions log | `send_at` OK to day and hour on the 2025-12-09 records; the rest listed with the missing field |
 | 6 Composition and states | D5, D3 states (Fix 6, 7): template set, channel shape, Spanish, default CTA, prompt inputs, earned states | both suppressed emails compose; CTA payload checks pass; `diag.json` names every suppression reason |
 | 7 Structure and narration | D7: interface removal, one output file, orchestrator step comments; `docs/NARRATION.md` filled and spoken; DESIGN.md final; both numbers final | CI green; narration delivered without notes; the appendix of this file carries before and after for both sets |
+
+**Taken early, 2026-09-07.** The PR #1 review (ten findings, all posted on the PR) was
+fixed on `fix/pr1-review-findings` before Phase 0 closed, on Andrew's explicit override of
+the AGENTS.md gate: a deliberate PF violation, recorded here. It took from Sprint 3 the
+required-member enforcement, the per-line `Result`, `None`, and the nullable body (D1, D3),
+and from Sprint 7 the record reader interface (D7). It also fixed `test.ps1`'s exit code
+(D8, on PR #14), the two dead `JsonPropertyName` attributes, the untested blank-line
+counting, and the missing complexity line on `ReadAll`. The sprint rows above keep what
+remains.
 
 **Definition of complete.** The twelve-record file scores 12 of 12 on every field in D6,
 labeled "trained on the twelve." The frozen synthetic set has its own reported number. CI
