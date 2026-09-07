@@ -34,7 +34,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
         var violations = new List<string>();
         string text = message.Subject is { Length: > 0 }
             ? $"{message.Subject} {message.Body}"
-            : message.Body;
+            : message.Body ?? string.Empty;
 
         if (constraints.IncludeOptOutInstructions && FindFirst(text, OptOutPhrases) is null)
         {

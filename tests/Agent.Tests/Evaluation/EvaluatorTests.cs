@@ -12,7 +12,7 @@ public class EvaluatorTests
     private static readonly NextAction BaselineAction = new("start_cadence", "welcome", null);
     private static readonly Evaluator Evaluator = new();
 
-    private static NextMessage Message(CommunicationChannel? channel, string body, string? subject = null, string? ctaType = "schedule_tour") =>
+    private static NextMessage Message(CommunicationChannel? channel, string? body, string? subject = null, string? ctaType = "schedule_tour") =>
         new(channel, null, subject, body, ctaType is null ? null : new Cta(ctaType, null, null));
 
     private static ExpectedOutcome BaselineExpected(NextMessage? message = null, NextAction? action = null) =>
@@ -314,6 +314,47 @@ public class EvaluatorTests
         Assert.True(score.Passed);
     }
 
+    // The oracle spells suppression as a next_message object with channel "none" and null
+    // fields (retrospective D3); the agent spells it as a null next_message. Both mean
+    // "no message", so they must score as the same channel.
+    [Fact]
+    public void Evaluate_ExpectedChannelNoneAndActualSuppressed_ChannelMatches()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(CommunicationChannel.None, null, ctaType: null), BaselineAction));
+        AgentRunResult actual = SuppressedResult();
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.True(scorecard.RecordScores[0].ChannelMatches);
+        Assert.True(scorecard.RecordScores[0].Passed);
+    }
+
+    // DESIGN.md section 2 documents channel as "sms | email | voice | null"; a null channel on
+    // an oracle message is the same absence as "none".
+    [Fact]
+    public void Evaluate_ExpectedChannelNullAndActualSuppressed_ChannelMatches()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(null, null, ctaType: null), BaselineAction));
+        AgentRunResult actual = SuppressedResult();
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.True(scorecard.RecordScores[0].ChannelMatches);
+    }
+
+    [Fact]
+    public void Evaluate_ActualBodyNull_ScoresNoOptOutAndZeroPersonalization()
+    {
+        ProspectCase prospectCase = BaselineCase();
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, null));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.False(score.OptOutPresent);
+        Assert.Equal(0.0, score.PersonalizationScore);
+    }
+
     [Fact]
     public void Evaluate_AllChecksPass_RecordScorePassedIsTrue()
     {
@@ -372,15 +413,14 @@ public class EvaluatorTests
 
     // Per-record isolation for the scorer itself, same principle as CliRunner's main batch
     // loop (and the exact gap that let a real bug - see Sprint 7 - crash the whole eval
-    // report instead of degrading one record). Body is forced null via `!` despite the
-    // non-nullable static type, deliberately simulating the "malformed despite what the
+    // report instead of degrading one record). Assertions is forced null via `!` despite
+    // the non-nullable static type, deliberately simulating the "malformed despite what the
     // type promises" scenario that keeps recurring with real interview data.
     [Fact]
     public void Evaluate_ScoringThrows_RecordBecomesUnscoreableInsteadOfAbortingTheBatch()
     {
-        ProspectCase prospectCase = BaselineCase();
-        var malformedMessage = new NextMessage(CommunicationChannel.Sms, null, null, null!, new Cta("schedule_tour", null, null));
-        AgentRunResult actual = SuccessfulResult(malformedMessage);
+        ProspectCase prospectCase = BaselineCase() with { Assertions = null! };
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out."));
 
         Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
@@ -395,9 +435,8 @@ public class EvaluatorTests
     {
         var capturingLogger = new CapturingLogger<Evaluator>();
         var evaluator = new Evaluator(capturingLogger);
-        ProspectCase prospectCase = BaselineCase();
-        var malformedMessage = new NextMessage(CommunicationChannel.Sms, null, null, null!, new Cta("schedule_tour", null, null));
-        AgentRunResult actual = SuccessfulResult(malformedMessage);
+        ProspectCase prospectCase = BaselineCase() with { Assertions = null! };
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out."));
 
         evaluator.Evaluate([Run(prospectCase, actual)]);
 

@@ -72,7 +72,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         CaseThresholds thresholds = prospectCase.Thresholds;
         string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
 
-        bool channelMatches = expected.NextMessage?.Channel == actual?.Channel;
+        bool channelMatches = EffectiveChannel(expected.NextMessage) == EffectiveChannel(actual);
         bool nextActionTypeMatches = expected.NextAction.Type == result.Output.NextAction.Type;
 
         bool optOutPresent = actual is null
@@ -86,7 +86,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
         bool safetyWithinBudget = result.Diagnostics.SafetyViolationCount <= thresholds.SafetyViolationsMax;
 
-        double personalizationScore = actual is null ? 1.0 : ComputePersonalizationScore(prospectCase.Input, actual.Body);
+        double personalizationScore = actual is null ? 1.0 : ComputePersonalizationScore(prospectCase.Input, actual.Body ?? string.Empty);
         bool personalizationScoreMet = personalizationScore >= thresholds.PersonalizationScoreMin;
 
         bool latencyWithinBudget = run.LatencyMs <= thresholds.P95LatencyMs;
@@ -104,6 +104,12 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             latencyWithinBudget);
     }
 
+    // Three spellings of "no message" score as the same channel: the agent's null
+    // next_message, the oracle's next_message object with channel "none" (retrospective
+    // D3), and DESIGN.md section 2's null channel.
+    private static CommunicationChannel EffectiveChannel(NextMessage? message) =>
+        message?.Channel ?? CommunicationChannel.None;
+
     // Mirrors SafetyValidator.Validate's own search text (Subject+Body when Subject is
     // present), so this checks the same opt-out phrasing the validator actually enforces,
     // not just the Body half of it.
@@ -111,7 +117,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
     {
         string text = message.Subject is { Length: > 0 }
             ? $"{message.Subject} {message.Body}"
-            : message.Body;
+            : message.Body ?? string.Empty;
 
         return SafetyValidator.OptOutPhrases.Any(phrase => text.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }

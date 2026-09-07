@@ -13,4 +13,14 @@ public class ConsentPreferencesExtensionsTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => consent.IsOptedIn(unknownChannel));
     }
+
+    // None is the absence of a channel, so nobody has opted in to it, even with every
+    // real channel consented.
+    [Fact]
+    public void IsOptedIn_None_ReturnsFalse()
+    {
+        var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: true);
+
+        Assert.False(consent.IsOptedIn(CommunicationChannel.None));
+    }
 }

@@ -11,8 +11,19 @@ public class SafetyValidatorTests
     private static CaseConstraints Constraints(bool noPiiLeak = true, bool includeOptOutInstructions = true) =>
         new(noPiiLeak, NoSensitiveDiscrimination: null, includeOptOutInstructions, PrimaryCta: "book_tour");
 
-    private static NextMessage Message(string body, string? subject = null, CommunicationChannel channel = CommunicationChannel.Sms) =>
+    private static NextMessage Message(string? body, string? subject = null, CommunicationChannel channel = CommunicationChannel.Sms) =>
         new(channel, null, subject, body, null);
+
+    // Body is nullable because the oracle's suppressed shape carries a null body
+    // (retrospective D3). A null body validates as empty text: no opt-out, no PII.
+    [Fact]
+    public void Validate_NullBody_ValidatesAsEmptyText()
+    {
+        SafetyValidationResult result = Validator.Validate(Message(null), Constraints());
+
+        Assert.Single(result.Violations);
+        Assert.Contains("opt-out", result.Violations[0], StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void Validate_CleanMessageWithOptOut_ReturnsZeroViolationsAndPassed()

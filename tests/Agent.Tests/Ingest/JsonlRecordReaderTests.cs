@@ -199,7 +199,7 @@ public class JsonlRecordReaderTests
     {
         string lineWithUnknownChannel = MinimalValidLine.Replace(
             "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
-            "\"expected\":{\"next_message\":{\"channel\":\"none\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
+            "\"expected\":{\"next_message\":{\"channel\":\"carrier_pigeon\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
         using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
 
         ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
@@ -236,6 +236,25 @@ public class JsonlRecordReaderTests
         Assert.Null(parsedCase.Expected);
     }
 
+    // The hold-out oracle spells a suppressed message as a next_message object with
+    // channel "none" and null fields (retrospective D3), not as a null object. Both
+    // spellings must parse so the record can be scored.
+    [Fact]
+    public void ReadAll_ExpectedSuppressedWithChannelNone_ParsesToNoneChannelAndNullBody()
+    {
+        string suppressedLine = MinimalValidLine.Replace(
+            "\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"}",
+            "\"next_message\":{\"channel\":\"none\",\"send_at\":null,\"subject\":null,\"body\":null,\"cta\":null}");
+        using TextReader reader = new StringReader(suppressedLine + Environment.NewLine);
+
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
+
+        Assert.NotNull(parsedCase.Expected);
+        Assert.NotNull(parsedCase.Expected!.NextMessage);
+        Assert.Equal(CommunicationChannel.None, parsedCase.Expected.NextMessage!.Channel);
+        Assert.Null(parsedCase.Expected.NextMessage.Body);
+    }
+
     // CaseConstraints.PrimaryCta is nullable (real hold-out data can omit primary_cta
     // entirely - see TalkingPoints.md Sprint 7). An explicit JSON null must parse the same
     // way as a missing key, not throw: RespectNullableAnnotations only rejects an explicit
@@ -263,7 +282,7 @@ public class JsonlRecordReaderTests
         var capturingLogger = new CapturingLogger<JsonlRecordReaderTests>();
         string lineWithUnknownChannel = MinimalValidLine.Replace(
             "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
-            "\"expected\":{\"next_message\":{\"channel\":\"none\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
+            "\"expected\":{\"next_message\":{\"channel\":\"carrier_pigeon\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
         using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
 
         using (AgentLog.Configure(new FakeLoggerFactory(capturingLogger)))
