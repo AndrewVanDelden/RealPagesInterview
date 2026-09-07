@@ -36,7 +36,8 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
             // Per-record isolation, same principle as CliRunner's main batch loop: a bug in
             // scoring one record (this project's own history includes exactly such a bug -
-            // see TalkingPoints.md Sprint 7) must not discard every other record's score.
+            // Sprint 7, TalkingPoints.md history before 2026-09-06) must not discard every
+            // other record's score.
             // Exception type is captured alongside the message - a bare ex.Message alone
             // ("Value cannot be null. (Parameter 'key')") does not say what went wrong.
             try

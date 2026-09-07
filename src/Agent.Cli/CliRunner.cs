@@ -215,8 +215,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
     // ConsoleLoggerProvider's own remarks). Scopes carry a record's TaskId (see
     // LeasingMessageAgent.RunAsync and Evaluator.Evaluate) onto every line emitted while
     // processing it. --log-file additionally persists the same lines to a real file via
-    // FileLoggerProvider - the "a log file" gap TalkingPoints.md's Sprint 8 audit flagged
-    // as missing from this codebase entirely.
+    // FileLoggerProvider - the "a log file" gap the Sprint 8 audit flagged as missing from
+    // this codebase entirely (TalkingPoints.md history before 2026-09-06).
     private static ILoggerFactory BuildLoggerFactory(TextWriter error, ILoggerProvider? fileLoggerProvider) =>
         LoggerFactory.Create(builder =>
         {
