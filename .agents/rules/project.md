@@ -36,9 +36,20 @@ sets it. Never read, print, or write the value.
   `Ingest/` reader and writer; `Common/` `Option`, `Result`, logging helpers.
 - `src/Agent.Cli`: thin shell, `CliRunner` is the composition root.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
-- `docs/DESIGN.md` architecture and assumptions log. `docs/BACKLOG.md` sprint plan.
-  `docs/CODE_REVIEW.md` review angles and deliberate scope decisions. `TalkingPoints.md`
-  per-sprint decision log.
+- `docs/DESIGN.md` architecture and assumptions log. `docs/CODE_REVIEW.md` review angles
+  and deliberate scope decisions. `TalkingPoints.md` one sentence per decision, the
+  walkthrough. `docs/RETROSPECTIVE_2026-09-06.md` why the hold-out scored 2 of 12, decisions
+  D1 to D8, and the plan to completion.
+
+## Current phase
+
+Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, redone after the hold-out retrospective.
+Check: the design doc's assumptions log has an evidence column with no blanks. Status: not passed.
+Next step: 4, inventory every input with type, nullability, and which sample it appears in.
+Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7; none written into
+`docs/DESIGN.md` yet.
+No edits under `src/` or `tests/` while the phase is 0 or 1.
+Update this section at the end of every sprint. It is the first thing an agent reads.
 
 ## Workflow
 
@@ -48,6 +59,9 @@ sets it. Never read, print, or write the value.
   build under 100 percent; do not lower the threshold, exclude files, or add tests that
   exist only to hit a line.
 - One sprint at a time. Do not start the next until the current one is green.
+- Before a PR merges: narrate one record through the code aloud, file by file, without
+  notes (playbook Appendix B). A hop "through an interface to its only
+  implementation" is a finding.
 - All work on `dev`. Never commit to `main`. One PR per sprint, `gh pr create` against
   `dev`.
 - Every substantive decision, bug, or run/debug fact lands in a repo doc before the turn
@@ -88,7 +102,7 @@ sets it. Never read, print, or write the value.
 ## Review criteria
 
 Reviews check correctness first, then the pillars in `~/.claude/CLAUDE.md` by acronym
-(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB; the key and the evidence for each are in
+(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB, PF, DBT; the key and the evidence for each are in
 `~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects
 correctness, a stated requirement, or a named pillar, and name which. Do not report
 style preferences, hypothetical future needs, or requests for more abstraction, defensive

@@ -216,7 +216,9 @@ that proves the agent meets the thresholds rather than asserting it does.
 
 ## 8. Build plan
 
-The epic and sprint breakdown lives in [BACKLOG.md](./BACKLOG.md), sized for a
+The original sprint plan was retired on 2026-09-06; the decisions and sprints that
+replace it are in [RETROSPECTIVE_2026-09-06.md](./RETROSPECTIVE_2026-09-06.md) section 7.
+The paragraph below describes the original plan, sized for a
 focused multi-hour build and ordered so there is a runnable end-to-end path
 early and the eval harness proves the thresholds at the end.
 
@@ -229,7 +231,7 @@ early and the eval harness proves the thresholds at the end.
 2. Send hour defaults by channel (sms 09:00, email 10:00, voice 09:00 local),
    with a single day-rollover rule: if today's default-hour slot has already
    passed relative to `last_interaction`, resolve to tomorrow instead. A
-   separate "quiet-hours window" was considered (BACKLOG.md names it as a
+   separate "quiet-hours window" was considered (the original sprint plan named it as a
    Sprint 2.3 goal) and deliberately scoped out: it is not present in
    `problem_statement.txt` or in `sample.jsonl`'s `assertions`/`thresholds`,
    and the single rollover rule alone satisfies all three of 2.3's stated
