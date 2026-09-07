@@ -37,6 +37,6 @@ internal static class RealAgentFactory
     {
         using IDisposable scope = AgentLog.Configure(NullLoggerFactory.Instance);
         using var reader = new StreamReader(SampleFilePath);
-        return new JsonlRecordReader().ReadAll(reader);
+        return new JsonlRecordReader().ReadAll(reader).Select(result => result.Value).ToList();
     }
 }

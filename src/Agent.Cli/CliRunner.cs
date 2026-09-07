@@ -101,10 +101,10 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
 
-        IReadOnlyList<ProspectCase> cases;
+        IReadOnlyList<Result<ProspectCase>> readResults;
         using (var inputReader = new StreamReader(inputPath))
         {
-            cases = new JsonlRecordReader().ReadAll(inputReader);
+            readResults = new JsonlRecordReader().ReadAll(inputReader);
         }
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
@@ -117,6 +117,22 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         var diagnosticsRecords = new List<TaskDiagnostics>();
         var scoredRuns = new List<ScoredRun>();
         int failureCount = 0;
+
+        // A line that did not parse is one failure row with its line number; there is no
+        // task id to scope the log line on, so the line number is the only identity it has.
+        var cases = new List<ProspectCase>(readResults.Count);
+        foreach (Result<ProspectCase> readResult in readResults)
+        {
+            if (readResult.IsSuccess)
+            {
+                cases.Add(readResult.Value);
+                continue;
+            }
+
+            failureCount++;
+            log.LogError("Record failed to parse: {Error}", readResult.Error);
+            error.WriteLine($"Record failed to parse: {readResult.Error}");
+        }
 
         foreach (ProspectCase prospectCase in cases)
         {
@@ -153,7 +169,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
         }
 
-        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", cases.Count, failureCount);
+        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", readResults.Count, failureCount);
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
         await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);

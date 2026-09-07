@@ -11,7 +11,7 @@ namespace Agent.Tests.Ingest;
 public class JsonlRecordReaderTests
 {
     private static readonly string SampleFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "sample.jsonl");
-    private static readonly IRecordReader Reader = new JsonlRecordReader();
+    private static readonly JsonlRecordReader Reader = new();
 
     private const string MinimalValidLine =
         "{\"task_id\":\"minimal\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
@@ -25,7 +25,7 @@ public class JsonlRecordReaderTests
     private static IReadOnlyList<ProspectCase> ReadSample()
     {
         using TextReader reader = new StreamReader(SampleFilePath);
-        return Reader.ReadAll(reader);
+        return Reader.ReadAll(reader).Select(result => result.Value).ToList();
     }
 
     private static readonly IReadOnlyList<ProspectCase> SampleCases = ReadSample();
@@ -90,50 +90,87 @@ public class JsonlRecordReaderTests
     {
         using TextReader reader = new StringReader("\n   \n" + File.ReadAllText(SampleFilePath));
 
-        IReadOnlyList<ProspectCase> cases = Reader.ReadAll(reader);
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
 
-        Assert.Equal(2, cases.Count);
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result => Assert.True(result.IsSuccess));
     }
 
     [Fact]
-    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineDeserializesToNull()
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenLineDeserializesToNull()
     {
         using TextReader reader = new StringReader("null" + Environment.NewLine);
 
-        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
 
-        Assert.Contains("Line 1", exception.Message);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 1", result.Error);
     }
 
     [Fact]
-    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineIsMalformedJson()
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenLineIsMalformedJson()
     {
         using TextReader reader = new StringReader(MinimalValidLine + Environment.NewLine + "{not valid json" + Environment.NewLine);
 
-        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
 
-        Assert.Contains("Line 2", exception.Message);
-        Assert.IsAssignableFrom<JsonException>(exception.InnerException);
+        Assert.Equal(2, results.Count);
+        Assert.True(results[0].IsSuccess);
+        Assert.False(results[1].IsSuccess);
+        Assert.Contains("Line 2 failed to parse", results[1].Error);
     }
 
     [Fact]
-    public void ReadAll_ThrowsInvalidDataException_WithLineNumber_WhenLineIsValidJsonButNotAnObject()
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenLineIsValidJsonButNotAnObject()
     {
         using TextReader reader = new StringReader(MinimalValidLine + Environment.NewLine + "[1,2,3]" + Environment.NewLine);
 
-        InvalidDataException exception = Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
 
-        Assert.Contains("Line 2", exception.Message);
-        Assert.IsAssignableFrom<JsonException>(exception.InnerException);
+        Assert.Equal(2, results.Count);
+        Assert.False(results[1].IsSuccess);
+        Assert.Contains("Line 2 failed to parse", results[1].Error);
     }
 
     [Fact]
-    public void ReadAll_ThrowsInvalidDataException_WhenRequiredFieldIsNull()
+    public void ReadAll_ReturnsFailure_WhenRequiredFieldIsNull()
     {
         string lineWithNullRequiredField = MinimalValidLine.Replace("\"task_id\":\"minimal\"", "\"task_id\":null");
         using TextReader reader = new StringReader(lineWithNullRequiredField + Environment.NewLine);
 
-        Assert.Throws<InvalidDataException>(() => Reader.ReadAll(reader));
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 1", result.Error);
+    }
+
+    // Blank lines are skipped but still counted, or the reported line number stops
+    // matching what an editor shows for the same file.
+    [Fact]
+    public void ReadAll_BlankLinesBeforeFailingLine_CountTowardTheLineNumber()
+    {
+        using TextReader reader = new StringReader("\n   \n{not valid json" + Environment.NewLine);
+
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 3", result.Error);
+    }
+
+    // One bad line is one failure row (HB: report failures per record, never per batch);
+    // every other line still comes back parsed.
+    [Fact]
+    public void ReadAll_OneBadLineAmongGoodOnes_ReturnsEveryOtherRecord()
+    {
+        string secondValidLine = MinimalValidLine.Replace("\"task_id\":\"minimal\"", "\"task_id\":\"second\"");
+        using TextReader reader = new StringReader(string.Join(Environment.NewLine, MinimalValidLine, "{not valid json", secondValidLine));
+
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("minimal", results[0].Value.TaskId);
+        Assert.False(results[1].IsSuccess);
+        Assert.Equal("second", results[2].Value.TaskId);
     }
 
     [Fact]
@@ -144,7 +181,7 @@ public class JsonlRecordReaderTests
             "\"next_message\":null");
         using TextReader reader = new StringReader(suppressedLine + Environment.NewLine);
 
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.NotNull(parsedCase.Expected);
         Assert.Null(parsedCase.Expected!.NextMessage);
@@ -165,7 +202,7 @@ public class JsonlRecordReaderTests
             "\"expected\":{\"next_message\":{\"channel\":\"none\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
         using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
 
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Equal("minimal", parsedCase.TaskId);
         Assert.Equal("book_tour", parsedCase.Assertions.Constraints.PrimaryCta);
@@ -180,7 +217,7 @@ public class JsonlRecordReaderTests
             "\"next_action\":{\"type\":null}");
         using TextReader reader = new StringReader(lineWithBadExpected + Environment.NewLine);
 
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Equal("minimal", parsedCase.TaskId);
         Assert.Null(parsedCase.Expected);
@@ -194,7 +231,7 @@ public class JsonlRecordReaderTests
             string.Empty);
         using TextReader reader = new StringReader(lineWithoutExpected + Environment.NewLine);
 
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Null(parsedCase.Expected);
     }
@@ -210,7 +247,7 @@ public class JsonlRecordReaderTests
         string lineWithExplicitNullCta = MinimalValidLine.Replace("\"primary_cta\":\"book_tour\"", "\"primary_cta\":null");
         using TextReader reader = new StringReader(lineWithExplicitNullCta + Environment.NewLine);
 
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0];
+        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Null(parsedCase.Assertions.Constraints.PrimaryCta);
     }
@@ -240,10 +277,10 @@ public class JsonlRecordReaderTests
     [Fact]
     public void ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize()
     {
-        ProspectCase original = Reader.ReadAll(new StringReader(MinimalValidLine))[0];
+        ProspectCase original = Reader.ReadAll(new StringReader(MinimalValidLine))[0].Value;
 
         string serialized = JsonSerializer.Serialize(original, Agent.Common.AgentJsonOptions.Default);
-        ProspectCase roundTripped = Reader.ReadAll(new StringReader(serialized))[0];
+        ProspectCase roundTripped = Reader.ReadAll(new StringReader(serialized))[0].Value;
 
         Assert.NotNull(roundTripped.Expected);
         Assert.Equal("start_cadence", roundTripped.Expected!.NextAction.Type);

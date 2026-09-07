@@ -193,6 +193,36 @@ public class CliRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string content = string.Join(
+            Environment.NewLine,
+            "{not valid json",
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(1, output.RootElement.GetArrayLength());
+            Assert.Contains("Line 1", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_DiagnosticsPathProvided_WritesOneTypedDiagnosticsRecordPerRecord()
     {
         string inputPath = TempFilePath();
