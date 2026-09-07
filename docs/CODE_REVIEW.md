@@ -49,8 +49,8 @@ or human) doesn't re-flag them as missing behavior.
   task and to scope it out. The single day-rollover rule `SendScheduler`
   does implement (push to tomorrow if today's default-hour slot has already
   passed relative to `last_interaction`) independently satisfies all three
-  of Sprint 2.3's stated acceptance criteria. See `docs/DESIGN.md`
-  assumptions log #2 and the comment on `SendScheduler`.
+  of Sprint 2.3's stated acceptance criteria. See `docs/DESIGN.md` section 8
+  (non-goals) and assumptions A4 and A5, and the comment on `SendScheduler`.
 
 - **Fair-housing/PII heuristic, not semantic understanding (original sprint
   plan, Sprint 4.1).** `SafetyValidator` enforces opt-out presence, PII patterns,

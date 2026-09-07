@@ -1,0 +1,34 @@
+name: test
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build --configuration Debug
+
+      # Windows PowerShell 5.1, the same shell the script is written for locally. The script
+      # exits with the dotnet test exit code, so a red suite or a coverage gate under 100
+      # percent fails this step.
+      - name: Test with the coverage gate
+        shell: powershell
+        run: .\test.ps1
+
+      - name: Keep the test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.txt
