@@ -115,7 +115,9 @@ Scopes: Sprint 8. Evidence: S3. Assumption: none.
 `.github/workflows/test.yml` running `dotnet build` and `.\test.ps1` on every push and pull
 request with branch protection on `dev` requiring the `test` check; or none. Recommendation:
 the default, taken 2026-09-07. `test.ps1` exits with the `dotnet test` exit code so the check
-can go red. Scopes: Sprint 1; every later PR. Evidence: the retrospective's finding that
+can go red. Applied 2026-09-07 after the first green run on PR #16: `dev` requires the `test`
+context, refuses force pushes and deletion, and does not enforce on admins, so the owner can
+override in an emergency. Scopes: Sprint 1; every later PR. Evidence: the retrospective's finding that
 nothing governed truth against data between sprints. Assumption: none.
 
 **D9. What the twelve-record file is (2026-09-07).** Question: whether rules may be fitted to

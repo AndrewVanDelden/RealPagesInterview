@@ -45,7 +45,8 @@ Phase 1 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Environment and agent setup. Ph
 restarted at step 1 on 2026-09-07 (D12) and its check passed the same day: `docs/DESIGN.md`
 section 7 is the assumptions table and every evidence cell is filled.
 Check: a fresh clone builds and runs the empty test suite from one documented command. Status:
-passes when the `test` check of `.github/workflows/test.yml` is green on the Sprint 1 PR.
+passed on 2026-09-07; the `test` check of `.github/workflows/test.yml` was green on PR #16's
+first run and `dev` now requires it.
 Next step: 28, build the evaluator before the product (Phase 2; steps 24 to 27 exist from the
 first build and are revised in Sprint 3).
 Open decisions: none; S1 to S4 and D1 to D12 are in `docs/DECISION_LOG.md`.
