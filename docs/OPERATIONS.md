@@ -11,17 +11,19 @@ written so it stands on its own without that history.
 ```bash
 dotnet build                                                  # build the whole solution
 .\test.ps1                                                    # run the suite; fails the build under 100% coverage; exits with dotnet test's exit code
-dotnet run --project src/Agent.Cli -- --input <file> --output <file> [options]
+dotnet run --project src/Agent.Cli -- --input <file> --output <file> [--now <ISO-8601>] [options]
+dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json --now 2025-12-09T00:00:00-06:00 --eval-report eval.txt --diagnostics diag.json
 ```
 
 | Flag | Required | Purpose |
 |---|---|---|
 | `--input <file.jsonl>` | yes | The prospect/resident cases to process, one JSON object per line. |
 | `--output <file.json>` | yes | Where the agent's decisions (`AgentOutput` per record) are written, as one indented JSON array. |
+| `--now <ISO-8601 date-time>` | no (default: the current UTC time) | The run's reference time (D10): the day send times are floored to and horizons are counted from. The documented run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, the oracle's date. Logged once per run. |
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
-| `--diagnostics <file.json>` | no | Per-record domain diagnostics (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`) — what the agent decided and why, not what the process did. Different thing from logging; see the note in section 3. |
+| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
-| `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3) — this only adds a second, durable sink. |
+| `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
 `--input` + `--output`; add the others as the question changes from
@@ -34,27 +36,27 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
 
 | Exit code | Meaning | Next step |
 |---|---|---|
-| `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug — a suppressed message (`next_message: null`) is a valid *decision*, not a failure. Check `--diagnostics` if a suppression looks wrong. |
-| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, or a missing `OpenAI:ApiKey`. | Read the plain-text line on stderr — it names exactly what was wrong (composer name, or the `dotnet user-secrets set` command to run). Nothing else ran; no records were processed. |
-| `2` (PartialFailure) | At least one record threw an unhandled exception during processing. | Every other record still completed and is in `--output` — this is deliberate per-record isolation, not a partial write. Find which record via the stderr line (`Record '<TaskId>' failed: <ExceptionType>: <message>`), or the log (see below) for the full stack trace. |
+| `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug: a suppressed message (a `next_message` with channel `none`) is a valid *decision*, not a failure. `--diagnostics` names the `suppression_reason`. |
+| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, or a missing `OpenAI:ApiKey`. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, or the `dotnet user-secrets set` command to run). Nothing else ran; no records were processed. |
+| `2` (PartialFailure) | At least one record threw an unhandled exception during processing. | Every other record still completed and is in `--output`, this is deliberate per-record isolation, not a partial write. Find which record via the stderr line (`Record '<TaskId>' failed: <ExceptionType>: <message>`), or the log (see below) for the full stack trace. |
 
 **Where to look, in order:**
 
 1. **Plain stderr text**, written by `CliRunner` regardless of any logging
-   configuration. This is the CLI's stable, always-on contract — usage
+   configuration. This is the CLI's stable, always-on contract, usage
    errors, which record failed and why (type + message, no stack trace), and
    which eval-report rows were unscoreable. Sufficient for "what broke."
 2. **The log** (console, interleaved with the plain stderr text above, or
    `--log-file` if given) for "why, exactly, and what led up to it." Every
    stderr-reported failure has a matching `Error`-level log entry carrying
-   the *full* exception object — type, message, and stack trace — not just
+   the *full* exception object, type, message, and stack trace, not just
    the one-line summary stderr gets. Search the log for the failing
    record's `TaskId`; every log line emitted anywhere during that record's
    processing carries it (see section 3).
 3. **`--diagnostics`**, only if the question is "why did the agent decide
    X for this record" rather than "why did the process fail." A `null`
    `fair_housing_check_passed` means the message was suppressed before
-   validation ever ran (no consent, or composition failed) — not a bug.
+   validation ever ran (no consent, or composition failed), not a bug.
 
 ## 3. How logging actually works
 
@@ -64,7 +66,7 @@ same information:
 
 - **Console**, always on, via `Agent.Cli.Logging.ConsoleLoggerProvider`,
   written through the CLI's own injected `error` stream (`Console.Error` in
-  production) — not a raw stdout console provider. Two reasons for that:
+  production), not a raw stdout console provider. Two reasons for that:
   `--eval-report`'s scorecard text goes to stdout, and a console provider
   hardwired to the real `Console.Out`/`Console.Error` would collide with it;
   and `CliRunnerTests` injects its own `TextWriter` for `output`/`error`
@@ -80,9 +82,9 @@ and render the same `ILogger` calls and the same log scopes; nothing is
 console-only or file-only.
 
 **This is not the same thing as `--diagnostics`.** `--diagnostics` is a
-domain artifact — the agent's own record of what it decided
+domain artifact, the agent's own record of what it decided
 (`AgentDiagnostics`), part of the graded output contract. The log is process
-telemetry — what the code did while producing that decision. A run can have
+telemetry, what the code did while producing that decision. A run can have
 perfect diagnostics and a log full of retries, or a suppressed message with
 a totally quiet log (no consent, nothing went wrong, there was just nothing
 to do).
@@ -90,8 +92,8 @@ to do).
 **Correlation:** `CliRunner`'s own per-record loop, `LeasingMessageAgent.RunAsync`,
 and `Evaluator.Evaluate` each open a log scope carrying `TaskId` at the start
 of processing one record. Every log line emitted anywhere downstream during
-that record's processing — inside `ValidatingMessageComposer`,
-`OpenAiMessageComposer`, the CLI's own per-record lines — carries that
+that record's processing, inside `ValidatingMessageComposer`,
+`OpenAiMessageComposer`, the CLI's own per-record lines, carries that
 `TaskId` via the scope, without any of those classes needing to accept or
 pass it explicitly, and without restating it in their own message text
 (rule 3, section 5). This is why searching a log for one `TaskId` gives the
@@ -101,12 +103,12 @@ complete story of that one record, not a mix of every record interleaved.
 
 | Level | Meaning in this codebase | Example |
 |---|---|---|
-| `Information` | A normal lifecycle event — nothing went wrong. | "Message composed", "Record processed in Nms", "Batch complete: N records, M failures" |
-| `Warning` | Something didn't go as hoped, but the system already has a handled path for it — a retry, a fallback, a degraded-but-valid outcome. | A compose attempt failed safety validation and is retrying; falling back to the template composer; an eval record has no `expected` to score against |
-| `Error` | Something is being lost or is genuinely unexpected — not a path the system was designed to recover from. | A record's processing threw and that record is dropped from `--output`; scoring threw and the record becomes unscoreable; the fallback composer also failed |
+| `Information` | A normal lifecycle event, nothing went wrong. | "Message composed", "Record processed in Nms", "Batch complete: N records, M failures" |
+| `Warning` | Something didn't go as hoped, but the system already has a handled path for it, a retry, a fallback, a degraded-but-valid outcome. | A compose attempt failed safety validation and is retrying; falling back to the template composer; an eval record has no `expected` to score against |
+| `Error` | Something is being lost or is genuinely unexpected, not a path the system was designed to recover from. | A record's processing threw and that record is dropped from `--output`; scoring threw and the record becomes unscoreable; the fallback composer also failed |
 
 If you only want to know "is anything actually broken," filtering to
-`Error` is the right first pass — `Warning` is the system coping, not the
+`Error` is the right first pass, `Warning` is the system coping, not the
 system failing.
 
 ## 4. How to read one log line
@@ -124,12 +126,12 @@ System.ArgumentOutOfRangeException: Move date target cannot precede the last int
 
 One line per log call: `{ISO-8601 UTC timestamp} [{Level}] {Category}: {Message}{scope pairs, space-separated Key=Value}`.
 
-- `{Category}` — the fully-qualified class that logged this, e.g.
+- `{Category}`, the fully-qualified class that logged this, e.g.
   `Agent.Cli.CliRunner` or `Agent.Orchestration.LeasingMessageAgent`. Tells
   you which layer this line came from.
-- `{Message}` — the rendered text. Never restates `TaskId` (rule 3) - that
+- `{Message}`, the rendered text. Never restates `TaskId` (rule 3) - that
   comes from the scope suffix instead.
-- `TaskId=...` — the active `BeginScope` value, appended after the message
+- `TaskId=...`, the active `BeginScope` value, appended after the message
   (rule 3, section 5). Both lines above carry it even though `CliRunner`'s
   own line never explicitly logged it - that's the correlation ID working
   as designed, the same way it does for every other line in the system.
@@ -140,7 +142,7 @@ One line per log call: `{ISO-8601 UTC timestamp} [{Level}] {Category}: {Message}
 
 ## 5. The rules that keep this readable
 
-These are enforced by convention (code review), not by a linter — stated
+These are enforced by convention (code review), not by a linter, stated
 here so a change that violates one gets caught on sight:
 
 1. **`Warning` means handled; `Error` means something was lost.** Never log
@@ -155,12 +157,12 @@ here so a change that violates one gets caught on sight:
 3. **The correlation ID is a scope, never a repeated parameter.** `TaskId`
    is attached once, via `BeginScope`, at the top of processing one record.
    No individual log call downstream re-states it as `{TaskId}` in its own
-   message just to make that one line greppable in isolation — that both
+   message just to make that one line greppable in isolation, that both
    duplicates data already on every line via the scope and invites the two
    copies drifting (one updated, one not) if the record's identity ever
    needs to change mid-flight.
 4. **Plain CLI stderr text and the structured log are two different
-   contracts serving two different readers — never fold one into the
+   contracts serving two different readers, never fold one into the
    other, even though both happen to write to the same stream by default.**
    stderr's plain-text lines are the stable, human-first contract a person
    watches while the CLI runs and that `Agent.Cli.Tests` asserts against

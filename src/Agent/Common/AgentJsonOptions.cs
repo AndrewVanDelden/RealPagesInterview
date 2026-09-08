@@ -10,7 +10,7 @@ public static class AgentJsonOptions
     public static readonly JsonSerializerOptions Default = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        Converters = { new JsonStringEnumConverter<CommunicationChannel>(JsonNamingPolicy.CamelCase) },
+        Converters = { new LenientChannelConverter() },
         RespectNullableAnnotations = true,
         // RespectNullableAnnotations rejects only an explicit null. A property that is
         // absent from the JSON binds silently (a DateOnly to 0001-01-01, a bool to false,

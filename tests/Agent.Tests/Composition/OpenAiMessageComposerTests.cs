@@ -144,6 +144,38 @@ public class OpenAiMessageComposerTests
         Assert.Contains("Taylor", fakeClient.LastUserPrompt);
     }
 
+    // D1: an absent fact is told to the model as unknown, never as an empty value it could
+    // read as a name.
+    [Fact]
+    public async Task ComposeAsync_UserPrompt_AbsentNameAndProperty_SaysUnknown()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: null, propertyName: null);
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("first_name: unknown", fakeClient.LastUserPrompt);
+        Assert.Contains("property: unknown", fakeClient.LastUserPrompt);
+    }
+
+    // A blank (whitespace-only) value is absent too (Agent.Common.Presence), the same rule
+    // TemplateMessageComposer applies - not a literal blank fact the model could read as a name.
+    [Fact]
+    public async Task ComposeAsync_UserPrompt_BlankNameAndProperty_SaysUnknown()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "  ", propertyName: "");
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("first_name: unknown", fakeClient.LastUserPrompt);
+        Assert.Contains("property: unknown", fakeClient.LastUserPrompt);
+    }
+
     [Fact]
     public async Task ComposeAsync_UserPrompt_InstructsRequiredCtaType()
     {

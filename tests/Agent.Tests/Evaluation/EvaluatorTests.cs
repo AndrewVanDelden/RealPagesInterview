@@ -37,6 +37,10 @@ public class EvaluatorTests
     private static AgentRunResult SuppressedResult(NextAction? action = null) =>
         new(new AgentOutput(null, action ?? BaselineAction), new AgentDiagnostics(true, null, false, 0));
 
+    // D3: the agent's own suppressed shape is a next_message object with channel none.
+    private static AgentRunResult SuppressedAsNoneObjectResult(NextAction? action = null) =>
+        new(new AgentOutput(new NextMessage(CommunicationChannel.None), action ?? BaselineAction), new AgentDiagnostics(true, null, false, 0));
+
     private static ScoredRun Run(ProspectCase prospectCase, AgentRunResult result, double latencyMs = 1) =>
         new(prospectCase, result, latencyMs);
 
@@ -314,6 +318,24 @@ public class EvaluatorTests
         Assert.True(score.Passed);
     }
 
+    // D3: the agent's suppressed output (a next_message object with channel none) scores
+    // exactly like a null message: no message-shape check applies to it.
+    [Fact]
+    public void Evaluate_ActualSuppressedAsNoneObject_ScoresLikeANullMessage()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(NextMessage: null, BaselineAction));
+        AgentRunResult actual = SuppressedAsNoneObjectResult();
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.True(score.ChannelMatches);
+        Assert.True(score.OptOutPresent);
+        Assert.True(score.PrimaryCtaPresent);
+        Assert.Equal(1.0, score.PersonalizationScore);
+        Assert.True(score.Passed);
+    }
+
     // The oracle spells suppression as a next_message object with channel "none" and null
     // fields (retrospective D3); the agent spells it as a null next_message. Both mean
     // "no message", so they must score as the same channel.
@@ -340,6 +362,35 @@ public class EvaluatorTests
         Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 
         Assert.True(scorecard.RecordScores[0].ChannelMatches);
+    }
+
+    // D6: personalization is fact coverage over the facts the record carries; a record
+    // with no facts has nothing to personalize and scores 1.0.
+    [Fact]
+    public void Evaluate_RecordCarriesNoPersonalizationFacts_ScoresOne()
+    {
+        ProspectCase prospectCase = BaselineCase() with { Input = null };
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Reply STOP to opt out."));
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        Assert.Equal(1.0, scorecard.RecordScores[0].PersonalizationScore);
+    }
+
+    // A15: a threshold the record does not state is not enforced; an absent safety budget
+    // is zero.
+    [Fact]
+    public void Evaluate_NoThresholdsStated_PersonalizationAndLatencyPassAndSafetyBudgetIsZero()
+    {
+        ProspectCase prospectCase = BaselineCase() with { Thresholds = null };
+        AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Reply STOP to opt out."), violationCount: 1);
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual, latencyMs: 999_999)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.True(score.PersonalizationScoreMet);
+        Assert.True(score.LatencyWithinBudget);
+        Assert.False(score.SafetyViolationsWithinBudget);
     }
 
     [Fact]
@@ -391,7 +442,7 @@ public class EvaluatorTests
 
         foreach (ProspectCase prospectCase in cases)
         {
-            AgentRunResult result = await agent.RunAsync(prospectCase);
+            AgentRunResult result = await agent.RunAsync(prospectCase, DateTimeOffset.Parse("2025-12-09T00:00:00-06:00"));
             runs.Add(new ScoredRun(prospectCase, result, LatencyMs: 1));
         }
 
@@ -413,13 +464,13 @@ public class EvaluatorTests
 
     // Per-record isolation for the scorer itself, same principle as CliRunner's main batch
     // loop (and the exact gap that let a real bug - see Sprint 7 - crash the whole eval
-    // report instead of degrading one record). Assertions is forced null via `!` despite
-    // the non-nullable static type, deliberately simulating the "malformed despite what the
-    // type promises" scenario that keeps recurring with real interview data.
+    // report instead of degrading one record). The oracle's NextAction is forced null via
+    // `!` despite the non-nullable static type, deliberately simulating the "malformed
+    // despite what the type promises" scenario that keeps recurring with real data.
     [Fact]
     public void Evaluate_ScoringThrows_RecordBecomesUnscoreableInsteadOfAbortingTheBatch()
     {
-        ProspectCase prospectCase = BaselineCase() with { Assertions = null! };
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(CommunicationChannel.Sms, "expected"), null!));
         AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out."));
 
         Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
@@ -435,7 +486,7 @@ public class EvaluatorTests
     {
         var capturingLogger = new CapturingLogger<Evaluator>();
         var evaluator = new Evaluator(capturingLogger);
-        ProspectCase prospectCase = BaselineCase() with { Assertions = null! };
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(CommunicationChannel.Sms, "expected"), null!));
         AgentRunResult actual = SuccessfulResult(Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out."));
 
         evaluator.Evaluate([Run(prospectCase, actual)]);

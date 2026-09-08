@@ -4,6 +4,9 @@ namespace Agent.Composition;
 
 internal static class PrimaryCtaVocabulary
 {
+    // A9: the call to action when the record states no primary_cta at all.
+    public const string GenericCtaType = "reply";
+
     private static readonly IReadOnlyDictionary<string, string> CtaTypeByPrimaryCta = new Dictionary<string, string>
     {
         ["book_tour"] = "schedule_tour",

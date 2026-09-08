@@ -11,6 +11,7 @@ namespace Agent.Tests.Ingest;
 public class JsonlRecordReaderTests
 {
     private static readonly string SampleFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "sample.jsonl");
+    private static readonly string HoldoutFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "holdout_12.jsonl");
     private static readonly JsonlRecordReader Reader = new();
 
     private const string MinimalValidLine =
@@ -46,16 +47,16 @@ public class JsonlRecordReaderTests
         Assert.True(shortHorizonCase.Consent.SmsOptIn);
         Assert.False(shortHorizonCase.Consent.VoiceOptIn);
         Assert.Equal([CommunicationChannel.Sms, CommunicationChannel.Email], shortHorizonCase.ChannelPreferences);
-        Assert.Equal("Oak Ridge Apartments", shortHorizonCase.Input.PropertyName);
-        Assert.Equal("America/Chicago", shortHorizonCase.Input.TimeZoneId);
-        Assert.Equal(new DateOnly(2026, 1, 10), shortHorizonCase.Input.MoveDateTarget);
-        Assert.Equal(DateTimeOffset.Parse("2025-12-08T15:04:00Z"), shortHorizonCase.Input.LastInteraction);
-        Assert.Equal("Taylor", shortHorizonCase.Input.Profile.FirstName);
-        Assert.Equal("Richardson, TX", shortHorizonCase.Input.Profile.CityInterest);
-        Assert.Equal("book_tour", shortHorizonCase.Assertions.Constraints.PrimaryCta);
-        Assert.Equal(2000, shortHorizonCase.Thresholds.P95LatencyMs);
-        Assert.Equal(0.9, shortHorizonCase.Thresholds.ReplyClassificationF1Min);
-        Assert.Equal(0, shortHorizonCase.Thresholds.SafetyViolationsMax);
+        Assert.Equal("Oak Ridge Apartments", shortHorizonCase.Input!.PropertyName);
+        Assert.Equal("America/Chicago", shortHorizonCase.Input!.TimeZoneId);
+        Assert.Equal(new DateOnly(2026, 1, 10), shortHorizonCase.Input!.MoveDateTarget);
+        Assert.Equal(DateTimeOffset.Parse("2025-12-08T15:04:00Z"), shortHorizonCase.Input!.LastInteraction);
+        Assert.Equal("Taylor", shortHorizonCase.Input!.Profile!.FirstName);
+        Assert.Equal("Richardson, TX", shortHorizonCase.Input!.Profile!.CityInterest);
+        Assert.Equal("book_tour", shortHorizonCase.Assertions!.Constraints!.PrimaryCta);
+        Assert.Equal(2000, shortHorizonCase.Thresholds!.P95LatencyMs);
+        Assert.Equal(0.9, shortHorizonCase.Thresholds!.ReplyClassificationF1Min);
+        Assert.Equal(0, shortHorizonCase.Thresholds!.SafetyViolationsMax);
         Assert.NotNull(shortHorizonCase.Expected);
         Assert.NotNull(shortHorizonCase.Expected!.NextMessage);
         Assert.Equal(CommunicationChannel.Sms, shortHorizonCase.Expected.NextMessage!.Channel);
@@ -74,9 +75,9 @@ public class JsonlRecordReaderTests
         Assert.False(longHorizonCase.Consent.SmsOptIn);
         Assert.True(longHorizonCase.Consent.EmailOptIn);
         Assert.Equal([CommunicationChannel.Email, CommunicationChannel.Sms], longHorizonCase.ChannelPreferences);
-        Assert.Equal(["pool", "fitness"], longHorizonCase.Input.Profile.AmenityInterest);
-        Assert.Null(longHorizonCase.Input.Profile.CityInterest);
-        Assert.Null(longHorizonCase.Assertions.Constraints.NoSensitiveDiscrimination);
+        Assert.Equal(["pool", "fitness"], longHorizonCase.Input!.Profile!.AmenityInterest);
+        Assert.Null(longHorizonCase.Input!.Profile!.CityInterest);
+        Assert.Null(longHorizonCase.Assertions!.Constraints!.NoSensitiveDiscrimination);
         Assert.NotNull(longHorizonCase.Expected!.NextMessage);
         Assert.Contains("See the pool & fitness rooms", longHorizonCase.Expected.NextMessage!.Subject);
         Assert.Equal(new Uri("https://oakridge.example/tour"), longHorizonCase.Expected.NextMessage.Cta!.Link);
@@ -144,21 +145,125 @@ public class JsonlRecordReaderTests
         Assert.Contains("Line 1", result.Error);
     }
 
-    // RespectNullableAnnotations rejects only an explicit null. A property that is simply
-    // absent binds silently (a DateOnly to 0001-01-01, a bool to false, an object to null),
-    // which is what produced the year-0001 plans on the real hold-out (retrospective
-    // finding 4). Absence of a required property must be a failure row at the boundary.
+    // D1 (DECISION_LOG.md): every member is optional except task_id, consent, and
+    // channel_preferences. An absent optional value type is null, never a silent default
+    // (the year-0001 dates of retrospective finding 4), and never an error row.
     [Fact]
-    public void ReadAll_ReturnsFailureWithLineNumber_WhenRequiredValueTypePropertyIsAbsent()
+    public void ReadAll_AbsentOptionalValueTypeProperty_ParsesAsNull()
     {
         string lineWithoutMoveDate = MinimalValidLine.Replace("\"move_date_target\":\"2026-01-10\",", string.Empty);
         using TextReader reader = new StringReader(lineWithoutMoveDate + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.NotNull(parsedCase.Input);
+        Assert.Null(parsedCase.Input!.MoveDateTarget);
+        Assert.Equal(DateTimeOffset.Parse("2025-12-08T15:04:00Z"), parsedCase.Input.LastInteraction);
+    }
+
+    [Fact]
+    public void ReadAll_OnlyTheThreeRequiredMembers_ParsesWithEverythingElseNull()
+    {
+        const string requiredOnly = "{\"task_id\":\"bare\",\"consent\":{\"sms_opt_in\":true},\"channel_preferences\":[\"sms\"]}";
+        using TextReader reader = new StringReader(requiredOnly + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal("bare", parsedCase.TaskId);
+        Assert.Null(parsedCase.Persona);
+        Assert.Null(parsedCase.LifecycleStage);
+        Assert.Null(parsedCase.Input);
+        Assert.Null(parsedCase.Assertions);
+        Assert.Null(parsedCase.Thresholds);
+        Assert.Null(parsedCase.Expected);
+        Assert.True(parsedCase.Consent.SmsOptIn);
+        Assert.Null(parsedCase.Consent.EmailOptIn);
+    }
+
+    [Fact]
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenChannelPreferencesIsAbsent()
+    {
+        string lineWithoutPreferences = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"],", string.Empty);
+        using TextReader reader = new StringReader(lineWithoutPreferences + Environment.NewLine);
 
         Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
 
         Assert.False(result.IsSuccess);
         Assert.Contains("Line 1", result.Error);
-        Assert.Contains("move_date_target", result.Error);
+        Assert.Contains("channel_preferences", result.Error);
+    }
+
+    // A3: an unrecognized channel name is a real value the selector skips, never a reason
+    // to fail the record.
+    [Fact]
+    public void ReadAll_UnrecognizedChannelName_ParsesAsUnknownChannel()
+    {
+        string lineWithOddChannel = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"]", "\"channel_preferences\":[\"carrier_pigeon\",\"sms\"]");
+        using TextReader reader = new StringReader(lineWithOddChannel + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal([CommunicationChannel.Unknown, CommunicationChannel.Sms], parsedCase.ChannelPreferences);
+    }
+
+    [Fact]
+    public void ReadAll_ChannelPreferenceEntriesNotChannelNames_ParseAsUnknown()
+    {
+        string lineWithOddEntries = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"]", "\"channel_preferences\":[\"99\",7,\"sms\"]");
+        using TextReader reader = new StringReader(lineWithOddEntries + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal([CommunicationChannel.Unknown, CommunicationChannel.Unknown, CommunicationChannel.Sms], parsedCase.ChannelPreferences);
+    }
+
+    // Enum.TryParse also accepts a purely numeric string and casts it to the underlying
+    // ordinal (Sms = 1) - a numeric channel name is never valid input and must not be
+    // mistaken for the real channel that happens to share its ordinal.
+    [Fact]
+    public void ReadAll_ChannelPreferenceNumericStringMatchingARealOrdinal_ParsesAsUnknown()
+    {
+        string lineWithNumericEntry = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"]", "\"channel_preferences\":[\"1\",\"sms\"]");
+        using TextReader reader = new StringReader(lineWithNumericEntry + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal([CommunicationChannel.Unknown, CommunicationChannel.Sms], parsedCase.ChannelPreferences);
+    }
+
+    // A16: members the record types do not declare are kept, at any depth, so diagnostics
+    // can name them and nothing the file carries is silently dropped.
+    [Fact]
+    public void ReadAll_UnknownMembersAtAnyDepth_AreRetainedOnTheRecord()
+    {
+        string lineWithExtras = MinimalValidLine
+            .Replace("\"persona\":\"prospect\"", "\"persona\":\"prospect\",\"campaign\":\"spring\"")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"budget_max\":1700")
+            .Replace("\"primary_cta\":\"book_tour\"", "\"primary_cta\":\"book_tour\",\"respect_consent\":true")
+            .Replace("\"safety_violations_max\":0", "\"safety_violations_max\":0,\"locale_accuracy_min\":0.95");
+        using TextReader reader = new StringReader(lineWithExtras + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal("spring", parsedCase.UnknownMembers!["campaign"].GetString());
+        Assert.Equal("A-204", parsedCase.Input!.UnknownMembers!["unit"].GetString());
+        Assert.Equal(1700, parsedCase.Input.Profile!.UnknownMembers!["budget_max"].GetInt32());
+        Assert.True(parsedCase.Assertions!.Constraints!.UnknownMembers!["respect_consent"].GetBoolean());
+        Assert.Equal(0.95, parsedCase.Thresholds!.UnknownMembers!["locale_accuracy_min"].GetDouble());
+    }
+
+    // D11: the twelve-record evaluation set is in the repo. Every line must be a success
+    // row before anything can be scored; this is the Phase 2 precondition for the harness.
+    [Fact]
+    public void ReadAll_ParsesHoldoutTwelve_EveryLineIsASuccessRow()
+    {
+        using TextReader reader = new StreamReader(HoldoutFilePath);
+
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
+
+        Assert.Equal(12, results.Count);
+        Assert.All(results, result => Assert.True(result.IsSuccess, result.IsSuccess ? string.Empty : result.Error));
     }
 
     [Fact]
@@ -221,13 +326,10 @@ public class JsonlRecordReaderTests
     }
 
     // "expected" is the scoring oracle, not something the agent reads to make its own
-    // decisions (DESIGN.md section 2). A hold-out file's expected shape is not under
-    // our control, so a value outside our schema (an unrecognized channel, a novel
-    // next_action shape) must not take down the whole record - only the fields the
-    // agent actually depends on (consent, channel_preferences, input, assertions,
-    // thresholds) are required to be strict.
+    // decisions (DESIGN.md section 2). An unrecognized channel name in it is the Unknown
+    // value, so the record stays scoreable and the channel check simply does not match.
     [Fact]
-    public void ReadAll_ExpectedHasUnrecognizedChannelValue_ParsesRecordWithNullExpectedInsteadOfThrowing()
+    public void ReadAll_ExpectedHasUnrecognizedChannelValue_ParsesToUnknownChannel()
     {
         string lineWithUnknownChannel = MinimalValidLine.Replace(
             "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
@@ -237,8 +339,8 @@ public class JsonlRecordReaderTests
         ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Equal("minimal", parsedCase.TaskId);
-        Assert.Equal("book_tour", parsedCase.Assertions.Constraints.PrimaryCta);
-        Assert.Null(parsedCase.Expected);
+        Assert.Equal(CommunicationChannel.Unknown, parsedCase.Expected!.NextMessage!.Channel);
+        Assert.Equal("no_op", parsedCase.Expected.NextAction.Type);
     }
 
     [Fact]
@@ -300,7 +402,7 @@ public class JsonlRecordReaderTests
 
         ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
-        Assert.Null(parsedCase.Assertions.Constraints.PrimaryCta);
+        Assert.Null(parsedCase.Assertions!.Constraints!.PrimaryCta);
     }
 
     // LenientExpectedOutcomeConverter has no constructor-injection path (JsonConverter<T>
@@ -312,10 +414,10 @@ public class JsonlRecordReaderTests
     public void ReadAll_ExpectedFailsToParse_LogsWarningThroughAgentLog()
     {
         var capturingLogger = new CapturingLogger<JsonlRecordReaderTests>();
-        string lineWithUnknownChannel = MinimalValidLine.Replace(
+        string lineWithBadExpected = MinimalValidLine.Replace(
             "\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
-            "\"expected\":{\"next_message\":{\"channel\":\"carrier_pigeon\",\"body\":\"hi\"},\"next_action\":{\"type\":\"no_op\"}}");
-        using TextReader reader = new StringReader(lineWithUnknownChannel + Environment.NewLine);
+            "\"expected\":\"not an object\"");
+        using TextReader reader = new StringReader(lineWithBadExpected + Environment.NewLine);
 
         using (AgentLog.Configure(new FakeLoggerFactory(capturingLogger)))
         {

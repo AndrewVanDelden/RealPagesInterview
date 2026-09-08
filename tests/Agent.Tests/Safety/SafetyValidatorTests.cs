@@ -14,6 +14,16 @@ public class SafetyValidatorTests
     private static NextMessage Message(string? body, string? subject = null, CommunicationChannel channel = CommunicationChannel.Sms) =>
         new(channel, null, subject, body, null);
 
+    // D1: an absent constraint is not required. The fair-housing check runs regardless.
+    [Fact]
+    public void Validate_NoConstraintsStated_OnlyFairHousingApplies()
+    {
+        SafetyValidationResult result = Validator.Validate(Message("Hi Taylor! Book a tour today, families only."), new CaseConstraints());
+
+        string violation = Assert.Single(result.Violations);
+        Assert.Contains("families only", violation);
+    }
+
     // Body is nullable because the oracle's suppressed shape carries a null body
     // (retrospective D3). A null body validates as empty text: no opt-out, no PII.
     [Fact]

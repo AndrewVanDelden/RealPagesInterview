@@ -1,20 +1,9 @@
-using System.Text.Json.Serialization;
-
 namespace Agent.Domain;
 
+// Every constraint is optional (D1); an absent one is not required, so a consumer tests
+// for "== true", never for the bare value.
 public sealed record CaseConstraints(
-    bool NoPiiLeak,
-    bool? NoSensitiveDiscrimination,
-    bool IncludeOptOutInstructions,
-    string? PrimaryCta)
-{
-    // System.Text.Json binds through this constructor: its two parameters are the required
-    // members, the other two bind through their init setters when present (see
-    // AgentJsonOptions on RespectRequiredConstructorParameters). C# forbids a default value
-    // before a required parameter, so the positional order above cannot express this.
-    [JsonConstructor]
-    public CaseConstraints(bool noPiiLeak, bool includeOptOutInstructions)
-        : this(noPiiLeak, NoSensitiveDiscrimination: null, includeOptOutInstructions, PrimaryCta: null)
-    {
-    }
-}
+    bool? NoPiiLeak = null,
+    bool? NoSensitiveDiscrimination = null,
+    bool? IncludeOptOutInstructions = null,
+    string? PrimaryCta = null) : HasUnknownMembers;

@@ -36,12 +36,12 @@ public sealed partial class SafetyValidator : ISafetyValidator
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
 
-        if (constraints.IncludeOptOutInstructions && FindFirst(text, OptOutPhrases) is null)
+        if (constraints.RequiresOptOutInstructions() && FindFirst(text, OptOutPhrases) is null)
         {
             violations.Add("Missing required opt-out instructions.");
         }
 
-        if (constraints.NoPiiLeak && (SsnPattern().IsMatch(text) || LongDigitRunPattern().IsMatch(text)))
+        if (constraints.NoPiiLeak == true && (SsnPattern().IsMatch(text) || LongDigitRunPattern().IsMatch(text)))
         {
             violations.Add("Body appears to contain a leaked personal identifier (SSN-like or long numeric sequence).");
         }

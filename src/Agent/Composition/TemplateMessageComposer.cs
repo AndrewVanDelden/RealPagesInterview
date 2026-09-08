@@ -3,6 +3,10 @@ using Agent.Domain;
 
 namespace Agent.Composition;
 
+// The offline composer and the fallback (A18). Every fact is optional (D1): an absent
+// first name means no name in the greeting, an absent property means no property fact,
+// an absent primary_cta means the generic reply call to action (A9, A12). The opt-out
+// phrase for the channel is always present.
 public sealed class TemplateMessageComposer : IMessageComposer
 {
     // priorViolations is ignored: this composer is deterministic, so retrying with the
@@ -15,32 +19,31 @@ public sealed class TemplateMessageComposer : IMessageComposer
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        string firstName = prospectCase.Input.Profile.FirstName;
-        string propertyName = prospectCase.Input.PropertyName;
-        string? primaryCta = prospectCase.Assertions.Constraints.PrimaryCta;
+        ProspectContext context = prospectCase.ContextOrEmpty;
+        ProspectProfile profile = context.ProfileOrEmpty;
+        string? firstName = Present(profile.FirstName);
+        string? propertyName = Present(context.PropertyName);
+        string? primaryCta = Present(prospectCase.ConstraintsOrEmpty.PrimaryCta);
 
-        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(propertyName) || string.IsNullOrWhiteSpace(primaryCta))
-        {
-            return Task.FromResult(Result<NextMessage>.Failure(
-                "Prospect case is missing a required field (first name, property name, or primary CTA)."));
-        }
-
-        string interestPhrase = BuildInterestPhrase(prospectCase.Input.Profile);
-        string ctaPhrase = primaryCta.Replace('_', ' ');
+        string greeting = firstName is null ? "Hi" : $"Hi {firstName}";
+        string interestPhrase = BuildInterestPhrase(profile);
+        string ctaPhrase = primaryCta is null ? "learn more" : primaryCta.Replace('_', ' ');
+        string ctaType = primaryCta is null ? PrimaryCtaVocabulary.GenericCtaType : PrimaryCtaVocabulary.ToCtaType(primaryCta);
 
         string body = channel == CommunicationChannel.Email
-            ? $"Hi {firstName},\n{interestPhrase}Reply or click to {ctaPhrase} at {propertyName}.\nTo opt out of emails, reply STOP."
-            : $"Hi {firstName}! Welcome to {propertyName}. {interestPhrase}Reply to {ctaPhrase}. Reply STOP to opt out.";
+            ? $"{greeting},\n{interestPhrase}Reply or click to {ctaPhrase}{(propertyName is null ? string.Empty : $" at {propertyName}")}.\nTo opt out of emails, reply STOP."
+            : $"{greeting}!{(propertyName is null ? string.Empty : $" Welcome to {propertyName}.")} {interestPhrase}Reply to {ctaPhrase}. Reply STOP to opt out.";
 
         string? subject = channel == CommunicationChannel.Email
-            ? $"Tour {propertyName}"
+            ? propertyName is null ? "Your next step" : $"Tour {propertyName}"
             : null;
 
-        var cta = new Cta(PrimaryCtaVocabulary.ToCtaType(primaryCta), null, null);
-        var message = new NextMessage(channel, null, subject, body, cta);
+        var message = new NextMessage(channel, null, subject, body, new Cta(ctaType, null, null));
 
         return Task.FromResult(Result<NextMessage>.Success(message));
     }
+
+    private static string? Present(string? value) => Presence.IsAbsent(value) ? null : value;
 
     private static string BuildInterestPhrase(ProspectProfile profile)
     {

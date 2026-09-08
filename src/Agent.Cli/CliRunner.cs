@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Agent.Cli.Logging;
 using Agent.Common;
 using Agent.Composition;
@@ -23,7 +24,9 @@ public static class CliExitCodes
 // Thin shell over the library (DESIGN.md section 5): parses arguments, wires the
 // composition root, and runs the per-record batch loop. Holds no business rules
 // of its own - every decision stays inside Agent library components.
-public sealed class CliRunner(IConfiguration configuration, TextWriter output, TextWriter error)
+// composerOverride is the fault-injection seam for the batch loop's per-record isolation:
+// no input can make a record throw any more, so a test supplies a composer that does.
+public sealed class CliRunner(IConfiguration configuration, TextWriter output, TextWriter error, IMessageComposer? composerOverride = null)
 {
     private static readonly HttpClient SharedHttpClient = new();
 
@@ -35,10 +38,21 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         string? diagnosticsPath = GetOption(args, "--diagnostics");
         string? evalReportPath = GetOption(args, "--eval-report");
         string? logFilePath = GetOption(args, "--log-file");
+        string? nowOption = GetOption(args, "--now");
 
         if (inputPath is null || outputPath is null)
         {
-            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--now <ISO-8601 date-time>] [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            return CliExitCodes.UsageError;
+        }
+
+        // D10: the run's reference time is a value passed in, never a clock read inside the
+        // library. Without the flag it is the current UTC time, so send times are relative
+        // to today; the documented run against holdout_12.jsonl passes the oracle's date.
+        DateTimeOffset referenceTime = DateTimeOffset.UtcNow;
+        if (nowOption is not null && !DateTimeOffset.TryParse(nowOption, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out referenceTime))
+        {
+            error.WriteLine($"--now '{nowOption}' is not an ISO-8601 date-time (for example 2025-12-09T00:00:00-06:00).");
             return CliExitCodes.UsageError;
         }
 
@@ -71,7 +85,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         IMessageComposer baseComposer;
         try
         {
-            baseComposer = composerName switch
+            baseComposer = composerOverride ?? composerName switch
             {
                 "template" => templateFallback,
                 "openai" => BuildOpenAiComposer(configuration, loggerFactory),
@@ -113,6 +127,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         await using var outputStream = new StreamWriter(outputPath);
         await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
 
+        log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
+
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
         var scoredRuns = new List<ScoredRun>();
@@ -145,17 +161,25 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
             using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
+            // D1: one line per record naming every defaulted decision input and every
+            // unknown member, before any decision reads them.
+            IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
+            log.LogInformation(
+                "Ingest: defaulted=[{DefaultedFields}] unknown=[{UnknownMembers}].",
+                string.Join(", ", ingestNotes.DefaultedFields),
+                string.Join(", ", ingestNotes.UnknownMembers));
+
             Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;
             try
             {
-                result = await agent.RunAsync(prospectCase, cancellationToken);
+                result = await agent.RunAsync(prospectCase, referenceTime, cancellationToken);
             }
             catch (Exception ex)
             {
-                // Per-record isolation: one malformed record (bad move date, unrecognized
-                // timezone, an unsalvageable compose-validate failure) must not discard the
-                // output already produced for every other record in the batch.
+                // Per-record isolation: a bug that throws on one record must not discard the
+                // output already produced for every other record in the batch. Every input
+                // shape has a default (D1), so only a bug reaches here.
                 failureCount++;
                 log.LogError(ex, "Record failed.");
                 error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.ToDiagnosticString()}");
@@ -165,7 +189,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             stopwatch.Stop();
             log.LogInformation("Record processed in {ElapsedMs}ms.", stopwatch.Elapsed.TotalMilliseconds);
             outputs.Add(result.Output);
-            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics));
+            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes));
             scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
         }
 

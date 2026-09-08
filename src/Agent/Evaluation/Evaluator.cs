@@ -67,16 +67,16 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         }
 
         AgentRunResult result = run.Result;
-        NextMessage? actual = result.Output.NextMessage;
-        CaseConstraints constraints = prospectCase.Assertions.Constraints;
-        CaseThresholds thresholds = prospectCase.Thresholds;
+        NextMessage? actual = AsPresent(result.Output.NextMessage);
+        CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
+        CaseThresholds thresholds = prospectCase.ThresholdsOrEmpty;
         string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
 
         bool channelMatches = EffectiveChannel(expected.NextMessage) == EffectiveChannel(actual);
         bool nextActionTypeMatches = expected.NextAction.Type == result.Output.NextAction.Type;
 
         bool optOutPresent = actual is null
-            || !constraints.IncludeOptOutInstructions
+            || !constraints.RequiresOptOutInstructions()
             || ContainsOptOutPhrase(actual);
 
         // Trivially satisfied when the case states no primary CTA at all - there is
@@ -84,12 +84,14 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         // two records in the actual interview hold-out have no primary_cta constraint).
         bool primaryCtaPresent = actual is null || requiredCtaType is null || actual.Cta?.Type == requiredCtaType;
 
-        bool safetyWithinBudget = result.Diagnostics.SafetyViolationCount <= thresholds.SafetyViolationsMax;
+        // A15: a threshold the record does not state is not enforced; the safety budget
+        // defaults to zero.
+        bool safetyWithinBudget = result.Diagnostics.SafetyViolationCount <= (thresholds.SafetyViolationsMax ?? 0);
 
-        double personalizationScore = actual is null ? 1.0 : ComputePersonalizationScore(prospectCase.Input, actual.Body ?? string.Empty);
-        bool personalizationScoreMet = personalizationScore >= thresholds.PersonalizationScoreMin;
+        double personalizationScore = actual is null ? 1.0 : ComputePersonalizationScore(prospectCase.ContextOrEmpty, actual.Body ?? string.Empty);
+        bool personalizationScoreMet = thresholds.PersonalizationScoreMin is not { } minimumScore || personalizationScore >= minimumScore;
 
-        bool latencyWithinBudget = run.LatencyMs <= thresholds.P95LatencyMs;
+        bool latencyWithinBudget = thresholds.P95LatencyMs is not { } latencyBudget || run.LatencyMs <= latencyBudget;
 
         return new RecordScore(
             prospectCase.TaskId,
@@ -110,6 +112,11 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
     private static CommunicationChannel EffectiveChannel(NextMessage? message) =>
         message?.Channel ?? CommunicationChannel.None;
 
+    // A suppressed message (D3's object with channel none) has no body, opt-out, or call
+    // to action to check; it is scored as no message.
+    private static NextMessage? AsPresent(NextMessage? message) =>
+        EffectiveChannel(message) == CommunicationChannel.None ? null : message;
+
     // Mirrors SafetyValidator.Validate's own search text (Subject+Body when Subject is
     // present), so this checks the same opt-out phrasing the validator actually enforces,
     // not just the Body half of it.
@@ -122,18 +129,33 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         return SafetyValidator.OptOutPhrases.Any(phrase => text.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
+    // Fact coverage over the facts the record carries (D6). A record with no facts at all
+    // has nothing to personalize and scores 1.0.
     private static double ComputePersonalizationScore(ProspectContext input, string body)
     {
-        var tokens = new List<string> { input.Profile.FirstName, input.PropertyName };
+        ProspectProfile profile = input.ProfileOrEmpty;
+        var tokens = new List<string>();
 
-        if (input.Profile.Amenities.Count > 0)
+        if (profile.FirstName is { Length: > 0 } firstName)
         {
-            tokens.AddRange(input.Profile.Amenities);
+            tokens.Add(firstName);
         }
 
-        if (input.Profile.City.Length > 0)
+        if (input.PropertyName is { Length: > 0 } propertyName)
         {
-            tokens.Add(input.Profile.City);
+            tokens.Add(propertyName);
+        }
+
+        tokens.AddRange(profile.Amenities);
+
+        if (profile.City.Length > 0)
+        {
+            tokens.Add(profile.City);
+        }
+
+        if (tokens.Count == 0)
+        {
+            return 1.0;
         }
 
         int matched = tokens.Count(token => body.Contains(token, StringComparison.OrdinalIgnoreCase));
