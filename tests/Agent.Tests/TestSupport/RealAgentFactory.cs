@@ -33,10 +33,14 @@ internal static class RealAgentFactory
     // loudly if sample.jsonl ever gained a malformed `expected` field - it would just drop
     // the warning silently, the exact gap this project's Sprint 8 audit flagged. Making the
     // no-logger state explicit here means that gap can't reopen by accident.
-    public static IReadOnlyList<ProspectCase> ReadSampleCases()
+    public static IReadOnlyList<ProspectCase> ReadSampleCases() => ReadCases("sample.jsonl");
+
+    // Every line of the named fixture as a case; a fixture line that does not parse is a
+    // test failure here, not a silently shorter set.
+    public static IReadOnlyList<ProspectCase> ReadCases(string fileName)
     {
         using IDisposable scope = AgentLog.Configure(NullLoggerFactory.Instance);
-        using var reader = new StreamReader(SampleFilePath);
+        using var reader = new StreamReader(Path.Combine(AppContext.BaseDirectory, "TestData", fileName));
         return new JsonlRecordReader().ReadAll(reader).Select(result => result.Value).ToList();
     }
 }

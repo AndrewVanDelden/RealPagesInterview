@@ -176,7 +176,11 @@ U+2011; hold-out 11 carries "Responde STOP"); one list, shared by the validator 
 scorer, so the agent can never emit what the scorer rejects. (c) the body language is
 detected by a stop-word count over subject plus body for the languages the sets contain,
 English and Spanish; a stated language the detector does not know is reported as not
-measured. Scopes: Sprint 3; A12, A15; the validator's opt-out check. Evidence: the proof
+measured. (d) the call-to-action type is scored against the label's own `cta.type`, never
+against the product's vocabulary table (hold-out 3 labels `reschedule` for the constraint
+`reschedule_tour`, hold-out 7 labels `intent_capture` for `reply_intent`; a scorer that
+consulted the table passed the product's own guess back to itself, the retrospective's
+finding on the CTA field). Scopes: Sprint 3; A12, A15; the validator's opt-out check. Evidence: the proof
 runs recorded in DESIGN.md section 9 under "Numbers after Sprint 3". Assumption: A15.
 
 **D14. Replay alignment (2026-09-08).** Question: how `--replay` matches the rows of an

@@ -229,12 +229,13 @@ public class EvaluatorTests
         Assert.True(score.Passed);
     }
 
-    // Call-to-action type: exact against the mapped constraint (A9).
+    // Call-to-action type: exact against the label's cta.type (D13 d), never against the
+    // product's vocabulary table.
 
     [Fact]
-    public void Evaluate_CtaTypeMatchesMappedConstraint_Passed()
+    public void Evaluate_CtaTypeMatchesTheLabel_Passed()
     {
-        RecordScore score = ScoreOf(Run(BaselineCase(primaryCta: "book_tour"), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "schedule_tour")));
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "schedule_tour")));
 
         Assert.Equal(CheckResult.Passed, score.CtaType);
     }
@@ -242,25 +243,58 @@ public class EvaluatorTests
     [Fact]
     public void Evaluate_MessageHasNoCta_CtaTypeFailed()
     {
-        RecordScore score = ScoreOf(Run(BaselineCase(primaryCta: "book_tour"), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: null)));
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: null)));
 
         Assert.Equal(CheckResult.Failed, score.CtaType);
     }
 
     [Fact]
-    public void Evaluate_CtaWrongType_Failed()
+    public void Evaluate_CtaTypeDiffersFromTheLabel_Failed()
     {
-        RecordScore score = ScoreOf(Run(BaselineCase(primaryCta: "book_tour"), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "call_now")));
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "call_now")));
 
         Assert.Equal(CheckResult.Failed, score.CtaType);
     }
 
     [Fact]
-    public void Evaluate_NoPrimaryCtaStated_CtaTypeNotMeasured()
+    public void Evaluate_LabelUsesATypeNoConstraintMapsTo_ScoredAgainstTheLabel()
     {
-        RecordScore score = ScoreOf(Run(BaselineCase(primaryCta: null), Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "reply")));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(Message(CommunicationChannel.Sms, "expected", ctaType: "intent_capture")), primaryCta: "reply_intent");
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "intent_capture")));
+
+        Assert.Equal(CheckResult.Passed, score.CtaType);
+    }
+
+    [Fact]
+    public void Evaluate_LabelHasNoCta_CtaTypeNotMeasured()
+    {
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(Message(CommunicationChannel.Sms, "expected", ctaType: null)));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, ctaType: "reply")));
 
         Assert.Equal(CheckResult.NotMeasured, score.CtaType);
+    }
+
+    [Fact]
+    public void Evaluate_LabelSuppressedButActualSent_ChannelFailedAndCtaTypeNotMeasured()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Suppressed(), BaselineAction));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody)));
+
+        Assert.Equal(CheckResult.Failed, score.Channel);
+        Assert.Equal(CheckResult.NotMeasured, score.CtaType);
+        Assert.Equal(CheckResult.NotMeasured, score.SendAtDay);
+    }
+
+    [Fact]
+    public void Evaluate_LabelHasCtaButActualSuppressed_CtaTypeNotMeasuredAndChannelFailed()
+    {
+        RecordScore score = ScoreOf(Run(BaselineCase(), Suppressed()));
+
+        Assert.Equal(CheckResult.NotMeasured, score.CtaType);
+        Assert.Equal(CheckResult.Failed, score.Channel);
     }
 
     // Call-to-action payload by channel: sms carries options, email carries a link (A10).

@@ -1,5 +1,4 @@
 using Agent.Common;
-using Agent.Composition;
 using Agent.Domain;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
@@ -73,10 +72,11 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             ? CheckResult.NotMeasured
             : Verdict(OptOutInstructions.IsPresent(text));
 
-        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
-        CheckResult ctaType = actual is null || requiredCtaType is null
+        // D13 d: exact against the label's own call-to-action type, never against the
+        // product's vocabulary table; the labels use types no constraint mapping states.
+        CheckResult ctaType = actual is null || expectedMessage?.Cta?.Type is not { } expectedCtaType
             ? CheckResult.NotMeasured
-            : Verdict(actual.Cta?.Type == requiredCtaType);
+            : Verdict(actual.Cta?.Type == expectedCtaType);
 
         CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual);
         CheckResult bodyLanguage = ScoreLanguage(context.Language, text);
