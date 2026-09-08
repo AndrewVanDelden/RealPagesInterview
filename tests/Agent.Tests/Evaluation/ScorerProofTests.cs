@@ -13,15 +13,16 @@ public class ScorerProofTests
     private static readonly Evaluator Evaluator = new();
 
     [Theory]
-    [InlineData("sample.jsonl")]
-    [InlineData("holdout_12.jsonl")]
-    public void Evaluate_LabelsAsActuals_EveryRecordPasses(string fileName)
+    [InlineData("sample.jsonl", 2)]
+    [InlineData("holdout_12.jsonl", 12)]
+    [InlineData("synthetic_12.jsonl", 12)]
+    public void Evaluate_LabelsAsActuals_EveryRecordPasses(string fileName, int recordCount)
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadCases(fileName);
 
         Scorecard scorecard = Evaluator.Evaluate(GoldenRuns.FromLabels(cases));
 
-        Assert.Equal(cases.Count, scorecard.TotalCount);
+        Assert.Equal(recordCount, scorecard.TotalCount);
         Assert.True(scorecard.AllPassed, ScorecardFormatter.Format(scorecard));
     }
 
