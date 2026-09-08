@@ -1,3 +1,5 @@
+using Agent.Composition;
+
 namespace Agent.Orchestration;
 
 // FairHousingCheckPassed is null when the safety validator never ran for this
@@ -9,7 +11,10 @@ namespace Agent.Orchestration;
 // never ran. Schedule is how send_at was reached (D22) and is null on a record the
 // scheduler never ran for: consent suppression, or a composer that produced no message to
 // schedule. A record suppressed by the final safety check keeps its schedule, the way it
-// keeps its action plan.
+// keeps its action plan. Composition is which implementation wrote the message and how many
+// compose calls it took (D24, playbook step 57); it is null on a record that has no message,
+// which is consent suppression or a composition failure, and suppression_reason already
+// separates those two.
 public sealed record AgentDiagnostics(
     bool ConsentVerified,
     bool? FairHousingCheckPassed,
@@ -17,4 +22,5 @@ public sealed record AgentDiagnostics(
     int SafetyViolationCount,
     SuppressionReason SuppressionReason = SuppressionReason.None,
     ActionPlanNotes? ActionPlan = null,
-    ScheduleNotes? Schedule = null);
+    ScheduleNotes? Schedule = null,
+    CompositionNotes? Composition = null);

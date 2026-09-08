@@ -339,4 +339,33 @@ public class LeasingMessageAgentTests
 
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
     }
+
+    // D24 and the Phase 4 check: the record says which implementation wrote its message.
+    // The real agent is wired with the template composer, so an offline run names it on
+    // every record that has a message.
+    [Fact]
+    public async Task RunAsync_TemplateComposer_RecordsWhichImplementationWroteTheMessage()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase sample1 = RealAgentFactory.ReadSampleCases()[0];
+
+        AgentRunResult result = await agent.RunAsync(sample1, ReferenceTime);
+
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 1), result.Diagnostics.Composition);
+    }
+
+    // A record with no message has no composer to name.
+    [Fact]
+    public async Task RunAsync_NoConsentedChannel_RecordsNoComposition()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase prospectCase = SampleProspectCases.Minimal() with
+        {
+            Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
+        };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Null(result.Diagnostics.Composition);
+    }
 }

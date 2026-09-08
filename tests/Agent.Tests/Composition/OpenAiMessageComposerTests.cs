@@ -17,10 +17,10 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        NextMessage message = result.Value!;
+        NextMessage message = result.Value!.Message;
         Assert.Equal("Hi Taylor, book a tour!", message.Body);
         Assert.Equal("Tour Oak Ridge", message.Subject);
         Assert.Equal("schedule_tour", message.Cta!.Type);
@@ -35,7 +35,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json"));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
         Assert.NotNull(result.Error);
@@ -48,7 +48,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
     }
@@ -59,7 +59,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient("null"));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
     }
@@ -71,7 +71,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: ["pool", "fitness"]);
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         Assert.True(result.IsSuccess);
     }
@@ -83,7 +83,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: null);
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
 
         Assert.True(result.IsSuccess);
     }
@@ -94,7 +94,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new HttpRequestException("503 Service Unavailable")));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("503 Service Unavailable", result.Error);
@@ -106,7 +106,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new InvalidOperationException("no completion content")));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("no completion content", result.Error);
@@ -122,7 +122,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new JsonException("Invalid JSON schema.")));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("Invalid JSON schema.", result.Error);
@@ -309,7 +309,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "book_tour");
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("call_now", result.Error);
@@ -345,7 +345,7 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "call_now");
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
     }
@@ -361,10 +361,10 @@ public class OpenAiMessageComposerTests
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("anything_reasonable", result.Value!.Cta!.Type);
+        Assert.Equal("anything_reasonable", result.Value!.Message.Cta!.Type);
     }
 
     [Fact]

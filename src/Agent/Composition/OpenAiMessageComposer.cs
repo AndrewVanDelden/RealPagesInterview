@@ -59,7 +59,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         return schema.ToJsonString();
     }
 
-    public async Task<Result<NextMessage>> ComposeAsync(
+    public async Task<Result<ComposedMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
@@ -77,7 +77,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
         {
             log.LogWarning(ex, "Completion request failed.");
-            return Result<NextMessage>.Failure($"Completion request failed: {ex.ToDiagnosticString()}");
+            return Result<ComposedMessage>.Failure($"Completion request failed: {ex.ToDiagnosticString()}");
         }
 
         ComposedMessagePayload? payload;
@@ -88,12 +88,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         catch (JsonException ex)
         {
             log.LogWarning(ex, "Model response was not valid JSON.");
-            return Result<NextMessage>.Failure($"Model response was not valid JSON: {ex.ToDiagnosticString()}");
+            return Result<ComposedMessage>.Failure($"Model response was not valid JSON: {ex.ToDiagnosticString()}");
         }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.Body) || string.IsNullOrWhiteSpace(payload.CtaType))
         {
-            return Result<NextMessage>.Failure("Model response was missing required fields (body, cta_type).");
+            return Result<ComposedMessage>.Failure("Model response was missing required fields (body, cta_type).");
         }
 
         // The response schema already constrains cta_type to exactly requiredCtaType
@@ -104,14 +104,15 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         // the only requirement in that case.
         if (requiredCtaType is not null && !string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
-            return Result<NextMessage>.Failure(
+            return Result<ComposedMessage>.Failure(
                 $"Model returned cta_type '{payload.CtaType}' but '{requiredCtaType}' was required.");
         }
 
         var cta = new Cta(payload.CtaType, payload.CtaOptions, payload.CtaLink);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
+        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1));
 
-        return Result<NextMessage>.Success(message);
+        return Result<ComposedMessage>.Success(composed);
     }
 
     // D1: an absent fact is told to the model as unknown, never as a blank string it

@@ -16,9 +16,11 @@ public sealed class ValidatingMessageComposer(
     IMessageComposer fallbackComposer,
     ILogger<ValidatingMessageComposer>? logger = null) : IMessageComposer
 {
+    private const int MaxComposeAttempts = 2;
+
     private readonly ILogger<ValidatingMessageComposer> log = logger.OrNullLogger();
 
-    public async Task<Result<NextMessage>> ComposeAsync(
+    public async Task<Result<ComposedMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
@@ -26,22 +28,22 @@ public sealed class ValidatingMessageComposer(
     {
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
-        for (int attempt = 0; attempt < 2; attempt++)
+        for (int attempt = 1; attempt <= MaxComposeAttempts; attempt++)
         {
-            Result<NextMessage> attemptResult = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken);
+            Result<ComposedMessage> attemptResult = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken);
 
             if (attemptResult.IsSuccess)
             {
-                SafetyValidationResult validation = validator.Validate(attemptResult.Value, prospectCase.ConstraintsOrEmpty);
+                SafetyValidationResult validation = validator.Validate(attemptResult.Value.Message, prospectCase.ConstraintsOrEmpty);
 
                 if (validation.Violations.Count == 0)
                 {
-                    return attemptResult;
+                    return WithAttempts(attemptResult.Value, attempt);
                 }
 
                 log.LogWarning(
                     "Compose attempt {Attempt} failed safety validation: {Violations}.",
-                    attempt + 1,
+                    attempt,
                     string.Join("; ", validation.Violations));
                 violationsForNextAttempt = validation.Violations;
             }
@@ -51,21 +53,26 @@ public sealed class ValidatingMessageComposer(
                 // know about - otherwise a retry after a Result.Failure (a wrong cta_type,
                 // a malformed completion) repeats the exact same prompt with no corrective
                 // signal, wasting the one retry this loop has.
-                log.LogWarning("Compose attempt {Attempt} failed: {Error}.", attempt + 1, attemptResult.Error);
+                log.LogWarning("Compose attempt {Attempt} failed: {Error}.", attempt, attemptResult.Error);
                 violationsForNextAttempt = [attemptResult.Error];
             }
         }
 
         log.LogWarning("Both compose attempts were rejected; falling back to the safe fallback composer.");
-        Result<NextMessage> fallbackResult = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
+        Result<ComposedMessage> fallbackResult = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         if (fallbackResult.IsSuccess &&
-            validator.Validate(fallbackResult.Value, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
+            validator.Validate(fallbackResult.Value.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
         {
-            return fallbackResult;
+            return WithAttempts(fallbackResult.Value, MaxComposeAttempts + 1);
         }
 
         log.LogError("Fallback composer output also failed composition or safety validation; suppressing.");
-        return Result<NextMessage>.Failure("Fallback composer output failed safety validation.");
+        return Result<ComposedMessage>.Failure("Fallback composer output failed safety validation.");
     }
+
+    // D24: the composer that answered keeps its own name, and this loop supplies the count,
+    // because the number of calls it took is the loop's fact and not the composer's.
+    private static Result<ComposedMessage> WithAttempts(ComposedMessage composed, int attempts) =>
+        Result<ComposedMessage>.Success(composed with { Notes = composed.Notes with { Attempts = attempts } });
 }

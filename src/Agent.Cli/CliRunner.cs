@@ -34,7 +34,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
     {
         string? inputPath = GetOption(args, "--input");
         string? outputPath = GetOption(args, "--output");
-        string composerName = GetOption(args, "--composer") ?? "template";
+        string composerName = GetOption(args, "--composer") ?? ComposerNames.Template;
         string? diagnosticsPath = GetOption(args, "--diagnostics");
         string? evalReportPath = GetOption(args, "--eval-report");
         string? logFilePath = GetOption(args, "--log-file");
@@ -99,9 +99,10 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         {
             baseComposer = composerOverride ?? composerName switch
             {
-                "template" => templateFallback,
-                "openai" => BuildOpenAiComposer(configuration, loggerFactory),
-                _ => throw new ArgumentException($"Unknown composer '{composerName}'. Expected 'template' or 'openai'."),
+                ComposerNames.Template => templateFallback,
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory),
+                _ => throw new ArgumentException(
+                    $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

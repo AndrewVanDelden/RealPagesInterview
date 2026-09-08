@@ -27,10 +27,10 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Same(cleanMessage, result.Value);
+        Assert.Same(cleanMessage, result.Value.Message);
         Assert.Equal(1, innerComposer.CallCount);
     }
 
@@ -44,10 +44,10 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Same(cleanMessage, result.Value);
+        Assert.Same(cleanMessage, result.Value.Message);
         Assert.Equal(2, innerComposer.CallCount);
     }
 
@@ -58,10 +58,10 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        SafetyValidationResult finalValidation = Validator.Validate(result.Value!, prospectCase.ConstraintsOrEmpty);
+        SafetyValidationResult finalValidation = Validator.Validate(result.Value!.Message, prospectCase.ConstraintsOrEmpty);
         Assert.Empty(finalValidation.Violations);
     }
 
@@ -72,7 +72,7 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, innerComposer.CallCount);
@@ -98,7 +98,7 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, unsafeFallback);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
     }
@@ -111,7 +111,7 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, failingFallback);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
     }
@@ -219,5 +219,34 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error);
+    }
+
+    // D24: the notes name the composer whose text was returned and the number of calls this
+    // loop made to get it, so the fallback after two rejected attempts is visible as the
+    // template composer on the third call rather than as a clean first attempt.
+    [Fact]
+    public async Task ComposeAsync_BothAttemptsBad_ReportsTheFallbackComposerAndEveryAttempt()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 3), result.Value!.Notes);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_SecondAttemptClean_ReportsTheInnerComposerAndBothAttempts()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Success(BadMessage()),
+            Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2), result.Value!.Notes);
     }
 }

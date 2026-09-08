@@ -9,7 +9,7 @@ namespace Agent.Tests.TestSupport;
 // scenario, so LeasingMessageAgent's exception-logging filter can be tested against both.
 internal sealed class ThrowsComposer : IMessageComposer
 {
-    public Task<Result<NextMessage>> ComposeAsync(
+    public Task<Result<ComposedMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,

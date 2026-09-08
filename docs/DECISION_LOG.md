@@ -334,3 +334,120 @@ only diagnostics member that tells a reader nothing the two files in front of th
 Scopes: the Phase 3 check in AGENTS.md, Sprint 5, any later sprint tempted to add the object.
 Evidence: A1 and A3, which state the rule entirely in input fields; DESIGN.md section 3's
 channel row; LC. Assumptions: A1, A3. Confirmed by the requester on 2026-09-08.
+
+**D24. The composer's identity in the diagnostics (2026-09-08).** Question: playbook step 57
+says the diagnostics record which implementation produced each result, and the Phase 4 check
+says the diagnostics say so on every record; nothing in the output or the diagnostics names the
+composer today. Options: log the composer once per record and leave the diagnostics alone; add a
+string member to `AgentDiagnostics`; or have the composer return its working beside the message,
+the way `SendScheduler` returns `ScheduledSend` (D22), and carry it as a `CompositionNotes`
+object. Recommendation: the third. A log line only reaches a reader who kept the log, and the
+composer's identity is exactly the kind of working D23 says earns an object: it cannot be read
+off the input and the output. `IMessageComposer` returns `Result<ComposedMessage>`, where
+`ComposedMessage` is the `NextMessage` plus `CompositionNotes(Composer, Attempts,
+NetworkRetries)`: which implementation produced the text, how many compose calls the
+compose-validate loop made, and how many transport retries the call underneath spent (null for a
+composer that makes no network call). `ValidatingMessageComposer` returns the notes of the
+attempt that answered, with its own total attempt count. Silent degradation is visible without a
+boolean: the run states the composer it asked for (`--composer`), and a record whose notes say
+`template` on an `openai` run is one the fallback answered. Scopes: Sprint 6, `IMessageComposer`,
+both composers, `ValidatingMessageComposer`, `AgentDiagnostics`, the Phase 4 check. Evidence:
+playbook steps 49 and 57; D22's precedent; D23's rule for what earns an object. Assumption: A18.
+
+**D25. The call-to-action payload and the link host (2026-09-08).** Question: A10 says sms
+carries numbered reply options and email carries a link, and the payload check has been 0 of 10
+on every set since Sprint 3 because the template composer emits neither. Where do the options and
+the link come from, given no input field states either. Options: hard-code one pair of options
+and one link in the template composer; or put both on the catalog row D19 deferred, keyed on the
+call-to-action type, so the vocabulary lives in the one table playbook step 42 asks for.
+Recommendation: the second. `ActionCatalog` gains the call-to-action column D2 named and D19
+deferred: per call-to-action type, the sms reply options and the email link path. The link is
+`https://{slug}.example/{path}` (A10), and the slug rule is A21. A record with no property name
+has no host, so it gets no link and the payload check fails honestly rather than being fed an
+invented host. `PrimaryCtaVocabulary.GenericCtaType` moves onto that column, which is what D19
+said Sprint 6 would do. Scopes: Sprint 6, `ActionCatalog`, both composers, A9, A10, A21.
+Evidence: sample 1's `options` ["Thu","Fri"] and sample 2's `link`
+`https://oakridge.example/tour`; playbook step 42; D19. Assumptions: A9, A10, A21.
+
+**D26. Language is passed through, never gated (2026-09-08).** Question: A13 says the template
+set ships English and any other language goes to the model composer, which leaves every
+non-English record failing the language check on the offline path the Phase 4 check runs.
+Options: keep A13 as written; add a language allowlist and refuse anything outside it; or state
+that no component gates on a language allowlist, ship the offline template sets for the languages
+there is evidence for, and name the fallback when a record's language has no set. Recommendation:
+the third, on the requester's answer of 2026-09-08: nothing in the problem statement makes
+English a rule, `input.language` is a free tag, and a model composer is not English-only either.
+The model path passes the record's language to the model with no allowlist and no list of
+supported tags anywhere in the code. The template composer holds one template set per language it
+can serve, English and Spanish today, keyed on the parsed tag; a tag with no set is served in
+English with the `locale_not_applied` diagnostic A13 names, which is a stated limit of a template
+file, not a rule about which languages a prospect may use. Spanish is earned by the synthetic
+set, which section 4 item 4 put there before any decision code existed, so D9 is not touched.
+Scopes: Sprint 6, `TemplateMessageComposer`, `OpenAiMessageComposer`, A13. Evidence: the
+requester, 2026-09-08; playbook step 59; DESIGN.md section 4 item 4. Assumption: A13, revised.
+
+**D27. The real client goes through the official SDK (2026-09-08).** Question: playbook step 49
+and the SCS pillar both say the real client is written against the official SDK when one exists,
+and `OpenAiCompletionClient` is a hand-rolled `HttpClient` call against
+`/v1/chat/completions`. Options, and when each wins: (a) raw HTTP, which wins only when no
+official SDK exists or the deployment forbids the dependency, and costs you the request and
+response shapes, the retry policy, and the structured-output plumbing by hand; (b) the official
+`OpenAI` package, which wins when the product calls OpenAI itself and wants the vendor's own
+model of the API surface, its structured-output types and its retry policy, at the price of one
+vendor dependency; (c) `Microsoft.Extensions.AI` `IChatClient`, which is Microsoft's recommended
+abstraction and wins when the application wants provider portability plus middleware for
+telemetry, caching and function calling, and which sits on top of (b) rather than replacing it;
+(d) an agent framework such as Semantic Kernel or Azure.AI.OpenAI, which wins when you want
+planners, memory and connectors, or an Azure-hosted deployment and its auth. Recommendation: (b),
+on the requester's answer of 2026-09-08. This product already owns the portability seam that (c)
+would sell it: `ICompletionClient` is one method with a real and a fake implementation (S3), so
+`IChatClient` would be a second abstraction over the first, which EA refuses. (d) brings an
+orchestration layer for a program whose whole point is that code owns every decision (S2). The
+`OpenAI` package is pinned at an exact version in `Directory.Packages.props`, and every type,
+parameter and flag used is confirmed against that restored assembly, not against documentation
+or memory (step 50). Scopes: Sprint 6, `OpenAiCompletionClient`, its tests, D28. Evidence: SCS;
+playbook steps 49 and 50; S3. Assumption: none.
+
+**D28. What a model call is bounded by (2026-09-08).** Question: playbook step 49 asks for a
+per-call timeout below the latency budget, bounded retry with backoff on transient failures, and
+the retry count in the diagnostics; the hand-rolled client had none of the three. Options: rely
+on the SDK's defaults, which are three retries with exponential backoff and its own network
+timeout; or state each bound in the composition root and count the retries. Recommendation: the
+second. The strictest `p95_latency_ms` any record states is the budget the run is measured
+against, so the timeout is a stated value rather than a default, and a retry count nobody can
+see is the silent degradation step 57 exists to expose. The temperature is set low and
+reproducibility is never claimed from it (step 52); variance is measured in Phase 7 step 83.
+Scopes: Sprint 6, `OpenAiCompletionClient`, `CompositionNotes.NetworkRetries`, D24. Evidence:
+playbook steps 49 and 52. Assumption: A15.
+
+**D29. What the model is told, and what it is told to ignore (2026-09-08).** Question: step 55
+says every field that changes what the message should say reaches the model, and the prompt
+carries four; D5 names persona, stage, language, every date the record has, the stated interests
+and the catalog's call to action. Options: add the fields to the existing block; or add them and
+pin the result. Recommendation: the second. Every record-derived value goes inside
+`<prospect_data>`, every instruction stays outside it, and both are pinned by golden tests over
+the built prompt and the serialized request (step 58) so a wording change is a reviewed diff
+rather than a silent one. The boundary is tested with records carrying an instruction in a name
+field and in a free-text field, and the assertion is that the produced message does not follow
+it (step 54). Scopes: Sprint 6, `OpenAiMessageComposer`, its tests. Evidence: playbook steps 53
+to 55 and 58; D5. Assumptions: A9, A12, A13.
+
+**D30. The judge (2026-09-08).** Question: D15 deferred the semantic judge for
+`next_action.type` to Sprint 6, where D5 also puts body semantics; a judge is a network call and
+the Phase 4 check runs offline. Options: defer it again; drop it and let exact match be the whole
+contract; or build it behind a flag, reference-based, pinned. Recommendation: the third, taken
+after reading the current guidance on judges. Three properties follow from what makes judges
+unreliable. It is reference-based: the rubric asks whether the produced message conveys the
+label's own offer, call to action and facts, never whether the message is good, because a judge
+scoring quality with no reference is the setting where position, verbosity and self-preference
+bias have been measured. It is one signal beside the deterministic checks and can never overturn
+one, which is step 31. It is off unless `--judge` is passed, and its two checks read as not
+measured on every offline run, so the Phase 4 check and every pinned baseline are untouched by
+it. The judge model is pinned separately from the composer model and named in the report. The
+known limitation, recorded rather than papered over: with one vendor key the judge and the
+composer can be the same family, which is the self-preference setting; on the template path the
+text being judged is not model-written at all, and on the model path the label is the reference,
+which is the mitigation the literature gives. No new interface: the judge is a class over the
+existing `ICompletionClient` seam, whose fake already exists (EA). Scopes: Sprint 6,
+`Agent.Evaluation`, the CLI, DESIGN.md section 6, D5, D6, D15. Evidence: playbook step 31; the
+judge-bias guidance summarized above; S4. Assumptions: A8, A15.

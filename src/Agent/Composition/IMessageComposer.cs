@@ -5,7 +5,7 @@ namespace Agent.Composition;
 
 public interface IMessageComposer
 {
-    Task<Result<NextMessage>> ComposeAsync(
+    Task<Result<ComposedMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
