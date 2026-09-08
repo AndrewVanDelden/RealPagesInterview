@@ -10,7 +10,8 @@ internal static class SampleProspectCases
         string? cityInterest = "Richardson, TX",
         IReadOnlyList<string>? amenityInterest = null,
         string? primaryCta = "book_tour",
-        bool includeOptOutInstructions = true)
+        bool includeOptOutInstructions = true,
+        string? language = "en")
     {
         var profile = new ProspectProfile(firstName, cityInterest, amenityInterest);
         var context = new ProspectContext(
@@ -18,7 +19,7 @@ internal static class SampleProspectCases
             new DateOnly(2026, 1, 10),
             DateTimeOffset.Parse("2025-12-08T15:04:00Z"),
             "America/Chicago",
-            "en",
+            language,
             profile);
         var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: false);
         var constraints = new CaseConstraints(NoPiiLeak: true, NoSensitiveDiscrimination: null, includeOptOutInstructions, primaryCta);

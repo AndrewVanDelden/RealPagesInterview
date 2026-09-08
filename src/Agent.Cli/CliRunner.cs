@@ -190,7 +190,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             log.LogInformation("Record processed in {ElapsedMs}ms.", stopwatch.Elapsed.TotalMilliseconds);
             outputs.Add(result.Output);
             diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes));
-            scoredRuns.Add(new ScoredRun(prospectCase, result, stopwatch.Elapsed.TotalMilliseconds));
+            scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, stopwatch.Elapsed.TotalMilliseconds));
         }
 
         log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", readResults.Count, failureCount);

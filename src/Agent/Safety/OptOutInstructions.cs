@@ -1,0 +1,28 @@
+using System.Text.RegularExpressions;
+
+namespace Agent.Safety;
+
+// D13 b: the one definition of "carries an opt-out instruction", shared by the validator
+// (which enforces it) and the evaluator (which measures it), so the agent can never emit
+// what the scorer rejects. The whole word STOP in capitals is the carrier keyword in every
+// language the sets contain ("Reply STOP", "Responde STOP"); a lowercase "stop" is prose
+// ("bus stop"). The unicode hyphens the labels use fold to a hyphen first, so "Opt‑out"
+// spelled with U+2011 counts.
+public static partial class OptOutInstructions
+{
+    private static readonly string[] Phrases = ["opt out", "opt-out", "unsubscribe"];
+
+    // O(n) in the text length.
+    public static bool IsPresent(string text)
+    {
+        string folded = FoldHyphens(text);
+
+        return StopKeyword().IsMatch(folded) || Phrases.Any(phrase => folded.Contains(phrase, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string FoldHyphens(string text) =>
+        text.Replace('‐', '-').Replace('‑', '-').Replace('–', '-').Replace('—', '-');
+
+    [GeneratedRegex(@"\bSTOP\b")]
+    private static partial Regex StopKeyword();
+}

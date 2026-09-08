@@ -525,11 +525,12 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-            string fileContent = await File.ReadAllTextAsync(evalReportPath);
-            Assert.Contains("labeled", fileContent);
-            Assert.Contains("unlabeled", fileContent);
-            Assert.Contains("ERROR", fileContent);
-            Assert.Contains("PASS", fileContent);
+            string[] reportLines = (await File.ReadAllTextAsync(evalReportPath)).Split(Environment.NewLine);
+            string labeledRow = Assert.Single(reportLines, line => line.StartsWith("labeled ", StringComparison.Ordinal));
+            string unlabeledRow = Assert.Single(reportLines, line => line.StartsWith("unlabeled ", StringComparison.Ordinal));
+            Assert.DoesNotContain("ERROR", labeledRow);
+            Assert.Contains("OK", labeledRow);
+            Assert.Contains("ERROR", unlabeledRow);
         }
         finally
         {
