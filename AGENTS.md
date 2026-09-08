@@ -137,11 +137,34 @@ Update this section at the end of every sprint. It is the first thing an agent r
 
 ## Review criteria
 
-Reviews check correctness first, then the pillars in `~/.claude/CLAUDE.md` by acronym
-(VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB, PF, DBT; the key and the evidence for each are in
-`~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects
-correctness, a stated requirement, or a named pillar, and name which. Do not report
-style preferences, hypothetical future needs, or requests for more abstraction, defensive
-code, or tests for cases that cannot occur. A reviewer asked to find gaps will report
-some in sound work; a finding without a named rule behind it is optional and should say
-so. If no finding meets the bar, the entire review output is: Nothing to report.
+A review starts from the assumption that the diff has a regression, a gap, or a wasted
+cost, and reaches "Nothing to report" only after an active search fails to find one. It is
+not a check that the code matches its own description or that the author's own tests pass:
+the author wrote the code, the tests, and the description, so confirming those against each
+other only reproduces the author's blind spots. Coverage proves every line ran, not that
+its arithmetic, its deleted behavior, or its edge cases are correct. A line that raises a
+question is traced to an answer or checked with a scratch test, never waved through as
+"probably intended" or "that's asking for defensive code."
+
+Run these passes over the diff, not one narrative read:
+
+- Contract and removed behavior: for every line the diff deletes or replaces, name what it
+  guaranteed, and find where the new code re-establishes that guarantee. If you can't, that
+  is a finding.
+- State and arithmetic tracing: follow every counter, accumulator, and branch condition
+  through at least one concrete scenario with real values. Code that reads correctly and
+  code that computes correctly are different claims.
+- Boundary and hostile inputs: name what happens on an invalid combination of inputs, an
+  empty collection, a null on a path that looks unreachable, or calls made out of order.
+- Access costs: check whether a property, getter, or formatter hides an allocation, a
+  repeated scan, a re-sort, or I/O behind what reads like a cheap read.
+
+Then check the pillars in `~/.claude/CLAUDE.md` by acronym (VF, LC, EA, SD, HR, SCU, EET,
+HSC, SCS, BC, HB, PF, DBT; the key and the evidence for each are in
+`~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects correctness, a
+stated requirement, or a named pillar, and name which. Do not report style preferences,
+hypothetical future needs, or requests for more abstraction, defensive code, or tests for
+cases that cannot occur. A reviewer asked to find gaps will report some in sound work; a
+finding without a named rule behind it is optional and should say so. "Nothing to report"
+is earned by running every pass above and finding nothing, never the default outcome of a
+read that happened to feel clean.
