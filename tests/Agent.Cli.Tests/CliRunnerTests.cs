@@ -596,6 +596,9 @@ public class CliRunnerTests
             Assert.Contains("Record processed", logContent);
             Assert.DoesNotContain("Record 't1' processed", logContent);
             Assert.Contains("TaskId=t1", logContent);
+            // D16: one scope owner. Two scopes pushing the same key rendered every agent
+            // line as "TaskId=t1 TaskId=t1" (the retrospective's logging defect 1).
+            Assert.DoesNotContain("TaskId=t1 TaskId=t1", logContent);
         }
         finally
         {

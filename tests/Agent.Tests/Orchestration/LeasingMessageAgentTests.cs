@@ -151,11 +151,11 @@ public class LeasingMessageAgentTests
         await Assert.ThrowsAsync<OperationCanceledException>(() => agent.RunAsync(prospectCase, ReferenceTime, cts.Token));
     }
 
-    // Correlation ID: any caller (the CLI today, a future API) gets the TaskId attached to
-    // every log line emitted anywhere downstream of RunAsync for free, without needing to
-    // pass it through composer/validator method signatures.
+    // D16: the CLI's batch loop is the one owner of the TaskId scope. The agent opening a
+    // second one rendered every line as "TaskId=x TaskId=x" (the retrospective's logging
+    // defect 1); a library caller that wants correlation opens its own scope, as the CLI does.
     [Fact]
-    public async Task RunAsync_AnyOutcome_OpensLogScopeCarryingTaskId()
+    public async Task RunAsync_AnyOutcome_OpensNoLogScopeOfItsOwn()
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
@@ -170,10 +170,7 @@ public class LeasingMessageAgentTests
 
         await agent.RunAsync(prospectCase, ReferenceTime);
 
-        Assert.Contains(capturingLogger.Scopes, scope =>
-            scope is IReadOnlyDictionary<string, object> dict &&
-            dict.TryGetValue("TaskId", out object? value) &&
-            Equals(value, "correlation-check"));
+        Assert.Empty(capturingLogger.Scopes);
     }
 
     // Sprint 8's audit named this exact gap: neither LeasingMessageAgent nor

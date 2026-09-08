@@ -22,17 +22,16 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
         foreach (ScoredRun run in runs)
         {
-            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = run.ProspectCase.TaskId });
-
             // Per-record isolation (playbook step 34): a scoring bug on one record yields
-            // one unscoreable row, never a lost batch.
+            // one unscoreable row, never a lost batch. No TaskId scope here (D16): the row
+            // carries the id, and the one log line names it.
             try
             {
                 scores.Add(Score(run));
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Scoring failed.");
+                log.LogError(ex, "Scoring record '{TaskId}' failed.", run.ProspectCase.TaskId);
                 scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, ex.ToDiagnosticString()));
             }
         }

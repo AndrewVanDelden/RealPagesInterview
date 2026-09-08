@@ -89,15 +89,18 @@ perfect diagnostics and a log full of retries, or a suppressed message with
 a totally quiet log (no consent, nothing went wrong, there was just nothing
 to do).
 
-**Correlation:** `CliRunner`'s own per-record loop, `LeasingMessageAgent.RunAsync`,
-and `Evaluator.Evaluate` each open a log scope carrying `TaskId` at the start
-of processing one record. Every log line emitted anywhere downstream during
-that record's processing, inside `ValidatingMessageComposer`,
+**Correlation:** `CliRunner`'s per-record loop is the one owner of the `TaskId`
+log scope (D16). Every log line emitted anywhere downstream during that
+record's processing, inside `LeasingMessageAgent`, `ValidatingMessageComposer`,
 `OpenAiMessageComposer`, the CLI's own per-record lines, carries that
 `TaskId` via the scope, without any of those classes needing to accept or
 pass it explicitly, and without restating it in their own message text
-(rule 3, section 5). This is why searching a log for one `TaskId` gives the
-complete story of that one record, not a mix of every record interleaved.
+(rule 3, section 5). Neither the agent nor the evaluator opens a scope of its
+own: two scopes pushing the same key rendered every line as `TaskId=x TaskId=x`.
+The evaluator runs after the loop, so its one failure line names the task id
+in the message instead. A library caller that wants correlation opens its own
+scope the way the CLI does. This is why searching a log for one `TaskId` gives
+the complete story of that one record, not a mix of every record interleaved.
 
 **Log levels, and what each one means here:**
 
