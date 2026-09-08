@@ -501,3 +501,12 @@ the budget without editing the evaluation data, which is a product change earned
 need; or treat `p95_latency_ms` as a reporting threshold rather than a call timeout, which
 contradicts playbook step 49 and D28. The first is free and honest, the second costs a flag and
 another live run, the third reopens a decision.
+
+**D31 addendum, the measured cost (2026-09-08).** The run cost about $0.004, read from the
+vendor's usage page: `gpt-4o-mini` input $0.002 and output $0.002 over roughly 12,100 tokens.
+The client made 92 HTTP attempts and the vendor recorded about 30 requests, so a call abandoned
+at its timeout usually never becomes a billable request, and sometimes does: the third that
+completed server-side were billed with their output tokens. That is worth knowing before
+choosing among this decision's three ways out, because the option that raises the budget to get
+a real comparison would pay for every call in full rather than for a third of them.
+

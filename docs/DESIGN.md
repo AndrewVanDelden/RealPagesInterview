@@ -373,3 +373,16 @@ data it never got to write one; that comparison needs the open question in D31 a
 It does settle that the degradation path works on real network failures rather than only on
 fabricated ones: the timeout, the retry, the bounded compose loop, the fallback and the
 diagnostics all behaved as the tests said they would, against the live API.
+
+**What the step 60 run cost**, read from the vendor's own usage page rather than estimated.
+About $0.004 for the batch: `gpt-4o-mini` input $0.002 and output $0.002, at the published
+$0.15 and $0.60 per million tokens, against roughly 12,100 tokens. The interesting number is
+the request count. The client made 92 HTTP attempts, 46 model calls each retried once, and the
+vendor recorded about 30 requests: abandoning a call at its 1000 ms timeout stops roughly two
+thirds of them from ever becoming billable requests, while the remaining third complete on the
+server after the client has walked away and are billed in full, output tokens included. So a
+timeout is a partial refund, not a free abort, and a run that times out on every record still
+pays for about a third of what it asked for. The estimate made before the run assumed every
+attempt would bill its input, which was high on both counts. Per record, this is about
+$0.00017 for a record that produced no model text at all.
+
