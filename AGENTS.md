@@ -65,9 +65,11 @@ malformed line by design. The two checks that fail, payload 0 of 10 and language
 composition, which Sprint 6 owns and D5 scopes; no decision-core output is unexpected. On the
 diagnostics half of the check, every decision whose working is not readable from the input and
 the output has an account: consent (`consent_verified`, `suppression_reason`), the action
-(`action_plan`, D18), and the send (`schedule`, D22). The channel has none by the same rule and
-deliberately: its working is the record's own ordered `channel_preferences` intersected with
-its `consent`, both of which the input states and the output's channel answers.
+(`action_plan`, D18), and the send (`schedule`, D22). The channel has none, and D23 is why:
+its working is the record's own ordered `channel_preferences` intersected with its `consent`,
+which the input states and the output's channel answers, so it is not internal to a component
+the way the other three are. D23 is closed, confirmed by the requester; do not re-open it by
+adding a channel notes object.
 Steps 44 to 46 landed in Sprint 5: the send slot resolved against the zone's rules rather than
 stamped with an offset the zone never had (D21, A20), `diagnostics.schedule` naming the floor,
 the zone and the slot (D22), and the property tests of step 45, which sweep every system zone
@@ -82,7 +84,7 @@ diagnostics yet records which composer produced a message (playbook step 57).
 Next step: 47 to 60, Sprint 6, Composition (the Sprint 6 row of `docs/DESIGN.md` section 9, D5,
 D19): facts, language handling, the catalog's default call-to-action column, the model prompt
 inputs and its untrusted-data boundary, and the body judge deferred from Sprint 3 (D15).
-Open decisions: none; S1 to S4 and D1 to D22 are in `docs/DECISION_LOG.md`.
+Open decisions: none; S1 to S4 and D1 to D23 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and

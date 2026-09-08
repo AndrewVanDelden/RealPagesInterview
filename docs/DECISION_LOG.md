@@ -301,3 +301,22 @@ record the final safety check suppressed keeps both.
 Scopes: Sprint 5, `AgentDiagnostics`, `LeasingMessageAgent`, `SendScheduler`'s return type.
 Evidence: the Phase 3 check in AGENTS.md; D18's precedent; playbook step 43. Assumptions: A4,
 A5, A6, A20.
+
+**D23. The channel decision gets no diagnostics object (2026-09-08).** Question: the Phase 3
+check is that the diagnostics explain every decision, and after D18 and D22 the consent gate,
+the planner and the scheduler each have an account while the channel selector has none; whether
+that closes the check. Options: add a `ChannelNotes` object naming which entry of
+`channel_preferences` won and which entries consent ruled out, and hold Phase 3 open until it
+lands; or state the rule that earns an account and close the check under it. Recommendation:
+the second, and Phase 3 is passed. The rule: a decision earns a diagnostics object when its
+working cannot be read off the input and the output. The horizon branch, the horizon in days
+and the row that answered are internal to the planner (D18); the floor, the zone and the slot
+are internal to the scheduler (D22); the channel's working is not internal at all. It is
+`channel_preferences` in the record's stated order intersected with `consent`, both of which
+the input carries, and `next_message.channel` is the answer, so a reader with the record and
+the row can reproduce the selection exactly, and `consent_verified` and `suppression_reason`
+already say when the intersection was empty. An object restating those two fields would be the
+only diagnostics member that tells a reader nothing the two files in front of them do not.
+Scopes: the Phase 3 check in AGENTS.md, Sprint 5, any later sprint tempted to add the object.
+Evidence: A1 and A3, which state the rule entirely in input fields; DESIGN.md section 3's
+channel row; LC. Assumptions: A1, A3. Confirmed by the requester on 2026-09-08.

@@ -122,6 +122,7 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - D20 (Sprint 4): the planner's settings record is deleted, because the one value left in it is the threshold the design says is not configurable.
 - D21 (Sprint 5): a send slot the zone springs forward across resolves past the gap and one it falls back across resolves to the earlier instant, because the old arithmetic stamped an offset the zone never had at the instant it named and the offset travels with the value.
 - D22 (Sprint 5): the diagnostics carry a `schedule` object naming the floor, the zone and the slot, because `send_at` has three inputs and the phase check is that the diagnostics explain every decision.
+- D23 (Sprint 5): the channel decision gets no diagnostics object, because a decision earns one when its working cannot be read off the input and the output, and the channel's working is the record's own preference order intersected with its consent.
 - After Sprint 3 the hold-out passes 1 of 12 and the synthetic set 2 of 12, because the template composer emits no options or link; the numbers are pinned in the suite so a drop fails CI.
 
 ## Definitions worth having ready

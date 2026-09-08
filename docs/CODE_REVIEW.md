@@ -41,6 +41,14 @@ replaced by Earned Abstraction (EA) and Stable Current Sync (SCS).
 Findings below are not gaps. They're recorded here so a reviewer (automated
 or human) doesn't re-flag them as missing behavior.
 
+- **No diagnostics object for the channel decision (Sprint 5, D23).** `AgentDiagnostics`
+  explains consent, the action (`action_plan`, D18) and the send (`schedule`, D22), and
+  deliberately says nothing about how the channel was chosen. A decision earns an object
+  when its working cannot be read off the input and the output; the channel's working is
+  `channel_preferences` in the record's stated order intersected with `consent`, both in
+  the input, and `next_message.channel` is the answer. Confirmed by the requester on
+  2026-09-08. Do not flag it as a gap in the Phase 3 check, which is passed.
+
 - **Quiet-hours window (original sprint plan, Sprint 2.3).** `SendScheduler` does not
   model a separate configurable quiet-hours window. `problem_statement.txt`
   and `sample.jsonl`'s `assertions`/`thresholds` never mention quiet hours;
