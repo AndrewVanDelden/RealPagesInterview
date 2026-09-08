@@ -4,10 +4,13 @@ namespace Agent.Orchestration;
 // prospect (no-consent suppression, or the composer could not produce a message
 // to validate) - null means "not evaluated", distinct from true/false which mean
 // the check ran and recorded a result. SuppressionReason says why a record carries
-// no message (D3); None means a message was sent.
+// no message (D3); None means a message was sent. ActionPlan is how next_action was
+// reached (D18) and is null on a record the consent gate suppressed, where the planner
+// never ran.
 public sealed record AgentDiagnostics(
     bool ConsentVerified,
     bool? FairHousingCheckPassed,
     bool BrandStyleApplied,
     int SafetyViolationCount,
-    SuppressionReason SuppressionReason = SuppressionReason.None);
+    SuppressionReason SuppressionReason = SuppressionReason.None,
+    ActionPlanNotes? ActionPlan = null);

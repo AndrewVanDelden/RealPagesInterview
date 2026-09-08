@@ -61,14 +61,33 @@ public sealed class LeasingMessageAgent(
         if (!consentDecision.IsContactable)
         {
             log.LogInformation("Suppressing message: prospect is not contactable.");
-            return Suppressed(consentDecision, SuppressionReason.NoContactConsent, new NextAction("no_op", Reason: SuppressionReason.NoContactConsent.ToWireName()));
+            return Suppressed(
+                consentDecision,
+                SuppressionReason.NoContactConsent,
+                new NextAction(ActionTypes.NoOp, Reason: SuppressionReason.NoContactConsent.ToWireName()),
+                actionPlan: null);
         }
 
         CommunicationChannel channel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent).Value;
 
         // Step 2: plan from the horizon (A7), counted in the record's local date (D10).
         DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
-        NextAction nextAction = planner.Plan(context.MoveDateTarget, referenceDate);
+        PlannedAction planned = planner.Plan(prospectCase.Persona, prospectCase.LifecycleStage, context.MoveDateTarget, referenceDate);
+        NextAction nextAction = planned.Action;
+        var actionPlan = new ActionPlanNotes(planned.Branch, planned.HorizonDays, planned.Source);
+
+        // Playbook step 43: the catalog's fallback is defined, and firing it is recorded
+        // where a reader will see it. The diagnostics file carries the same fact, but only
+        // when the run was given --diagnostics.
+        if (planned.Source != ActionSource.CatalogRow)
+        {
+            log.LogInformation(
+                "Next action came from the generic row ({Source}): persona={Persona}, stage={LifecycleStage}, branch={Branch}.",
+                planned.Source,
+                prospectCase.Persona,
+                prospectCase.LifecycleStage,
+                planned.Branch);
+        }
 
         // Step 3: compose.
         Result<NextMessage> composeResult = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
@@ -76,7 +95,7 @@ public sealed class LeasingMessageAgent(
         if (!composeResult.IsSuccess)
         {
             log.LogWarning("Suppressing message: composition failed ({Error}).", composeResult.Error);
-            return Suppressed(consentDecision, SuppressionReason.CompositionFailed, nextAction);
+            return Suppressed(consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
         }
 
         // Step 4: schedule (A4, A5).
@@ -95,7 +114,8 @@ public sealed class LeasingMessageAgent(
             validation.FairHousingCheckPassed,
             BrandStyleApplied: true,
             validation.Violations.Count,
-            hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None);
+            hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
+            actionPlan);
 
         if (hasViolations)
         {
@@ -112,14 +132,15 @@ public sealed class LeasingMessageAgent(
     // other member null, the oracle's own spelling, never a null object.
     private static NextMessage SuppressedMessage() => new(CommunicationChannel.None);
 
-    private static AgentRunResult Suppressed(ConsentDecision consentDecision, SuppressionReason reason, NextAction nextAction)
+    private static AgentRunResult Suppressed(ConsentDecision consentDecision, SuppressionReason reason, NextAction nextAction, ActionPlanNotes? actionPlan)
     {
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
             FairHousingCheckPassed: null,
             BrandStyleApplied: false,
             SafetyViolationCount: 0,
-            reason);
+            reason,
+            actionPlan);
 
         return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
     }

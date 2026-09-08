@@ -212,3 +212,56 @@ inside its loop, and the agent's own scope produced the duplicated `TaskId=x Tas
 every line (the retrospective's logging defect 1). A library caller that wants correlation
 opens its own scope the way the CLI does. Scopes: Sprint 3, OPERATIONS.md section 3.
 Evidence: the retrospective's logging defect 1 and Fix 8. Assumption: none.
+
+**D17. Catalog storage (2026-09-07).** Question: whether the action catalog D2 calls "one data
+file" is a data file at run time or a table compiled into one source file. Options: an
+external JSON file behind a flag; an embedded JSON resource parsed at startup; or a table in
+one source file, `src/Agent/Decisions/ActionCatalog.cs`. Recommendation: the third. Playbook
+step 38 says a decision unit takes its inputs and returns a decision with no I/O, and the
+catalog holds three rows that nothing has asked to change without a rebuild, so a file format
+is not earned (LC, step 41). A8's "configurable: the catalog file" is met by one file to edit,
+and the compiler checks the rows. The failures a parser would have caught are checked instead
+by `ActionCatalog.Create`, which every construction goes through, including `Default`. Scopes:
+Sprint 4, A8's configurable column. Evidence: playbook steps 38, 41, 42; three rows in
+DESIGN.md section 3. Assumption: A8. Revises D2's wording, which said "data file".
+
+**D18. Where the planner's failure lives, and what the planner returns (2026-09-07).**
+Question: D2 says the planner "returns a `Result` and never applies the nearest rule to a
+record it cannot classify", but A8 gives every unmatched record the generic row, so no record
+is unclassifiable and `Plan` has no reachable failure. Options: `Plan` returns
+`Result<PlannedAction>` and fails when the catalog cannot classify; or the `Result` moves to
+`ActionCatalog.Create` and `Plan` returns the decision object directly. Recommendation: the
+second. The first is either a branch no honest test can reach under the 100 percent gate, or
+it forces the planner to take an unvalidated catalog and re-check it once per record. D2's
+guarantee becomes structural instead: the lookup is exact key, then the generic row, and there
+is no nearest-match path in the code to disable. `ActionCatalog.Create` returns
+`Result<ActionCatalog>` and fails on a row with a blank persona or a blank lifecycle stage, on
+two rows with the same key (compared case-insensitively, the way the lookup compares), and on
+an action type outside `ActionTypes.All`. All three are reachable from a test that builds a
+catalog. `Plan` returns `PlannedAction`, which carries the `NextAction` and the why that
+playbook step 39 asks for: the horizon branch, the horizon in days (null when the record
+states no move date), and which row supplied the action. Scopes: Sprint 4, `AgentDiagnostics`,
+the Phase 3 check that diagnostics explain every decision. Evidence: playbook steps 39, 43;
+A7, A8; the coverage gate in AGENTS.md. Assumptions: A7, A8. Revises D2's `Result` clause.
+
+**D19. Default call to action deferred to Sprint 6 (2026-09-07).** Question: whether the
+catalog row carries D2's default call to action in Sprint 4 or in Sprint 6. Options: add the
+column and wire the composers to it now; add the column unread; or defer the column. Wiring it
+now pulls Sprint 6's catalog-driven call to action into Sprint 4 and edits both composers.
+Adding it unread leaves a property no code reads, and the coverage gate would then need a test
+written only to touch it, which AGENTS.md forbids. Recommendation: defer. Sprint 4 ships
+persona and stage to an action template plus the fallback; Sprint 6 adds the column and moves
+`PrimaryCtaVocabulary.GenericCtaType` onto it, at the point where a composer reads it. Scopes:
+Sprint 4, Sprint 6, A9. Evidence: DESIGN.md section 9, the Sprint 6 row; LC. Assumption: A9.
+
+**D20. `NextActionPlannerOptions` deleted (2026-09-07).** Question: what happens to the
+planner's settings record once catalog rows carry the cadence name and the follow-up days.
+Options: keep it holding only the short-horizon threshold; or delete it and name the threshold
+as a constant. Recommendation: delete. A7 marks the threshold not configurable, and playbook
+step 41 earns a setting with a second known value, of which there is none; keeping it leaves a
+settings record with one member that the design says is not a setting, plus two guard-clause
+tests for a value nothing configures. The 45 days become
+`NextActionPlanner.ShortHorizonThresholdDays`, cited to A7 where it is defined. Removes
+`src/Agent/Decisions/NextActionPlannerOptions.cs` and
+`tests/Agent.Tests/Decisions/NextActionPlannerOptionsTests.cs`. Scopes: Sprint 4. Evidence:
+A7's configurable column; playbook step 41. Assumption: A7.

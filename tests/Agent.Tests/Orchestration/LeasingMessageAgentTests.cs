@@ -32,6 +32,7 @@ public class LeasingMessageAgentTests
         Assert.True(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
+        Assert.Equal(new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow), result.Diagnostics.ActionPlan);
     }
 
     [Fact]
@@ -71,6 +72,72 @@ public class LeasingMessageAgentTests
         Assert.False(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
+        Assert.Null(result.Diagnostics.ActionPlan);
+    }
+
+    // A8 through the whole agent: a record that states no persona and no lifecycle stage has
+    // no catalog row, so the generic row answers and the fallback is recorded rather than
+    // passed off as a row's decision (playbook step 43). With no move date the horizon is
+    // long and unstated (A7), so the notes carry a null day count, not a zero.
+    [Fact]
+    public async Task RunAsync_RecordWithNoPersonaStageOrMoveDate_RecordsTheGenericRowFallback()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase unclassifiable = SampleProspectCases.Minimal() with
+        {
+            Persona = null,
+            LifecycleStage = null,
+            Input = SampleProspectCases.Minimal().ContextOrEmpty with { MoveDateTarget = null },
+        };
+
+        AgentRunResult result = await agent.RunAsync(unclassifiable, ReferenceTime);
+
+        Assert.Equal(new ActionPlanNotes(HorizonBranch.Long, null, ActionSource.GenericRowNoMatch), result.Diagnostics.ActionPlan);
+        Assert.Equal(ActionTypes.FollowUpInDays, result.Output.NextAction.Type);
+    }
+
+    // Playbook step 43: the fallback is logged when it fires. The diagnostics file records it
+    // too, but that file only exists when the run was given --diagnostics, and the log is
+    // always on.
+    [Fact]
+    public async Task RunAsync_GenericRowAnsweredThePlan_LogsThatTheFallbackFired()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+        ProspectCase unmatched = SampleProspectCases.Minimal() with { Persona = "resident", LifecycleStage = "renewal" };
+
+        await agent.RunAsync(unmatched, ReferenceTime);
+
+        // The enum renders as its C# name, the way channel=Sms already does on the composed
+        // line; the diagnostics file is where the snake_case spelling lives (D3).
+        Assert.Contains(capturingLogger.Entries, entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+    }
+
+    // The other side of the same branch: a record whose row states the action it needs is not
+    // a fallback, and nothing says it was.
+    [Fact]
+    public async Task RunAsync_CatalogRowAnsweredThePlan_LogsNoFallback()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+
+        await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.DoesNotContain(capturingLogger.Entries, entry => entry.Message.Contains("generic row", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

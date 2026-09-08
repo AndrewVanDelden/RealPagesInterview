@@ -24,7 +24,7 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 | `--replay <file.json>` | no | Re-score an existing `--output` file against `--input` without running the agent (D14). Rows pair with the parsed records by position; a file that is not a JSON array, or whose row count differs from the parsed input, is refused with exit code 1. Safety and latency read `n/a` in replay: they exist only in the run that wrote the file. |
 | `--now <ISO-8601 date-time>` | no (default: the current UTC time) | The run's reference time (D10): the day send times are floored to and horizons are counted from. The documented run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, the oracle's date. Logged once per run. |
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
-| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
+| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score). Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
@@ -60,6 +60,14 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    X for this record" rather than "why did the process fail." A `null`
    `fair_housing_check_passed` means the message was suppressed before
    validation ever ran (no consent, or composition failed), not a bug.
+   `action_plan` says how `next_action` was reached: `branch` (`short` or
+   `long`), `horizon_days` (null when the record states no move date, which
+   is unstated rather than zero), and `source`, which is `catalog_row` when
+   a row for that persona and lifecycle stage stated the action,
+   `generic_row_no_branch` when a row matched but had no evidence for that
+   horizon branch, and `generic_row_no_match` when no row exists for that
+   persona and stage. A whole `action_plan` of `null` means the consent gate
+   suppressed the record before the planner ran.
 
 ## 3. How logging actually works
 
@@ -109,7 +117,7 @@ the complete story of that one record, not a mix of every record interleaved.
 
 | Level | Meaning in this codebase | Example |
 |---|---|---|
-| `Information` | A normal lifecycle event, nothing went wrong. | "Message composed", "Record processed in Nms", "Batch complete: N records, M failures" |
+| `Information` | A normal lifecycle event, nothing went wrong. | "Message composed", "Next action came from the generic row", "Record processed in Nms", "Batch complete: N records, M failures" |
 | `Warning` | Something didn't go as hoped, but the system already has a handled path for it, a retry, a fallback, a degraded-but-valid outcome. | A compose attempt failed safety validation and is retrying; falling back to the template composer; an eval record has no `expected` to score against |
 | `Error` | Something is being lost or is genuinely unexpected, not a path the system was designed to recover from. | A record's processing threw and that record is dropped from `--output`; scoring threw and the record becomes unscoreable; the fallback composer also failed |
 
