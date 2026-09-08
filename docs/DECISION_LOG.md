@@ -265,3 +265,72 @@ tests for a value nothing configures. The 45 days become
 `src/Agent/Decisions/NextActionPlannerOptions.cs` and
 `tests/Agent.Tests/Decisions/NextActionPlannerOptionsTests.cs`. Scopes: Sprint 4. Evidence:
 A7's configurable column; playbook step 41. Assumption: A7.
+
+**D21. The slot on a transition day (2026-09-08).** Question: what instant `send_at` names when
+the channel's local slot (A5) does not exist on the send day, because the zone springs forward
+across it, or occurs twice, because the zone falls back across it. Options: keep the current
+arithmetic, which stamps `TimeZoneInfo.GetUtcOffset(wall time)` on the wall time and so emits,
+for a slot inside a gap, an offset the zone never had at that instant, and picks the second of
+two occurrences for an ambiguous slot without saying so; or resolve a nonexistent slot to the
+first instant that exists at or after it, which is the transition instant, and an ambiguous
+slot to the earlier of its two instants; or skip the day and take the next day's slot.
+Recommendation: the second. `send_at` is an instant, and an instant the zone never had is
+wrong in a way no downstream reader can detect, since the offset travels with the value. The
+earliest valid instant at or after the stated slot keeps A4's floor property, that the send is
+never earlier than max(reference time, `last_interaction`), and stays closest to A5's hour;
+skipping the day moves the send day, which A4 fixes independently of the hour. The resolution
+is a value in the diagnostics (D22), not a silent correction. Scopes: Sprint 5,
+`Agent.Common.TimeZones`, `SendScheduler`, `AgentDiagnostics`. Evidence: none in the data.
+Both samples are `America/Chicago` at 09:00 and 10:00, and no transition in the current zone
+database covers those hours, so no record observed or synthetic reaches either branch. The
+rule is stated over a zone's adjustment rules, not over today's zone database, and is proved
+against custom zones built in the test whose transitions do cover the slot, plus a sweep over
+every system zone's real transitions. Assumption: A20.
+
+**D21 addendum, PR #20 review (2026-09-08).** The first implementation did not match this
+decision: `ResolveSlot`'s gap branch shifted the wall time forward by the gap's own width
+(`GetUtcOffset` before the transition, re-stamped after) rather than landing on the transition
+instant. The two agree only when the requested slot falls exactly at the gap's start; for any
+slot farther into the gap, the shift overshoots past the transition instant by however far into
+the gap the slot fell, which contradicts the "stays closest to A5's hour" reasoning above.
+Flagged in PR #20 by a Claude review and independently by an Antigravity (Gemini 3.8 Flash)
+review comment on the same line. Fixed by having `ResolveSlot` binary-search
+`TimeZoneInfo.IsInvalidTime` for the earliest valid instant instead of computing an offset
+shift, since the zone's own transition boundary is not exposed by public `TimeZoneInfo` API.
+No tally on any of the three sets moved: no zone in the current database reaches this branch
+(A20), so the bug was invisible to every check the product runs, only to the property tests
+built to cover it, and to review.
+
+**D22. What the diagnostics say about `send_at` (2026-09-08).** Question: whether the schedule
+decision gets the account D18 gave the action plan, and what is in it. Options: leave `send_at`
+unexplained, since the ingest notes already name an unrecognized timezone; log the transition
+branch only when it fires, as playbook step 43 asks; or carry a `ScheduleNotes` object beside
+`ActionPlanNotes`, naming which input was the floor, the zone the send was computed in, and how
+the slot resolved. Recommendation: the third. The Phase 3 check is that the diagnostics explain
+every decision, `send_at` is a decision with three inputs (A4's floor, A6's zone, A5's hour),
+and a log line only reaches a reader who kept the log. The object is null on a record the
+scheduler never ran for, the same rule `ActionPlanNotes` follows for a record the planner
+never ran for: consent suppression, or a composer that produced no message to schedule. A
+record the final safety check suppressed keeps both.
+Scopes: Sprint 5, `AgentDiagnostics`, `LeasingMessageAgent`, `SendScheduler`'s return type.
+Evidence: the Phase 3 check in AGENTS.md; D18's precedent; playbook step 43. Assumptions: A4,
+A5, A6, A20.
+
+**D23. The channel decision gets no diagnostics object (2026-09-08).** Question: the Phase 3
+check is that the diagnostics explain every decision, and after D18 and D22 the consent gate,
+the planner and the scheduler each have an account while the channel selector has none; whether
+that closes the check. Options: add a `ChannelNotes` object naming which entry of
+`channel_preferences` won and which entries consent ruled out, and hold Phase 3 open until it
+lands; or state the rule that earns an account and close the check under it. Recommendation:
+the second, and Phase 3 is passed. The rule: a decision earns a diagnostics object when its
+working cannot be read off the input and the output. The horizon branch, the horizon in days
+and the row that answered are internal to the planner (D18); the floor, the zone and the slot
+are internal to the scheduler (D22); the channel's working is not internal at all. It is
+`channel_preferences` in the record's stated order intersected with `consent`, both of which
+the input carries, and `next_message.channel` is the answer, so a reader with the record and
+the row can reproduce the selection exactly, and `consent_verified` and `suppression_reason`
+already say when the intersection was empty. An object restating those two fields would be the
+only diagnostics member that tells a reader nothing the two files in front of them do not.
+Scopes: the Phase 3 check in AGENTS.md, Sprint 5, any later sprint tempted to add the object.
+Evidence: A1 and A3, which state the rule entirely in input fields; DESIGN.md section 3's
+channel row; LC. Assumptions: A1, A3. Confirmed by the requester on 2026-09-08.
