@@ -189,6 +189,10 @@ Update this section at the end of every sprint. It is the first thing an agent r
   `with` copy that replaces `RecordScores` carries the old numbers into a report whose rows say
   otherwise. Build a new `Scorecard`; `SemanticJudge.JudgeAsync` does, and a test pins the
   tally after judging. A PR review caught this one, not the suite.
+- A golden test normalizes line endings on both sides. A raw string literal carries whatever
+  endings git checked the file out with, so a golden compared raw passes on a CRLF checkout
+  and fails on an LF one. CI caught exactly that on PR #21; the local suite structurally
+  could not.
 - Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
   `docs/CODE_REVIEW.md` before flagging either.
 
