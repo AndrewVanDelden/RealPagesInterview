@@ -39,10 +39,11 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         string? evalReportPath = GetOption(args, "--eval-report");
         string? logFilePath = GetOption(args, "--log-file");
         string? nowOption = GetOption(args, "--now");
+        string? replayPath = GetOption(args, "--replay");
 
-        if (inputPath is null || outputPath is null)
+        if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> --output <file.json> [--now <ISO-8601 date-time>] [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -81,6 +82,11 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         using IDisposable agentLogScope = AgentLog.Configure(loggerFactory);
         ILogger<CliRunner> log = loggerFactory.CreateLogger<CliRunner>();
 
+        if (replayPath is not null)
+        {
+            return await ReplayAsync(inputPath, replayPath, evalReportPath, loggerFactory, log, cancellationToken);
+        }
+
         var templateFallback = new TemplateMessageComposer();
         IMessageComposer baseComposer;
         try
@@ -115,16 +121,14 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
 
-        IReadOnlyList<Result<ProspectCase>> readResults;
-        using (var inputReader = new StreamReader(inputPath))
-        {
-            readResults = new JsonlRecordReader().ReadAll(inputReader);
-        }
+        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output/diagnostics path (bad directory, no write permission) must fail immediately,
         // not after every record has already run through the composer and any LLM calls.
-        await using var outputStream = new StreamWriter(outputPath);
+        // outputPath is non-null here: the usage check above requires it when there is no
+        // --replay, and the replay path has already returned.
+        await using var outputStream = new StreamWriter(outputPath!);
         await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
 
         log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
@@ -132,23 +136,6 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
         var scoredRuns = new List<ScoredRun>();
-        int failureCount = 0;
-
-        // A line that did not parse is one failure row with its line number; there is no
-        // task id to scope the log line on, so the line number is the only identity it has.
-        var cases = new List<ProspectCase>(readResults.Count);
-        foreach (Result<ProspectCase> readResult in readResults)
-        {
-            if (readResult.IsSuccess)
-            {
-                cases.Add(readResult.Value);
-                continue;
-            }
-
-            failureCount++;
-            log.LogError("Record failed to parse: {Error}", readResult.Error);
-            error.WriteLine($"Record failed to parse: {readResult.Error}");
-        }
 
         foreach (ProspectCase prospectCase in cases)
         {
@@ -193,7 +180,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, stopwatch.Elapsed.TotalMilliseconds));
         }
 
-        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", readResults.Count, failureCount);
+        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", cases.Count + failureCount, failureCount);
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
         await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
@@ -209,26 +196,100 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             // Scores the results already captured above - never re-runs the agent, so the
             // report describes exactly what was persisted to --output, not a second,
             // possibly different sample (this matters for non-deterministic composers).
-            // A case missing its labeled expected outcome shows up as an unscoreable row
-            // rather than aborting the whole report.
             IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
-            Scorecard scorecard = evaluator.Evaluate(scoredRuns);
-
-            foreach (RecordScore score in scorecard.RecordScores)
-            {
-                if (score.ScoringError is not null)
-                {
-                    log.LogWarning("Eval: record '{TaskId}' could not be scored: {Error}", score.TaskId, score.ScoringError);
-                    error.WriteLine($"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
-                }
-            }
-
-            string report = ScorecardFormatter.Format(scorecard);
-            output.Write(report);
-            await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
+            await WriteScorecardAsync(evaluator.Evaluate(scoredRuns), evalReportPath, log, cancellationToken);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
+    }
+
+    // D14: re-score an existing output file against --input without running the agent.
+    // Rows pair with records by position; a safety count and a latency exist only in the
+    // run that wrote the file, so both score as not measured.
+    private async Task<int> ReplayAsync(
+        string inputPath,
+        string replayPath,
+        string? evalReportPath,
+        ILoggerFactory loggerFactory,
+        ILogger<CliRunner> log,
+        CancellationToken cancellationToken)
+    {
+        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
+
+        Result<IReadOnlyList<AgentOutput>> outputs;
+        using (var replayReader = new StreamReader(replayPath))
+        {
+            outputs = new JsonArrayRecordReader<AgentOutput>().ReadAll(replayReader);
+        }
+
+        Result<IReadOnlyList<ScoredRun>> aligned = outputs.IsSuccess
+            ? ReplayAlignment.Align(cases, outputs.Value)
+            : Result<IReadOnlyList<ScoredRun>>.Failure(outputs.Error);
+
+        if (!aligned.IsSuccess)
+        {
+            log.LogError("Replay refused: {Error}", aligned.Error);
+            error.WriteLine($"--replay '{replayPath}': {aligned.Error}");
+            return CliExitCodes.UsageError;
+        }
+
+        log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
+        IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
+        await WriteScorecardAsync(evaluator.Evaluate(aligned.Value), evalReportPath, log, cancellationToken);
+
+        return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
+    }
+
+    // A line that did not parse is one failure row with its line number; there is no task
+    // id to scope the log line on, so the line number is the only identity it has.
+    private (List<ProspectCase> Cases, int FailureCount) ReadInput(string inputPath, ILogger<CliRunner> log)
+    {
+        IReadOnlyList<Result<ProspectCase>> readResults;
+        using (var inputReader = new StreamReader(inputPath))
+        {
+            readResults = new JsonlRecordReader().ReadAll(inputReader);
+        }
+
+        var cases = new List<ProspectCase>(readResults.Count);
+        int failureCount = 0;
+
+        foreach (Result<ProspectCase> readResult in readResults)
+        {
+            if (readResult.IsSuccess)
+            {
+                cases.Add(readResult.Value);
+                continue;
+            }
+
+            failureCount++;
+            log.LogError("Record failed to parse: {Error}", readResult.Error);
+            error.WriteLine($"Record failed to parse: {readResult.Error}");
+        }
+
+        return (cases, failureCount);
+    }
+
+    // A case missing its labeled expected outcome shows up as an unscoreable row rather
+    // than aborting the whole report. The report always goes to the console; the file is
+    // optional.
+    private async Task WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
+    {
+        foreach (RecordScore score in scorecard.RecordScores)
+        {
+            if (score.ScoringError is not null)
+            {
+                log.LogWarning("Eval: record '{TaskId}' could not be scored: {Error}", score.TaskId, score.ScoringError);
+                error.WriteLine($"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
+            }
+        }
+
+        string report = ScorecardFormatter.Format(scorecard);
+        output.Write(report);
+
+        if (evalReportPath is not null)
+        {
+            await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
+        }
     }
 
     private static string? GetOption(string[] cliArgs, string name)

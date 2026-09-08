@@ -742,4 +742,155 @@ public class CliRunnerTests
             TestFiles.DeleteWithRetry(logFilePath);
         }
     }
+    // D14: --replay re-scores an existing output file against --input without running the
+    // agent. The composer injected here throws on the only record, so a run that reached
+    // the agent would exit 2; exit 0 proves nothing ran but the scorer.
+    [Fact]
+    public async Task RunAsync_Replay_ScoresAnExistingOutputFileWithoutRunningTheAgent()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var producer = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var replayer = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            Assert.Equal(CliExitCodes.Success, await producer.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            int exitCode = await replayer.RunAsync(["--input", inputPath, "--replay", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            string row = Assert.Single(report.Split(Environment.NewLine), line => line.StartsWith("t1 ", StringComparison.Ordinal));
+            Assert.Contains("n/a", row);
+            Assert.Contains("Latency p95: n/a", report);
+            Assert.Contains("Overall:", outputWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ReplayWithoutEvalReport_PrintsTheScorecardToTheConsole()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Overall: 0/1 passed", outputWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ReplayCountMismatch_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("1 record", errorWriter.ToString());
+            Assert.Contains("0 output", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ReplayFileNotAJsonArray_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(replayPath, "{not json");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("JSON array", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    // A line that did not parse is still one failure row in replay: it produced no output
+    // when the file was written, so the rows that remain still align by position.
+    [Fact]
+    public async Task RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
+        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            Assert.Contains("Line 2", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_InputWithoutOutputOrReplay_WritesUsageAndReturnsUsageError()
+    {
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        int exitCode = await runner.RunAsync(["--input", "anything.jsonl"]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("--replay", errorWriter.ToString());
+    }
 }
