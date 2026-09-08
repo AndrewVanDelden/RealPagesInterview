@@ -21,13 +21,13 @@ public class BaselineNumbersTests
     [InlineData(
         "holdout_12.jsonl",
         "2025-12-09T00:00:00-06:00",
-        "Checks: Channel 12/12, Day 7/11, Hour 5/11, Action 7/12, OptOut 11/11, CTA 7/11, Payload 11/11, Lang 10/11, Safety 12/12, Personalization 8/8",
-        "Overall: 3/12 passed")]
+        "Checks: Channel 12/12, Day 7/11, Hour 5/11, Action 7/12, OptOut 11/11, CTA 7/11, Payload 11/11, Lang 11/11, Safety 12/12, Personalization 8/8",
+        "Overall: 4/12 passed")]
     [InlineData(
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",
-        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 12/12, OptOut 10/10, CTA 10/10, Payload 10/10, Lang 9/10, Safety 12/12, Personalization 9/9",
-        "Overall: 11/12 passed")]
+        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 12/12, OptOut 10/10, CTA 10/10, Payload 10/10, Lang 10/10, Safety 12/12, Personalization 9/9",
+        "Overall: 12/12 passed")]
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadCases(fileName);

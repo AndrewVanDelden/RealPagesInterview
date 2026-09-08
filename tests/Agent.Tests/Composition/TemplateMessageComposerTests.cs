@@ -22,7 +22,7 @@ public class TemplateMessageComposerTests
         Assert.Contains("Taylor", message.Body);
         Assert.Contains("Oak Ridge Apartments", message.Body);
         Assert.Contains("Richardson, TX", message.Body);
-        Assert.Contains("book tour", message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("book a tour", message.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("STOP", message.Body);
         Assert.Equal("schedule_tour", message.Cta!.Type);
         Assert.Null(message.Subject);
@@ -41,7 +41,7 @@ public class TemplateMessageComposerTests
         Assert.Contains("Taylor", message.Body);
         Assert.Contains("pool", message.Body);
         Assert.Contains("fitness", message.Body);
-        Assert.Contains("book tour", message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("book a tour", message.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("STOP", message.Body);
         Assert.NotNull(message.Subject);
         Assert.Contains("Oak Ridge Apartments", message.Subject);
@@ -254,5 +254,78 @@ public class TemplateMessageComposerTests
         Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         Assert.Null(result.Value!.Message.Cta!.Link);
+    }
+
+    // A13 and D26: a record that states Spanish gets a Spanish message, its options
+    // included, and the notes record that the locale was applied.
+    [Fact]
+    public async Task ComposeAsync_SpanishSms_ComposesInSpanishWithSpanishOptions()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        NextMessage message = result.Value!.Message;
+        Assert.StartsWith("Hola Taylor", message.Body);
+        Assert.Equal(["jueves", "viernes"], message.Cta!.Options);
+        Assert.Contains("Responde 1 para jueves, 2 para viernes.", message.Body);
+        Assert.Contains("STOP", message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_SpanishEmail_UsesTheSpanishSubjectAndLinkLine()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        NextMessage message = result.Value!.Message;
+        Assert.Equal("Visita Oak Ridge Apartments", message.Subject);
+        Assert.Contains("Empieza aquí: https://oakridge.example/tour", message.Body);
+        Assert.Contains("STOP", message.Body);
+    }
+
+    // A13: the set is chosen on the primary subtag, so a regional or upper-case tag lands
+    // on the same set.
+    [Theory]
+    [InlineData("es-MX")]
+    [InlineData("ES")]
+    [InlineData("es_419")]
+    public async Task ComposeAsync_RegionalSpanishTag_ResolvesToTheSpanishSet(string languageTag)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: languageTag);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hola Taylor", result.Value!.Message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
+    }
+
+    // D26: no component gates on a language allowlist. A language this composer holds no
+    // template set for is served in English and says so, which is a limit of the template
+    // file, not a rule about which languages a prospect may use.
+    [Fact]
+    public async Task ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hi Taylor", result.Value!.Message.Body);
+        Assert.False(result.Value.Notes.LocaleApplied);
+    }
+
+    // A13: an absent language is the en default the record inherits, so nothing failed to
+    // be applied.
+    [Fact]
+    public async Task ComposeAsync_AbsentLanguage_ComposesInEnglishWithTheLocaleApplied()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: null);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hi Taylor", result.Value!.Message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
     }
 }

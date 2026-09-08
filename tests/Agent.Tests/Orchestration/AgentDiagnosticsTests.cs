@@ -108,11 +108,11 @@ public class AgentDiagnosticsTests
             SuppressionReason.None,
             new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
             new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact),
-            new CompositionNotes(ComposerNames.Template, Attempts: 3));
+            new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
-        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3}", json);
+        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true}", json);
     }
 
     // A record the consent gate suppressed has no message, so no implementation wrote one.

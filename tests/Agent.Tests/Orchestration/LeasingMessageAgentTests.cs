@@ -351,7 +351,7 @@ public class LeasingMessageAgentTests
 
         AgentRunResult result = await agent.RunAsync(sample1, ReferenceTime);
 
-        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 1), result.Diagnostics.Composition);
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 1, LocaleApplied: true), result.Diagnostics.Composition);
     }
 
     // A record with no message has no composer to name.

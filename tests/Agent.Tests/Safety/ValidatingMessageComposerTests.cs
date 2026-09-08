@@ -233,7 +233,7 @@ public class ValidatingMessageComposerTests
 
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 3), result.Value!.Notes);
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true), result.Value!.Notes);
     }
 
     [Fact]
@@ -247,6 +247,6 @@ public class ValidatingMessageComposerTests
 
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2), result.Value!.Notes);
+        Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2, LocaleApplied: true), result.Value!.Notes);
     }
 }

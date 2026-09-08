@@ -26,7 +26,7 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
         CallCount++;
 
         return Task.FromResult(result.IsSuccess
-            ? Result<ComposedMessage>.Success(new ComposedMessage(result.Value, new CompositionNotes(Name, Attempts: 1)))
+            ? Result<ComposedMessage>.Success(new ComposedMessage(result.Value, new CompositionNotes(Name, Attempts: 1, LocaleApplied: true)))
             : Result<ComposedMessage>.Failure(result.Error));
     }
 }

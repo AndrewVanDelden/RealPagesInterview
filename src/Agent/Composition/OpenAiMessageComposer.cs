@@ -111,7 +111,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         var cta = new Cta(payload.CtaType, payload.CtaOptions, payload.CtaLink);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
-        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1));
+        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1, LocaleApplied: true));
 
         return Result<ComposedMessage>.Success(composed);
     }
