@@ -67,14 +67,20 @@ against the twelve-record evaluation set is
 `--input holdout_12.jsonl --now 2025-12-09T00:00:00-06:00`, the oracle's own date. That
 file is an evaluation set, never fitted to: the two records in `sample.jsonl` are the only
 evidence any rule is fitted to (decision D9 in
-[docs/DECISION_LOG.md](docs/DECISION_LOG.md)). After Sprint 2 it produces 12 valid rows,
-matches the channel on 12 of 12 and the action type on 7 of 12; the misses are vocabulary
-the samples never showed. Measurements, not targets.
+[docs/DECISION_LOG.md](docs/DECISION_LOG.md)). A third set, `synthetic_12.jsonl`
+(`--now 2026-03-07T12:00:00Z`), holds one record per case the samples cannot decide, plus one
+malformed line. After Sprint 3 the scorer covers every field of the label. The hold-out
+passes channel on 12 of 12, action type on 7 of 12, send day on 7 of 11, and call-to-action
+payload on 0 of 11 (the template composer emits no reply options or link yet); 1 of 12
+records passes every check. The synthetic set passes 2 of 12. Every tally is in
+[docs/DESIGN.md](docs/DESIGN.md) section 9 and pinned in the suite. Measurements, not targets.
 
-Add `--eval-report <file>` against a labeled file (one with `expected` populated,
-like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds -
-channel, `next_action.type`, opt-out/CTA presence, safety, personalization, and
-latency, per record and overall - printed to the console and written to that file.
+Add `--eval-report <file>` against a labeled file (one with `expected` populated) to get
+the scorecard: one row per record with a verdict per check (channel, send day and hour,
+action type, opt-out, call-to-action type and payload, language, safety, personalization),
+a per-check tally line, the batch p95 latency, and the overall count, printed to the console
+and written to that file. `n/a` means not measured. Add `--replay <output.json>` in place of
+`--output` to re-score an existing output file without running the agent.
 
 Add `--log-file <file>` for a real, structured log of what the process did
 while producing that output - full flag reference, log format, and how to

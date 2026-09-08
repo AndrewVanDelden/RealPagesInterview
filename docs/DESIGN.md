@@ -108,7 +108,10 @@ values (the confound). Ids and names are labels, not evidence.
 ## 4. What the examples cannot tell (step 7) and what was asked (step 8)
 
 Risk register. Each item becomes at least one record in the synthetic set (D6) before it
-becomes a branch in code.
+becomes a branch in code. That set is `synthetic_12.jsonl`: one record per item, two for
+item 8 (an unknown timezone, and a send slot across the daylight-saving transition), one
+malformed line for item 10, labels written from the assumptions of section 7, run with
+`--now 2026-03-07T12:00:00Z`, frozen since 2026-09-08.
 
 1. A record with no consented channel. 2. A persona or stage the samples never named.
 3. A record with no move date, or a different date field (lease end, move in, a missed
@@ -176,18 +179,28 @@ flowchart TD
 
 ## 6. Evaluation
 
-Built before the product changes and proven able to fail: the labeled answers passed as actuals
-score 100 percent, and one corrupted field scores a failure (playbook step 33). Scored per
-record: channel exact, with the agent's null message, the oracle's channel `none`, and a null
-channel treated as one value; `send_at` to the day and to the hour; `next_action.type` exact
-against the catalog, then semantic (a pinned model judge with a fixed rubric, one signal beside
-the deterministic checks, off by default); call-to-action type exact against the mapped
-constraint; call-to-action payload presence by channel; opt-out phrase; body language equals
-`input.language`; safety violations within budget; personalization as fact coverage over the
-facts the record carries; latency per record, p95 over the batch. Two sets, both reported and
-labeled: `holdout_12.jsonl`, never fitted to, and a synthetic set written from section 4 before
-any decision code changes and never edited after. Replay mode re-scores an existing output
-file without re-running the agent.
+Built before the product changes (Sprint 3, landed 2026-09-08) and proven able to fail: the
+labels of every set passed as actuals score 100 percent, and one corrupted field per check
+scores a failure on that check (playbook step 33; both proofs run in the suite,
+`ScorerProofTests`). Every check returns one of three verdicts, passed, failed, or not
+measured; a record passes when nothing failed, and not measured never counts as a pass in
+the per-check numbers (A15). Scored per record, against the label: channel exact, with the
+agent's null message, the oracle's channel `none`, and a null channel as one value; `send_at`
+to the day and to the hour in the label's offset; `next_action.type` exact (the semantic
+judge, a pinned model with a fixed rubric and one signal beside the deterministic checks, is
+Sprint 6, D15); call-to-action type exact against the label's `cta.type` (D13 d);
+call-to-action payload presence by channel, options on sms and a link on email; the opt-out
+instruction by the one definition the validator enforces (D13 b); body language by a
+stop-word detector for English and Spanish, not measured for any other stated language
+(D13 c); safety violations within the stated budget, default zero; personalization as coverage
+of the first name and the property name over subject plus body (D13 a). Latency is judged
+once per batch, a nearest-rank p95 against the strictest stated budget. The scorecard prints
+one row per record, a per-check line of passed over measured (the source of every number
+in this document and the README), the p95 line, and the overall count. Three sets, all
+reported and labeled: `sample.jsonl`, the fitting evidence; `holdout_12.jsonl`, never fitted
+to; `synthetic_12.jsonl`, written from section 4 before any decision code changed and never
+edited after. `--replay` re-scores an existing output file against its input without running
+the agent (D14).
 
 ## 7. Assumptions log
 
@@ -208,10 +221,10 @@ constant until a second known value earns a setting.
 | A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply` | one pair in both samples; absence unseen | the catalog file |
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
-| A12 | Body carries first name, property, stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry each element | no |
+| A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored | no |
 | A13 | Body language is `input.language`; the template set ships English; another language goes to the model composer, or English with diagnostic `locale_not_applied` in template mode | both samples en; the field exists, so other values must not fail | no |
 | A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text | no |
-| A15 | `p95_latency_ms` is a percentile over the batch; `personalization_score_min` is fact coverage; `reply_classification_f1_min` and any unknown threshold are reported as not measured | four names in both samples; no classifier is in scope | no |
+| A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope | no |
 | A16 | Unknown members at any depth are kept, listed in diagnostics, logged per record, never an error | none seen; the statement promises more cases than the samples show | no |
 | A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics | section 2; no decision can be made without these three | no |
 | A18 | The model writes prose only and picks the call-to-action type from the catalog under constrained decoding; the template composer is the offline path and the fallback | the statement asks for an autonomous agent, not a model; decision S2 | no |
@@ -234,7 +247,7 @@ Each sprint cites decisions in the log; one PR per sprint against `dev`.
 |---|---|---|
 | 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4, D8 to D12) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |
 | 2 Contracts (landed 2026-09-08) | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape and reason, consent first (D1, D3, D10, the first line of D2) | every record of both files parses to one row and runs to a valid output; diagnostics name every defaulted field and every unknown member |
-| 3 Harness | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for both sets recorded |
+| 3 Harness (landed 2026-09-08) | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6, D13 to D16) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for all three sets recorded and pinned in the suite |
 | 4 Decision core | catalog, generic fallback, plan after consent, `Result` from the planner (D2) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling | reference time, floor, timezone and DST property tests (D4); repoint the `SendScheduler` comment from "assumptions log #2" to A4 and A5 | property tests green; unknown timezone is a row, not an exit |
 | 6 Composition | facts, language handling, catalog-driven call to action, model prompt inputs, judge (D5) | both sets compose on the offline path with the network disabled |
@@ -252,3 +265,24 @@ the constraint, safety, personalization, latency): 12 of 12 rows valid, exit cod
 (`reset_cadence`, `schedule_sms_reminder`, `branch_on_intent`, `start_esign_flow`, and the
 long-horizon welcome cadence); 7 of 12 rows pass every check. `sample.jsonl`: 2 of 2. These are
 measurements, not targets (D6, D9).
+
+**Numbers after Sprint 3**, the evaluator of section 6 on every field, the template composer,
+latency from the CLI run. `holdout_12.jsonl` with `--now 2025-12-09T00:00:00-06:00`: channel
+12 of 12, day 7 of 11, hour 5 of 11, action 7 of 12, opt-out 11 of 11, call-to-action type
+7 of 11, payload 0 of 11, language 10 of 11, safety 12 of 12, personalization 8 of 8, p95 13 ms
+under a 2000 ms budget; 1 of 12 records passes every check (the opt-out record).
+`synthetic_12.jsonl` with `--now 2026-03-07T12:00:00Z`: channel 12 of 12, day 10 of 10, hour
+10 of 10, action 12 of 12, opt-out 10 of 10, call-to-action type 10 of 10, payload 0 of 10,
+language 9 of 10, safety 12 of 12, personalization 9 of 9; 2 of 12 pass; exit code 2 for the
+malformed line, by design. `sample.jsonl`: payload 0 of 2, every other check 2 of 2, 0 of 2
+pass. What the numbers say: the template composer emits no reply options and no link, so
+payload fails on every message until Sprint 6; the Spanish record fails language in template
+mode (A13); the five action misses are vocabulary the samples never showed; of the four
+call-to-action misses, two are vocabulary (`reschedule`, `intent_capture`) and two are records
+with no `primary_cta` whose labels still carry a type; the day misses are the oracle's
+per-stage send days and the hour misses add its per-stage hours and minutes (A5).
+Personalization reads 1.00 on every message because the template inserts both scored facts by
+construction: the check can fail (the proof corrupts it) but it cannot fail this composer, and
+the body judge of Sprint 6 is the check with teeth for content. Measurements, not targets
+(D6, D9); `BaselineNumbersTests` pins every tally so a drop fails CI and a rise is recorded
+here and in the README together.

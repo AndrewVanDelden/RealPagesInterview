@@ -21,11 +21,13 @@ dotnet build                      # whole solution (.slnx)
 dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.json
 ```
 
-CLI flags: `--input <jsonl>` `--output <json>` `[--now <ISO-8601>]` `[--composer template|openai]`
-`[--diagnostics <json>] [--eval-report <txt>] [--log-file <log>]`. Exit codes: 0 success,
-1 usage error, 2 partial failure. `--now` is the run's reference time (D10), default the
-current UTC time; the run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`.
-Full reference: `docs/OPERATIONS.md`.
+CLI flags: `--input <jsonl>` and one of `--output <json>` or `--replay <json>`;
+`[--now <ISO-8601>]` `[--composer template|openai]` `[--diagnostics <json>]`
+`[--eval-report <txt>]` `[--log-file <log>]`. Exit codes: 0 success, 1 usage error, 2 partial
+failure. `--now` is the run's reference time (D10), default the current UTC time; the run
+against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, against `synthetic_12.jsonl`
+`2026-03-07T12:00:00Z`. `--replay` re-scores an existing output file without running the
+agent (D14). Full reference: `docs/OPERATIONS.md`.
 
 The OpenAI key is `OpenAI:ApiKey` in `dotnet user-secrets` for `src/Agent.Cli`. The user
 sets it. Never read, print, or write the value.
@@ -45,18 +47,23 @@ sets it. Never read, print, or write the value.
   `docs/RETROSPECTIVE_2026-09-06.md` why the hold-out scored 2 of 12; its plan is superseded.
 - `sample.jsonl` the two given records, the only evidence rules are fitted to.
   `holdout_12.jsonl` the twelve-record evaluation set: run and reported, never fitted to (D9).
+  `synthetic_12.jsonl` twelve records plus one malformed line, one per item of DESIGN.md
+  section 4, labeled from the assumptions log, frozen since 2026-09-08 (D6).
 
 ## Current phase
 
-Phase 2 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Scaffold and verification harness first.
+Phase 3 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Deterministic core.
 Phase 0 was restarted at step 1 on 2026-09-07 (D12) and passed the same day; Phase 1 passed on
-2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Steps 25 to 27 landed in
-Sprint 2 on 2026-09-08 (every member optional except three, per-record reader, output shape).
-Check: the evaluator scores the golden expected outputs at 100 percent, and a deliberately
-wrong output at less. Status: not passed.
-Next step: 28, build the evaluator before the product (Sprint 3, the harness row of
-`docs/DESIGN.md` section 9).
-Open decisions: none; S1 to S4 and D1 to D12 are in `docs/DECISION_LOG.md`.
+2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Phase 2 passed on 2026-09-08
+in Sprint 3: the labels of `sample.jsonl`, `holdout_12.jsonl`, and `synthetic_12.jsonl` passed
+as actuals score 100 percent and one corrupted field per check scores a failure on that check;
+both proofs run in the suite (`ScorerProofTests`). Steps 28 to 36 landed in Sprint 3; step 31,
+the model judge, is deferred to Sprint 6 (D15); step 37, a sidecar, is not needed.
+Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and
+the diagnostics explain every decision. Status: not passed.
+Next step: 38 to 43, the catalog with the generic row and the planner `Result` (Sprint 4, the
+decision-core row of `docs/DESIGN.md` section 9, D2).
+Open decisions: none; S1 to S4 and D1 to D16 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
@@ -119,6 +126,14 @@ Update this section at the end of every sprint. It is the first thing an agent r
   `LenientExpectedOutcomeConverter` set `Expected` to null and the record is unscoreable.
 - The reference time is a value: `--now` on the CLI, a parameter on the agent, the planner,
   and the scheduler. Nothing in `src/Agent` reads a clock.
+- The evaluator scores against the label, never against the product's own tables: the
+  call-to-action type is the label's `cta.type` (D13 d). Every check is `Passed`, `Failed`, or
+  `NotMeasured`; not measured never counts as a pass, and the baseline tallies in
+  `BaselineNumbersTests` are measurements that a rise updates and a drop fails.
+  `OptOutInstructions` is the one opt-out definition for the validator and the scorer.
+- The output file carries no task id, so `--replay` pairs rows with parsed records by position
+  and refuses a count mismatch with exit code 1 (D14).
+- Only `CliRunner` opens the `TaskId` log scope (D16). Do not add one in the library.
 - The safety validator's whole-word check calls static `Regex.IsMatch` per term (about
   25 terms) against a 15-entry cache, so patterns recompile on every message. Known,
   unfixed.

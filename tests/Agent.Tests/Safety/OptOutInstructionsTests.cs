@@ -11,10 +11,10 @@ public class OptOutInstructionsTests
     [InlineData("Text STOP anytime.")]
     [InlineData("You can opt out at any time.")]
     [InlineData("Opt-out here.")]
-    [InlineData("Opt‑out here.")]
-    [InlineData("Opt‐out here.")]
-    [InlineData("Opt–out here.")]
-    [InlineData("Opt—out here.")]
+    [InlineData("Opt\u2011out here.")]
+    [InlineData("Opt\u2010out here.")]
+    [InlineData("Opt\u2013out here.")]
+    [InlineData("Opt\u2014out here.")]
     [InlineData("Click here to unsubscribe.")]
     public void IsPresent_InstructionInAnyAcceptedForm_True(string text)
     {

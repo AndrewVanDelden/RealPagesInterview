@@ -108,7 +108,10 @@ complete: every record in both sets produces a valid output row with diagnostics
 it; the deterministic checks the input can decide (channel, consent, language, opt-out, safety,
 payload shape) pass on every record; the honest numbers for `send_at` and `next_action.type`
 are reported in the README and never targeted. Scopes: Sprint 2, the README. Evidence: S4; the
-requester's answer, D9. Assumption: A19.
+requester's answer, D9. Assumption: A19. Landed 2026-09-08 in Sprint 3: every field of
+DESIGN.md section 6 with a three-way verdict, the scorer proof on three sets in the suite,
+`synthetic_12.jsonl`, `--replay`, and the baseline numbers pinned by `BaselineNumbersTests`.
+One difference from the paragraph above: the semantic judge is deferred to Sprint 6 (D15).
 
 **D7. Structure.** Question: what stays, what goes, what the orchestrator reads like. Options:
 collapse interfaces up front; or let each sprint delete the interface it touches.

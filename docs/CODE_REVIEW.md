@@ -75,6 +75,27 @@ or human) doesn't re-flag them as missing behavior.
   built against it (`SendSchedulerTests` passes a raw timezone id string throughout) for a
   gain that duplicates work the BCL is already doing. Not worth the churn.
 
+- **Language detection is a stop-word heuristic for two languages (Sprint 3, D13 c).**
+  `LanguageDetector` counts disjoint function words for English and Spanish, the languages
+  the labeled sets contain, and reports any other stated language as not measured. It is not
+  a general language identifier and does not need a dependency to become one until a third
+  language appears in a labeled set.
+
+- **Personalization cannot fail the template composer (Sprint 3, D13 a).** The scorer counts
+  the first name and the property name because those are the only facts every label carries
+  (sample 1 omits its city, hold-out 11 omits its amenities), and the template inserts both
+  by construction. The check can fail (`ScorerProofTests` corrupts it); it cannot fail this
+  composer. The body judge of Sprint 6 (D5, D15) is the check with teeth for content.
+
+- **Replay aligns by position (Sprint 3, D14).** The graded output carries no task id
+  (playbook step 27), so `--replay` pairs rows with the parsed records in order and refuses a
+  count mismatch. A task id in the output, or a diagnostics file as a second replay input,
+  would be extra surface for a mode that scores files this program wrote.
+
+- **The model judge is not in the harness yet (Sprint 3, D15).** Section 6's semantic score
+  for `next_action.type` and the body judge land together in Sprint 6, off by default, so one
+  pinned model and one rubric have one owner. Until then the action type is exact only.
+
 - **CliRunner's ingest-notes log line is not level-gated (PR #17 review).** Flagged
   because `log.LogInformation(...)` builds two joined strings as ordinary method
   arguments before the call, so they're computed even when Information logging is

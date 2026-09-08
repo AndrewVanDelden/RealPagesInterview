@@ -6,7 +6,7 @@ namespace Agent.Safety;
 // (which enforces it) and the evaluator (which measures it), so the agent can never emit
 // what the scorer rejects. The whole word STOP in capitals is the carrier keyword in every
 // language the sets contain ("Reply STOP", "Responde STOP"); a lowercase "stop" is prose
-// ("bus stop"). The unicode hyphens the labels use fold to a hyphen first, so "Opt‑out"
+// ("bus stop"). The unicode hyphens the labels use fold to a hyphen first, so "Opt-out"
 // spelled with U+2011 counts.
 public static partial class OptOutInstructions
 {
@@ -20,8 +20,9 @@ public static partial class OptOutInstructions
         return StopKeyword().IsMatch(folded) || Phrases.Any(phrase => folded.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
+    // U+2010 hyphen, U+2011 non-breaking hyphen, U+2013 en dash, U+2014 em dash.
     private static string FoldHyphens(string text) =>
-        text.Replace('‐', '-').Replace('‑', '-').Replace('–', '-').Replace('—', '-');
+        text.Replace('\u2010', '-').Replace('\u2011', '-').Replace('\u2013', '-').Replace('\u2014', '-');
 
     [GeneratedRegex(@"\bSTOP\b")]
     private static partial Regex StopKeyword();
