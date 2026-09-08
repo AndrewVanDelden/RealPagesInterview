@@ -93,6 +93,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             return await ReplayAsync(inputPath, replayPath, evalReportPath, loggerFactory, log, cancellationToken);
         }
 
+        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
+
+        // D28: the model call is bounded by the strictest latency budget the batch states, so
+        // the composer is built after the records are read. Nothing that costs time or money
+        // has happened yet (playbook step 77): reading the file is local, and a bad composer
+        // name or a missing key still returns a usage error before the first call.
         var templateFallback = new TemplateMessageComposer();
         IMessageComposer baseComposer;
         try
@@ -100,7 +106,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallTimeout(cases)),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -127,8 +133,6 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             new SendScheduler(),
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
-
-        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
 
         // Fixed before the loop below can add processing failures onto the same
         // failureCount: a record that throws stays in `cases` (per-record isolation), so
@@ -317,14 +321,14 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         return index >= 0 && index + 1 < cliArgs.Length ? cliArgs[index + 1] : null;
     }
 
-    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory)
+    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
             ?? throw new InvalidOperationException(
                 "OpenAI:ApiKey is not configured. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
     }
 

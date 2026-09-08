@@ -112,7 +112,7 @@ public class AgentDiagnosticsTests
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
-        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true}", json);
+        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true,\"network_retries\":null}", json);
     }
 
     // A record the consent gate suppressed has no message, so no implementation wrote one.

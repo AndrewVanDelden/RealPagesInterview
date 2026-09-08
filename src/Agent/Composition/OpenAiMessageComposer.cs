@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Agent.Common;
@@ -70,12 +71,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
-        string rawResponse;
+        ModelCompletion completion;
         try
         {
-            rawResponse = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
+            completion = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
+        catch (Exception ex) when (ex is ClientResultException or TimeoutException or HttpRequestException or InvalidOperationException or JsonException)
         {
             log.LogWarning(ex, "Completion request failed.");
             return Result<ComposedMessage>.Failure($"Completion request failed: {ex.ToDiagnosticString()}");
@@ -84,7 +85,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         ComposedMessagePayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<ComposedMessagePayload>(rawResponse, AgentJsonOptions.Default);
+            payload = JsonSerializer.Deserialize<ComposedMessagePayload>(completion.Content, AgentJsonOptions.Default);
         }
         catch (JsonException ex)
         {
@@ -111,7 +112,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         var cta = new Cta(payload.CtaType, payload.CtaOptions, payload.CtaLink);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
-        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1, LocaleApplied: true));
+        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1, LocaleApplied: true, completion.NetworkRetries));
 
         return Result<ComposedMessage>.Success(composed);
     }

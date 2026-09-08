@@ -6,7 +6,7 @@ public interface ICompletionClient
     // the object the caller needs back. An implementation that supports constrained
     // decoding (OpenAI's Structured Outputs) should use it to enforce shape at the API
     // level rather than relying on prose instructions alone. Null means "any valid JSON."
-    Task<string> CompleteAsync(
+    Task<ModelCompletion> CompleteAsync(
         string systemPrompt,
         string userPrompt,
         string? responseJsonSchema = null,

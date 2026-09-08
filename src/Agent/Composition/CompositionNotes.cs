@@ -10,4 +10,6 @@ namespace Agent.Composition;
 // so there it is a check that fails; the model composer passes the tag through and can serve
 // any language (D26), so there it states that capability, and the evaluator's own language
 // check is what measures the text either way.
-public sealed record CompositionNotes(string Composer, int Attempts, bool LocaleApplied);
+// NetworkRetries is how many transport retries the call underneath spent (D28, playbook
+// step 49), and is null for a composer that makes no network call at all.
+public sealed record CompositionNotes(string Composer, int Attempts, bool LocaleApplied, int? NetworkRetries = null);
