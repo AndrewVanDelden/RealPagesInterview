@@ -64,6 +64,13 @@ public sealed class ActionCatalog
             return Result<ActionCatalog>.Failure($"Generic catalog row: unknown action type '{genericType}'.");
         }
 
+        int? genericInvalidValue = NonPositiveValue(genericRow.ShortHorizonAction) ?? NonPositiveValue(genericRow.LongHorizonAction);
+
+        if (genericInvalidValue is not null)
+        {
+            return Result<ActionCatalog>.Failure($"Generic catalog row: action value {genericInvalidValue} must be positive.");
+        }
+
         var byKey = new Dictionary<(string Persona, string LifecycleStage), ActionCatalogRow>();
 
         foreach (ActionCatalogRow row in rows)
@@ -78,18 +85,25 @@ public sealed class ActionCatalog
                 return Result<ActionCatalog>.Failure($"Catalog row for persona '{row.Persona}': lifecycle stage is blank.");
             }
 
-            (string, string) key = KeyOf(row.Persona, row.LifecycleStage);
+            (string Persona, string LifecycleStage) key = KeyOf(row.Persona, row.LifecycleStage);
 
             if (!byKey.TryAdd(key, row))
             {
-                return Result<ActionCatalog>.Failure($"Duplicate catalog row for {key.Item1}/{key.Item2}.");
+                return Result<ActionCatalog>.Failure($"Duplicate catalog row for {key.Persona}/{key.LifecycleStage}.");
             }
 
             string? rowType = UnknownStatedType(row.ShortHorizonAction) ?? UnknownStatedType(row.LongHorizonAction);
 
             if (rowType is not null)
             {
-                return Result<ActionCatalog>.Failure($"Catalog row for {key.Item1}/{key.Item2}: unknown action type '{rowType}'.");
+                return Result<ActionCatalog>.Failure($"Catalog row for {key.Persona}/{key.LifecycleStage}: unknown action type '{rowType}'.");
+            }
+
+            int? rowInvalidValue = NonPositiveStatedValue(row.ShortHorizonAction) ?? NonPositiveStatedValue(row.LongHorizonAction);
+
+            if (rowInvalidValue is not null)
+            {
+                return Result<ActionCatalog>.Failure($"Catalog row for {key.Persona}/{key.LifecycleStage}: action value {rowInvalidValue} must be positive.");
             }
         }
 
@@ -128,4 +142,13 @@ public sealed class ActionCatalog
 
     private static string? UnknownType(NextAction action) =>
         ActionTypes.All.Contains(action.Type) ? null : action.Type;
+
+    // The deleted NextActionPlannerOptions threw when its follow-up-days setting was not
+    // positive; Create is the row's replacement gate, so the same guarantee lives here
+    // instead of at a caller that could forget it.
+    private static int? NonPositiveStatedValue(Option<NextAction> action) =>
+        action.HasValue ? NonPositiveValue(action.Value) : null;
+
+    private static int? NonPositiveValue(NextAction action) =>
+        action.Value is { } value && value <= 0 ? value : null;
 }

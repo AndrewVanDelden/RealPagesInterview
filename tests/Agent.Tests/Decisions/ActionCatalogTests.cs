@@ -87,6 +87,58 @@ public class ActionCatalogTests
         Assert.Contains("branch_on_intent", result.Error, StringComparison.Ordinal);
     }
 
+    // The deleted NextActionPlannerOptions threw when longHorizonFollowUpDays was not
+    // positive; Create is the row's replacement gate, so the same guarantee belongs here.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_RowWithNonPositiveValueOnLongHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [Row("prospect", "open", Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: value)))]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("prospect/open", result.Error, StringComparison.Ordinal);
+    }
+
+    // The short-horizon branch is checked first; this exercises that side of the check
+    // rather than only the long-horizon side above.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_RowWithNonPositiveValueOnShortHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [Row("prospect", "new", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: value)), Option<NextAction>.None())]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("prospect/new", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_GenericRowWithNonPositiveValueOnLongHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(Cadence, new NextAction(ActionTypes.FollowUpInDays, Value: value)), []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Generic catalog row", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_GenericRowWithNonPositiveValueOnShortHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(new NextAction(ActionTypes.FollowUpInDays, Value: value), FollowUp), []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Generic catalog row", result.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Resolve_KeyWithStatedBranch_ReturnsTheRowAction()
     {
