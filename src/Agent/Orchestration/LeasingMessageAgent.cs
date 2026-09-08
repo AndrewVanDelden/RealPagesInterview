@@ -26,13 +26,11 @@ public sealed class LeasingMessageAgent(
 {
     private readonly ILogger<LeasingMessageAgent> log = logger.OrNullLogger();
 
+    // D16: no log scope is opened here. The caller's batch loop (CliRunner) is the one
+    // owner of the TaskId scope; a second one here rendered every line as
+    // "TaskId=x TaskId=x". A library caller that wants correlation opens its own scope.
     public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
     {
-        // Correlation ID for every log line emitted anywhere downstream of this call
-        // (ValidatingMessageComposer, OpenAiMessageComposer) - opened here, not by the
-        // caller, so any caller (the CLI today, a future API) gets it for free.
-        using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
-
         // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
         // (which happens to wrap agent.RunAsync in its own try/catch) ever sees an
         // unhandled exception. A future caller (a web API, a queue worker) integrating

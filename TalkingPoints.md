@@ -39,7 +39,9 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - The validator is three keyword and regex checks with word-boundary matching, disclosed as a proxy, never a compliance system.
 - The compose-validate loop is bounded to two attempts by construction and validates the fallback too.
 - The orchestrator holds no rules and sequences the components in one method.
-- The evaluator scores captured results, never re-running the agent, so the report describes what was written.
+- The evaluator scores captured results against the label on every field, never re-running the agent, and is proven able to fail on every check before it measures anything.
+- Every check has three verdicts, passed, failed, or not measured, and not measured never counts as a pass.
+- Latency is one p95 over the batch against the strictest stated budget, not a per-record verdict.
 - Output is one indented JSON array because the problem statement constrains only the input format.
 - Logging is `Microsoft.Extensions.Logging` with a task id scope on every per-record line and a file sink behind `--log-file`.
 
@@ -102,11 +104,17 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - D3 Output contract (shape landed Sprint 2): suppression is a `next_message` object with channel `none`, a suppression reason in diagnostics, required states earned by checks that can fail.
 - D4 Scheduling: the channel's slot on or after the later of reference time and last interaction, in the record's timezone, scored to day and hour; minutes not modeled.
 - D5 Composition: templates keyed on persona and channel from the facts the record carries, English shipped, other languages to the model composer, options on SMS, link on email, missing CTA means the generic reply.
-- D6 Evaluation: every output field scored, scorer proven able to fail, both the twelve and a frozen synthetic set reported as evaluation sets.
+- D6 Evaluation (landed Sprint 3): every output field scored, scorer proven able to fail, the samples, the twelve, and a frozen synthetic set all reported as labeled sets.
 - D7 Structure: keep the three interfaces with substitutes, remove the eight without, six named steps in the orchestrator.
 - D8 Gates (landed Sprint 1): CI on every push, branch protection on `dev`.
 - D10 (landed Sprint 2): `--now` is the run's reference time, a value passed in; nothing in the library reads a clock.
 - D11 and D12: the twelve live in the repo beside the samples; Phase 0 restarted at step 1.
+- D13 (Sprint 3): a scorer proxy that fails the oracle's own label is a wrong proxy, so the scorer is corrected against the labels with each forcing record named, while product rules stay fitted to the two samples.
+- D13 found four of them: personalization counts only the first name and the property, the opt-out instruction is the capitalized word STOP or opt-out after unicode hyphens fold, language is a stop-word detector, and the call-to-action type is the label's type, not the product's table.
+- D14 (Sprint 3): the output carries no task id, so replay pairs rows by position and refuses a count mismatch.
+- D15 (Sprint 3): the model judge waits for Sprint 6 so one pinned model and one rubric have one owner.
+- D16 (Sprint 3): the CLI loop is the one owner of the task id log scope; the agent opening a second one printed the id twice on every line.
+- After Sprint 3 the hold-out passes 1 of 12 and the synthetic set 2 of 12, because the template composer emits no options or link; the numbers are pinned in the suite so a drop fails CI.
 
 ## Definitions worth having ready
 

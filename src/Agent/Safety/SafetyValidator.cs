@@ -4,7 +4,8 @@ using Agent.Domain;
 namespace Agent.Safety;
 
 // Keyword/pattern heuristic, not a comprehensive fair-housing compliance system: see
-// docs/CODE_REVIEW.md for the explicit scope note.
+// docs/CODE_REVIEW.md for the explicit scope note. The opt-out check is
+// OptOutInstructions, the one definition the evaluator measures against too (D13 b).
 //
 // NoSensitiveDiscrimination (CaseConstraints) is intentionally never read here: the
 // protected-class/steering check always runs regardless of its value. Fair housing law
@@ -12,15 +13,6 @@ namespace Agent.Safety;
 // are real) or generic PII sensitivity (which can vary case by case).
 public sealed partial class SafetyValidator : ISafetyValidator
 {
-    // Specific, standard opt-out phrasing rather than the bare word "stop": a bare "stop"
-    // would substring-match unrelated text like "bus stop" even with word-boundary
-    // anchoring, since "stop" is already a complete word there. Matches
-    // TemplateMessageComposer's actual generated text ("Reply STOP to opt out.").
-    // Internal, not private: Agent.Evaluation.Evaluator reuses this exact list so the
-    // eval harness checks the same opt-out phrasing the validator actually enforces,
-    // rather than an independently-maintained (and possibly drifting) duplicate.
-    internal static readonly IReadOnlyList<string> OptOutPhrases = ["reply stop", "text stop", "opt out", "opt-out", "unsubscribe"];
-
     private static readonly string[] ProtectedClassAndSteeringTerms =
     [
         "race", "racial", "religion", "religious", "national origin", "familial status",
@@ -36,7 +28,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
 
-        if (constraints.RequiresOptOutInstructions() && FindFirst(text, OptOutPhrases) is null)
+        if (constraints.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(text))
         {
             violations.Add("Missing required opt-out instructions.");
         }
@@ -46,7 +38,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
             violations.Add("Body appears to contain a leaked personal identifier (SSN-like or long numeric sequence).");
         }
 
-        string? steeringTerm = FindFirst(text, ProtectedClassAndSteeringTerms, wholeWord: true);
+        string? steeringTerm = FindWholeWord(text, ProtectedClassAndSteeringTerms);
         if (steeringTerm is not null)
         {
             violations.Add($"Body contains protected-class or steering language: '{steeringTerm}'.");
@@ -55,10 +47,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
         return new SafetyValidationResult(violations, FairHousingCheckPassed: violations.Count == 0);
     }
 
-    private static string? FindFirst(string text, IReadOnlyList<string> terms, bool wholeWord = false) =>
-        terms.FirstOrDefault(term => wholeWord
-            ? Regex.IsMatch(text, $@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase)
-            : text.Contains(term, StringComparison.OrdinalIgnoreCase));
+    private static string? FindWholeWord(string text, IReadOnlyList<string> terms) =>
+        terms.FirstOrDefault(term => Regex.IsMatch(text, $@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase));
 
     [GeneratedRegex(@"\b\d{3}-\d{2}-\d{4}\b")]
     private static partial Regex SsnPattern();

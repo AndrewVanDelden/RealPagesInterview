@@ -1,14 +1,29 @@
+using System.Globalization;
 using System.Text;
 
 namespace Agent.Evaluation;
 
 // Plain aligned text, not a table library: this is the artifact that proves the agent
-// meets its thresholds (DESIGN.md section 6), read by a human during the live review -
-// no dependency needed for a handful of columns.
+// meets its thresholds (DESIGN.md section 6), read by a person. The per-check line is
+// where the README numbers come from, so nobody counts cells by hand.
 public static class ScorecardFormatter
 {
+    private static readonly (EvaluationCheck Check, string Label)[] Columns =
+    [
+        (EvaluationCheck.Channel, "Channel"),
+        (EvaluationCheck.SendAtDay, "Day"),
+        (EvaluationCheck.SendAtHour, "Hour"),
+        (EvaluationCheck.NextActionType, "Action"),
+        (EvaluationCheck.OptOut, "OptOut"),
+        (EvaluationCheck.CtaType, "CTA"),
+        (EvaluationCheck.CtaPayload, "Payload"),
+        (EvaluationCheck.BodyLanguage, "Lang"),
+        (EvaluationCheck.Safety, "Safety"),
+        (EvaluationCheck.Personalization, "Personalization"),
+    ];
+
     private static readonly string[] Headers =
-        ["Task ID", "Channel", "Action", "OptOut", "CTA", "Safety", "Personalization", "Latency (ms)", "Result"];
+        ["Task ID", .. Columns.Select(column => column.Label), "Latency (ms)", "Result"];
 
     public static string Format(Scorecard scorecard)
     {
@@ -24,6 +39,9 @@ public static class ScorecardFormatter
         }
 
         builder.AppendLine();
+        builder.AppendLine("Checks: " + string.Join(", ", Columns.Select(column =>
+            $"{column.Label} {scorecard.PassedCountOf(column.Check)}/{scorecard.MeasuredCountOf(column.Check)}")));
+        builder.AppendLine($"Latency p95: {Milliseconds(scorecard.LatencyP95Ms)}, budget {Milliseconds(scorecard.LatencyBudgetMs)}: {Symbol(scorecard.LatencyP95)}");
         builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
 
         return builder.ToString();
@@ -31,19 +49,24 @@ public static class ScorecardFormatter
 
     private static string[] FormatRow(RecordScore score) =>
         score.ScoringError is { } error
-            ? [score.TaskId, "-", "-", "-", "-", "-", "-", "-", $"ERROR: {error}"]
+            ? [score.TaskId, .. Columns.Select(_ => "-"), "-", $"ERROR: {error}"]
             :
             [
                 score.TaskId,
-                Symbol(score.ChannelMatches),
-                Symbol(score.NextActionTypeMatches),
-                Symbol(score.OptOutPresent),
-                Symbol(score.PrimaryCtaPresent),
-                Symbol(score.SafetyViolationsWithinBudget),
-                score.PersonalizationScore.ToString("0.00"),
-                score.LatencyMs.ToString("0"),
+                .. Columns.Select(column => column.Check == EvaluationCheck.Personalization
+                    ? PersonalizationCell(score)
+                    : Symbol(score.ResultOf(column.Check))),
+                score.LatencyMs is { } latency ? latency.ToString("0", CultureInfo.InvariantCulture) : "n/a",
                 score.Passed ? "PASS" : "FAIL",
             ];
+
+    private static string PersonalizationCell(RecordScore score) =>
+        score.PersonalizationScore is { } value
+            ? $"{value.ToString("0.00", CultureInfo.InvariantCulture)} {Symbol(score.Personalization)}"
+            : "n/a";
+
+    private static string Milliseconds(double? value) =>
+        value is { } milliseconds ? $"{milliseconds.ToString("0", CultureInfo.InvariantCulture)} ms" : "n/a";
 
     private static int[] ComputeColumnWidths(string[][] rows)
     {
@@ -68,5 +91,10 @@ public static class ScorecardFormatter
     private static string FormatLine(string[] cells, int[] widths) =>
         string.Join(" | ", cells.Select((cell, column) => cell.PadRight(widths[column])));
 
-    private static string Symbol(bool value) => value ? "OK" : "FAIL";
+    private static string Symbol(CheckResult result) => result switch
+    {
+        CheckResult.Passed => "OK",
+        CheckResult.Failed => "FAIL",
+        _ => "n/a",
+    };
 }

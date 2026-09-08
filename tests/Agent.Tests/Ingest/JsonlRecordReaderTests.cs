@@ -266,6 +266,21 @@ public class JsonlRecordReaderTests
         Assert.All(results, result => Assert.True(result.IsSuccess, result.IsSuccess ? string.Empty : result.Error));
     }
 
+    // D6: the synthetic set carries one deliberately malformed line (DESIGN.md section 4,
+    // item 10) between good lines; it is one failure row naming its line, never a lost file.
+    [Fact]
+    public void ReadAll_ParsesSyntheticTwelve_TwelveSuccessRowsAndOneFailureNamingLineEleven()
+    {
+        using TextReader reader = new StreamReader(Path.Combine(AppContext.BaseDirectory, "TestData", "synthetic_12.jsonl"));
+
+        IReadOnlyList<Result<ProspectCase>> results = Reader.ReadAll(reader);
+
+        Assert.Equal(13, results.Count);
+        Assert.Equal(12, results.Count(result => result.IsSuccess));
+        Result<ProspectCase> failure = Assert.Single(results, result => !result.IsSuccess);
+        Assert.Contains("Line 11", failure.Error);
+    }
+
     [Fact]
     public void ReadAll_ReturnsFailureWithLineNumber_WhenRequiredObjectPropertyIsAbsent()
     {

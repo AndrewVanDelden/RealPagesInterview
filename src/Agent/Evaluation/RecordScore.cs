@@ -1,26 +1,61 @@
 namespace Agent.Evaluation;
 
+// One record's verdict per check. PersonalizationScore is the coverage number behind the
+// Personalization verdict; LatencyMs is carried for the batch p95 and is null when the run
+// did not measure it (replay, D14).
 public sealed record RecordScore(
     string TaskId,
-    bool ChannelMatches,
-    bool NextActionTypeMatches,
-    bool OptOutPresent,
-    bool PrimaryCtaPresent,
-    bool SafetyViolationsWithinBudget,
-    double PersonalizationScore,
-    bool PersonalizationScoreMet,
-    double LatencyMs,
-    bool LatencyWithinBudget,
+    CheckResult Channel,
+    CheckResult SendAtDay,
+    CheckResult SendAtHour,
+    CheckResult NextActionType,
+    CheckResult OptOut,
+    CheckResult CtaType,
+    CheckResult CtaPayload,
+    CheckResult BodyLanguage,
+    CheckResult Safety,
+    double? PersonalizationScore,
+    CheckResult Personalization,
+    double? LatencyMs,
     string? ScoringError = null)
 {
+    // A record passes when it was scored and no check failed; a check that was not
+    // measured neither passes nor fails it.
     public bool Passed =>
-        ScoringError is null &&
-        ChannelMatches && NextActionTypeMatches && OptOutPresent && PrimaryCtaPresent &&
-        SafetyViolationsWithinBudget && PersonalizationScoreMet && LatencyWithinBudget;
+        ScoringError is null && Enum.GetValues<EvaluationCheck>().All(check => ResultOf(check) != CheckResult.Failed);
 
-    // A case that could not be scored at all (e.g. missing its labeled expected outcome) -
-    // distinct from a case that was scored and failed one or more checks. Keeps every
-    // attempted case visible in the scorecard instead of aborting the whole batch.
+    public CheckResult ResultOf(EvaluationCheck check) => check switch
+    {
+        EvaluationCheck.Channel => Channel,
+        EvaluationCheck.SendAtDay => SendAtDay,
+        EvaluationCheck.SendAtHour => SendAtHour,
+        EvaluationCheck.NextActionType => NextActionType,
+        EvaluationCheck.OptOut => OptOut,
+        EvaluationCheck.CtaType => CtaType,
+        EvaluationCheck.CtaPayload => CtaPayload,
+        EvaluationCheck.BodyLanguage => BodyLanguage,
+        EvaluationCheck.Safety => Safety,
+        EvaluationCheck.Personalization => Personalization,
+        _ => throw new ArgumentOutOfRangeException(nameof(check), check, "Unknown evaluation check."),
+    };
+
+    // A case that could not be scored at all (no labeled expected outcome, or a scoring
+    // bug), distinct from a case that was scored and failed. Keeps every attempted case
+    // visible in the scorecard instead of aborting the batch (playbook step 34).
     public static RecordScore Unscoreable(string taskId, string reason) =>
-        new(taskId, false, false, false, false, false, 0.0, false, 0.0, false, reason);
+        new(
+            TaskId: taskId,
+            Channel: CheckResult.NotMeasured,
+            SendAtDay: CheckResult.NotMeasured,
+            SendAtHour: CheckResult.NotMeasured,
+            NextActionType: CheckResult.NotMeasured,
+            OptOut: CheckResult.NotMeasured,
+            CtaType: CheckResult.NotMeasured,
+            CtaPayload: CheckResult.NotMeasured,
+            BodyLanguage: CheckResult.NotMeasured,
+            Safety: CheckResult.NotMeasured,
+            PersonalizationScore: null,
+            Personalization: CheckResult.NotMeasured,
+            LatencyMs: null,
+            ScoringError: reason);
 }

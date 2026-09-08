@@ -108,7 +108,10 @@ complete: every record in both sets produces a valid output row with diagnostics
 it; the deterministic checks the input can decide (channel, consent, language, opt-out, safety,
 payload shape) pass on every record; the honest numbers for `send_at` and `next_action.type`
 are reported in the README and never targeted. Scopes: Sprint 2, the README. Evidence: S4; the
-requester's answer, D9. Assumption: A19.
+requester's answer, D9. Assumption: A19. Landed 2026-09-08 in Sprint 3: every field of
+DESIGN.md section 6 with a three-way verdict, the scorer proof on three sets in the suite,
+`synthetic_12.jsonl`, `--replay`, and the baseline numbers pinned by `BaselineNumbersTests`.
+One difference from the paragraph above: the semantic judge is deferred to Sprint 6 (D15).
 
 **D7. Structure.** Question: what stays, what goes, what the orchestrator reads like. Options:
 collapse interfaces up front; or let each sprint delete the interface it touches.
@@ -156,3 +159,56 @@ continues at step 4. Options: either. Recommendation: restart, on the requester'
 DESIGN.md is rewritten from step 1 and the retrospective's section 7 plan is superseded by
 DESIGN.md section 9. Scopes: everything after. Evidence: the retrospective's section 9.
 Assumption: none.
+
+**D13. Scorer proof against the labels (2026-09-08).** Question: what to do when a scorer
+proxy fails the oracle's own label (playbook step 33: the labels passed as actuals must
+score 100 percent). Options: keep the proxy and report the oracle as failing; or treat a
+proxy that fails a label as a wrong proxy, correct the scorer, and record the record that
+forced each correction. Recommendation: the second. The scorer is the measuring instrument,
+not a product rule: D9 keeps every product rule fitted to the two samples, and validating
+the metric against every label is what an evaluation set is for. Every correction is listed
+here with its record, so the proxy's evidence is auditable. Corrections: (a) personalization
+facts are the first name and the property name, searched over subject plus body; city and
+amenities are not counted (sample 1's body omits the city at threshold 0.85; hold-out 11's
+body omits both amenities at 0.8; hold-out 6 names the property only in the subject); a
+multi-word fact is covered when at least half its words appear as whole words (every label
+says "Oak Ridge" for "Oak Ridge Apartments"). (b) the opt-out instruction is the whole word
+STOP in capitals, or opt out, opt-out, unsubscribe, after the unicode hyphens U+2010, U+2011,
+U+2013 and U+2014 are folded to a hyphen (hold-out 6 carries only "Opt‑out" spelled with
+U+2011; hold-out 11 carries "Responde STOP"); one list, shared by the validator and the
+scorer, so the agent can never emit what the scorer rejects. (c) the body language is
+detected by a stop-word count over subject plus body for the languages the sets contain,
+English and Spanish; a stated language the detector does not know is reported as not
+measured. (d) the call-to-action type is scored against the label's own `cta.type`, never
+against the product's vocabulary table (hold-out 3 labels `reschedule` for the constraint
+`reschedule_tour`, hold-out 7 labels `intent_capture` for `reply_intent`; a scorer that
+consulted the table passed the product's own guess back to itself, the retrospective's
+finding on the CTA field). Scopes: Sprint 3; A12, A15; the validator's opt-out check. Evidence: the proof
+runs recorded in DESIGN.md section 9 under "Numbers after Sprint 3". Assumption: A15.
+
+**D14. Replay alignment (2026-09-08).** Question: how `--replay` matches the rows of an
+output file to the records of `--input` when the output carries no task id (playbook step
+27: nothing extra in the graded output). Options: add `task_id` to the output; or align by
+position over the records that parsed, and refuse with a usage error naming both counts when
+they differ. Recommendation: the second. A safety violation count and a latency exist only
+in the run that produced the file, so replay reports both as not measured. Scopes: the
+`--replay` flag, OPERATIONS.md. Evidence: D3; the output writer appends one row per record
+that ran, in input order. Assumption: none.
+
+**D15. Judge deferred to Sprint 6 (2026-09-08).** Question: whether the semantic judge for
+`next_action.type` (DESIGN.md section 6) lands in Sprint 3 or with the body judge in Sprint
+6. Options: build the judge seam now, off by default; or defer it to Sprint 6, where D5
+already places judge-scored body semantics, so one pinned model and one rubric have one
+owner. Recommendation: the second; Sprint 3 scores every deterministic field of section 6
+and reports the exact-match number for the action type. Scopes: Sprint 3, Sprint 6.
+Evidence: playbook step 31, the judge is one signal beside the deterministic checks; D5.
+Assumption: A8.
+
+**D16. One log scope owner (2026-09-08).** Question: which of `CliRunner`,
+`LeasingMessageAgent`, and `Evaluator` opens the `TaskId` log scope. Options: the CLI's
+batch loop; or the agent, so any caller gets the scope for free. Recommendation: the CLI. It
+is the one place that knows both the task id and the batch position, the evaluator runs
+inside its loop, and the agent's own scope produced the duplicated `TaskId=x TaskId=x` on
+every line (the retrospective's logging defect 1). A library caller that wants correlation
+opens its own scope the way the CLI does. Scopes: Sprint 3, OPERATIONS.md section 3.
+Evidence: the retrospective's logging defect 1 and Fix 8. Assumption: none.

@@ -13,16 +13,19 @@ dotnet build                                                  # build the whole 
 .\test.ps1                                                    # run the suite; fails the build under 100% coverage; exits with dotnet test's exit code
 dotnet run --project src/Agent.Cli -- --input <file> --output <file> [--now <ISO-8601>] [options]
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json --now 2025-12-09T00:00:00-06:00 --eval-report eval.txt --diagnostics diag.json
+dotnet run --project src/Agent.Cli -- --input synthetic_12.jsonl --output out.json --now 2026-03-07T12:00:00Z --eval-report eval.txt
+dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt
 ```
 
 | Flag | Required | Purpose |
 |---|---|---|
 | `--input <file.jsonl>` | yes | The prospect/resident cases to process, one JSON object per line. |
-| `--output <file.json>` | yes | Where the agent's decisions (`AgentOutput` per record) are written, as one indented JSON array. |
+| `--output <file.json>` | yes, unless `--replay` | Where the agent's decisions (`AgentOutput` per record) are written, as one indented JSON array. |
+| `--replay <file.json>` | no | Re-score an existing `--output` file against `--input` without running the agent (D14). Rows pair with the parsed records by position; a file that is not a JSON array, or whose row count differs from the parsed input, is refused with exit code 1. Safety and latency read `n/a` in replay: they exist only in the run that wrote the file. |
 | `--now <ISO-8601 date-time>` | no (default: the current UTC time) | The run's reference time (D10): the day send times are floored to and horizons are counted from. The documented run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, the oracle's date. Logged once per run. |
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
 | `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
-| `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
+| `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score). Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
@@ -37,7 +40,7 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
 | Exit code | Meaning | Next step |
 |---|---|---|
 | `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug: a suppressed message (a `next_message` with channel `none`) is a valid *decision*, not a failure. `--diagnostics` names the `suppression_reason`. |
-| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, or a missing `OpenAI:ApiKey`. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, or the `dotnet user-secrets set` command to run). Nothing else ran; no records were processed. |
+| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, a missing `OpenAI:ApiKey`, or a `--replay` file that is not a JSON array or whose row count differs from the parsed input. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, the `dotnet user-secrets set` command to run, or both counts). Nothing else ran; no records were processed. |
 | `2` (PartialFailure) | At least one record threw an unhandled exception during processing. | Every other record still completed and is in `--output`, this is deliberate per-record isolation, not a partial write. Find which record via the stderr line (`Record '<TaskId>' failed: <ExceptionType>: <message>`), or the log (see below) for the full stack trace. |
 
 **Where to look, in order:**
@@ -89,15 +92,18 @@ perfect diagnostics and a log full of retries, or a suppressed message with
 a totally quiet log (no consent, nothing went wrong, there was just nothing
 to do).
 
-**Correlation:** `CliRunner`'s own per-record loop, `LeasingMessageAgent.RunAsync`,
-and `Evaluator.Evaluate` each open a log scope carrying `TaskId` at the start
-of processing one record. Every log line emitted anywhere downstream during
-that record's processing, inside `ValidatingMessageComposer`,
+**Correlation:** `CliRunner`'s per-record loop is the one owner of the `TaskId`
+log scope (D16). Every log line emitted anywhere downstream during that
+record's processing, inside `LeasingMessageAgent`, `ValidatingMessageComposer`,
 `OpenAiMessageComposer`, the CLI's own per-record lines, carries that
 `TaskId` via the scope, without any of those classes needing to accept or
 pass it explicitly, and without restating it in their own message text
-(rule 3, section 5). This is why searching a log for one `TaskId` gives the
-complete story of that one record, not a mix of every record interleaved.
+(rule 3, section 5). Neither the agent nor the evaluator opens a scope of its
+own: two scopes pushing the same key rendered every line as `TaskId=x TaskId=x`.
+The evaluator runs after the loop, so its one failure line names the task id
+in the message instead. A library caller that wants correlation opens its own
+scope the way the CLI does. This is why searching a log for one `TaskId` gives
+the complete story of that one record, not a mix of every record interleaved.
 
 **Log levels, and what each one means here:**
 
