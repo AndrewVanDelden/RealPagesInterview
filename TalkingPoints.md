@@ -120,6 +120,8 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - Each catalog row states only the horizon branch a sample actually showed, so prospect/new has no long branch and prospect/open no short one, and both fall to the generic row rather than to a value nobody observed.
 - D19 (Sprint 4): the row's default call to action waits for Sprint 6, where a composer reads it; a column nothing reads is a column the coverage gate would need a fake test to touch.
 - D20 (Sprint 4): the planner's settings record is deleted, because the one value left in it is the threshold the design says is not configurable.
+- D21 (Sprint 5): a send slot the zone springs forward across resolves past the gap and one it falls back across resolves to the earlier instant, because the old arithmetic stamped an offset the zone never had at the instant it named and the offset travels with the value.
+- D22 (Sprint 5): the diagnostics carry a `schedule` object naming the floor, the zone and the slot, because `send_at` has three inputs and the phase check is that the diagnostics explain every decision.
 - After Sprint 3 the hold-out passes 1 of 12 and the synthetic set 2 of 12, because the template composer emits no options or link; the numbers are pinned in the suite so a drop fails CI.
 
 ## Definitions worth having ready

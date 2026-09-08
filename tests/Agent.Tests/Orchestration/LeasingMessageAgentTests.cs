@@ -1,3 +1,4 @@
+using Agent.Common;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
@@ -33,6 +34,13 @@ public class LeasingMessageAgentTests
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
         Assert.Equal(new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow), result.Diagnostics.ActionPlan);
+
+        // D22: the send is explained by the same run. Sample 1's last interaction is before
+        // the reference time, so the reference time is the floor (A4), and its zone reaches
+        // 09:00 once on that day, so the slot is exact (A20).
+        Assert.Equal(
+            new ScheduleNotes(ScheduleFloor.ReferenceTime, TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, SlotResolution.Exact),
+            result.Diagnostics.Schedule);
     }
 
     [Fact]
@@ -73,6 +81,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
         Assert.Null(result.Diagnostics.ActionPlan);
+        Assert.Null(result.Diagnostics.Schedule);
     }
 
     // A8 through the whole agent: a record that states no persona and no lifecycle stage has

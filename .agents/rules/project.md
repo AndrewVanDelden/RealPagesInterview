@@ -52,25 +52,42 @@ sets it. Never read, print, or write the value.
 
 ## Current phase
 
-Phase 3 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Deterministic core.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components.
 Phase 0 was restarted at step 1 on 2026-09-07 (D12) and passed the same day; Phase 1 passed on
 2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Phase 2 passed on 2026-09-08
 in Sprint 3: the labels of `sample.jsonl`, `holdout_12.jsonl`, and `synthetic_12.jsonl` passed
 as actuals score 100 percent and one corrupted field per check scores a failure on that check;
 both proofs run in the suite (`ScorerProofTests`). Steps 28 to 36 landed in Sprint 3; step 31,
-the model judge, is deferred to Sprint 6 (D15); step 37, a sidecar, is not needed.
-Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and
-the diagnostics explain every decision. Status: not passed.
-Steps 38 to 43 landed in Sprint 4: the catalog keyed on persona and lifecycle stage with its
-generic row, the whole action vocabulary in `ActionTypes`, the `Result` on
-`ActionCatalog.Create` rather than on `Plan` (D18), and `diagnostics.action_plan`, which names
-the horizon branch, the horizon in days, and which row answered. Every tally on all three sets
-is unchanged, which is what a catalog that reproduces A7's rule should do.
-Next step: 44 and 45, the boundaries the synthetic set exposed and the timezone and
-daylight-saving property tests (Sprint 5, the scheduling row of `docs/DESIGN.md` section 9,
-D4). Step 46, the synthetic set through the core with the fuzzy parts stubbed, is the phase
-check itself and closes with Sprint 5.
-Open decisions: none; S1 to S4 and D1 to D20 are in `docs/DECISION_LOG.md`.
+the model judge, is deferred to Sprint 6 (D15); step 37, a sidecar, is not needed. Steps 38 to
+43 landed in Sprint 4: the catalog keyed on persona and lifecycle stage with its generic row,
+the whole action vocabulary in `ActionTypes`, the `Result` on `ActionCatalog.Create` rather
+than on `Plan` (D18), and `diagnostics.action_plan`.
+Phase 3 passed on 2026-09-08 in Sprint 5, steps 44 to 46. Every check the deterministic core
+owns is perfect on the synthetic set run with the template composer, which is the fuzzy part
+stubbed: channel 12 of 12, day 10 of 10, hour 10 of 10, action 12 of 12, opt-out 10 of 10,
+call-to-action type 10 of 10, safety 12 of 12, personalization 9 of 9, and exit code 2 for the
+malformed line by design. The two checks that fail, payload 0 of 10 and language 9 of 10, are
+composition, which Sprint 6 owns and D5 scopes; no decision-core output is unexpected. On the
+diagnostics half of the check, every decision whose working is not readable from the input and
+the output has an account: consent (`consent_verified`, `suppression_reason`), the action
+(`action_plan`, D18), and the send (`schedule`, D22). The channel has none by the same rule and
+deliberately: its working is the record's own ordered `channel_preferences` intersected with
+its `consent`, both of which the input states and the output's channel answers.
+Steps 44 to 46 landed in Sprint 5: the send slot resolved against the zone's rules rather than
+stamped with an offset the zone never had (D21, A20), `diagnostics.schedule` naming the floor,
+the zone and the slot (D22), and the property tests of step 45, which sweep every system zone
+at both send hours across every 2026 transition and assert that the offset stamped is the one
+the zone was on and that the send never lands before the slot it was asked for. Both transition
+branches are unreachable from the current zone database at 09:00 and 10:00, so they are proved
+against custom zones built in `tests/Agent.Tests/TestSupport/SlotResolutionTestZones.cs`. Every
+tally on all three sets is unchanged, which is what a rule no record reaches should do.
+Check for Phase 4: with the network disabled, the product completes the full example set using
+the offline path and the diagnostics say so on every record. Status: not passed; nothing in the
+diagnostics yet records which composer produced a message (playbook step 57).
+Next step: 47 to 60, Sprint 6, Composition (the Sprint 6 row of `docs/DESIGN.md` section 9, D5,
+D19): facts, language handling, the catalog's default call-to-action column, the model prompt
+inputs and its untrusted-data boundary, and the body judge deferred from Sprint 3 (D15).
+Open decisions: none; S1 to S4 and D1 to D22 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
@@ -155,6 +172,12 @@ Update this section at the end of every sprint. It is the first thing an agent r
 - The planner does not return a `Result`; `ActionCatalog.Create` does (D18). Adding a
   per-record failure to `Plan` re-opens a decision that was closed because the generic row
   makes every record classifiable.
+- `SlotResolution.ShiftedPastGap` and `EarlierOfTwo` never fire on real data: no zone in the
+  current database transitions across 09:00 or 10:00, the only two send hours (A5), so every
+  record on every set reads `exact`. They are not dead code and the coverage gate is not being
+  gamed: `TimeZones.ResolveSlot` is proved against the custom zones in
+  `tests/Agent.Tests/TestSupport/SlotResolutionTestZones.cs`, whose transitions do cover the
+  slot, plus a sweep of every system zone across every 2026 transition (D21, A20).
 - Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
   `docs/CODE_REVIEW.md` before flagging either.
 

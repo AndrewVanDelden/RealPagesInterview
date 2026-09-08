@@ -60,4 +60,36 @@ public class AgentDiagnosticsTests
 
         Assert.Contains("\"action_plan\":null", json);
     }
+
+    // D22 and the Phase 3 check: send_at has three inputs (A4's floor, A6's zone, A5's hour),
+    // and the diagnostics name all three. The two enums are spelled the way every other enum
+    // on the wire is (D3).
+    [Fact]
+    public void Serializes_Schedule_WithSnakeCaseFloorAndSlot()
+    {
+        var diagnostics = new AgentDiagnostics(
+            true,
+            true,
+            true,
+            0,
+            SuppressionReason.None,
+            new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
+            new ScheduleNotes(ScheduleFloor.LastInteraction, "America/Chicago", SlotResolution.ShiftedPastGap));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"schedule\":{\"floor\":\"last_interaction\",\"time_zone_id\":\"America/Chicago\",\"slot\":\"shifted_past_gap\"}", json);
+    }
+
+    // A record with no message was never scheduled, so there is no send to explain. Same rule
+    // the action plan follows on a record the consent gate suppressed.
+    [Fact]
+    public void Serializes_AbsentSchedule_AsNull()
+    {
+        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"schedule\":null", json);
+    }
 }

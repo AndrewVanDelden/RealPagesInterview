@@ -96,6 +96,7 @@ values (the confound). Ids and names are labels, not evidence.
 | Channel | first entry of `channel_preferences` that is opted in | [sms, email], sms on: sms | [email, sms], sms off: email | "sms when consented, else email" fits both too; A3 picks preference order because the list is ordered |
 | Send day | first day at or after max(reference time, `last_interaction`) in `input.timezone` | last 12-08 09:04 local, ref 12-09: 12-09 | last 12-06 05:30 local, ref 12-09: 12-09 | "last_interaction plus N" needs N=1 and N=3, two constants for two rows; the reference time is A4 |
 | Send hour | by channel: sms 09:00, email 10:00 local | 09:00 | 10:00 | voice unseen; minutes unseen; A5 |
+| Send slot on a transition day | a slot the zone springs forward across resolves past the gap; one it falls back across resolves to the earlier of its two instants; `schedule.slot` in the diagnostics names which | both samples exact | both samples exact | no zone in the current database transitions across 09:00 or 10:00, so neither branch is reachable from the data; A20, D21 |
 | Subject | email only | null | present | A11 |
 | Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel | all present | all present | A12 |
 | Call to action type | `constraints.primary_cta` through a vocabulary table | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9) |
@@ -229,6 +230,7 @@ constant until a second known value earns a setting.
 | A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics | section 2; no decision can be made without these three | no |
 | A18 | The model writes prose only and picks the call-to-action type from the catalog under constrained decoding; the template composer is the offline path and the fallback | the statement asks for an autonomous agent, not a model; decision S2 | no |
 | A19 | The twelve-record file is an evaluation set; no rule or constant is fitted to it | requester's answer, D9 | no |
+| A20 | The channel's slot on a day the zone springs forward across it resolves to the first instant that exists at or after the slot; a slot the zone falls back across, and so reaches twice, resolves to the earlier instant; the diagnostics name which happened | none: both samples are `America/Chicago` at 09:00 and 10:00, and no transition in the current zone database covers those hours, so the branch is unreachable from any observed record; stated over a zone's adjustment rules, proved against custom zones and a sweep of every system zone's transitions (D21) | no |
 
 ## 8. Non-goals, quality bar, security
 
@@ -249,7 +251,7 @@ Each sprint cites decisions in the log; one PR per sprint against `dev`.
 | 2 Contracts (landed 2026-09-08) | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape and reason, consent first (D1, D3, D10, the first line of D2) | every record of both files parses to one row and runs to a valid output; diagnostics name every defaulted field and every unknown member |
 | 3 Harness (landed 2026-09-08) | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6, D13 to D16) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for all three sets recorded and pinned in the suite |
 | 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
-| 5 Scheduling | reference time, floor, timezone and DST property tests (D4); repoint the `SendScheduler` comment from "assumptions log #2" to A4 and A5 | property tests green; unknown timezone is a row, not an exit |
+| 5 Scheduling (landed 2026-09-08) | reference time, floor, the slot on a transition day, and the schedule in the diagnostics (D4, D21, D22) | property tests green over every system zone at both send hours across every 2026 transition; unknown timezone is a row, not an exit |
 | 6 Composition | facts, language handling, catalog-driven call to action, model prompt inputs, judge (D5) | both sets compose on the offline path with the network disabled |
 | 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
 | 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
@@ -300,4 +302,19 @@ exists for that persona and stage and 1 because the row that matched states no a
 that horizon branch. On `synthetic_12.jsonl`: `catalog_row` on 7, `generic_row_no_branch` on
 2, `generic_row_no_match` on 1, null on 2, and the action check is 12 of 12, so the generic
 row answers those three records correctly. Measurements, not targets (D6, D9);
+`BaselineNumbersTests` still pins every tally.
+
+**Numbers after Sprint 5** are the Sprint 3 numbers again, every tally unchanged on all three
+sets. Nothing was expected to move: the slot rule (A20) only reaches a record whose zone
+transitions across 09:00 or 10:00, and the current zone database has none, so every record on
+every set resolves its slot exactly. What the sprint adds is the account of the send. On
+`holdout_12.jsonl`, `schedule` reads `reference_time` / `America/Chicago` / `exact` on 11
+records and null on the 1 the consent gate suppressed. On `synthetic_12.jsonl`: 8 records
+`reference_time` / `America/Chicago` / `exact`; the unknown-timezone record (item 8) reads
+`UTC`, which is A6 visible in the diagnostics rather than inferred from a send time; the
+daylight-saving record (item 8's second case) reads `last_interaction`, since its last
+interaction is after the run's reference time, and `exact`, because 10:00 is past that day's
+transition; and the 2 suppressed records read null. The day and hour checks are unchanged
+on both sets, 7 of 11 and 5 of 11 on the hold-out and 10 of 10 and 10 of 10 on the synthetic
+set, so no send moved. Measurements, not targets (D6, D9);
 `BaselineNumbersTests` still pins every tally.

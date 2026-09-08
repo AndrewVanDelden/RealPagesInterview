@@ -24,7 +24,7 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 | `--replay <file.json>` | no | Re-score an existing `--output` file against `--input` without running the agent (D14). Rows pair with the parsed records by position; a file that is not a JSON array, or whose row count differs from the parsed input, is refused with exit code 1. Safety and latency read `n/a` in replay: they exist only in the run that wrote the file. |
 | `--now <ISO-8601 date-time>` | no (default: the current UTC time) | The run's reference time (D10): the day send times are floored to and horizons are counted from. The documented run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, the oracle's date. Logged once per run. |
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
-| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
+| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`, `schedule`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score). Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
@@ -68,6 +68,15 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    horizon branch, and `generic_row_no_match` when no row exists for that
    persona and stage. A whole `action_plan` of `null` means the consent gate
    suppressed the record before the planner ran.
+   `schedule` says how `send_at` was reached: `floor`, which is
+   `last_interaction` when the record's last interaction is after the run's
+   reference time and `reference_time` otherwise, `time_zone_id`, the zone
+   the slot was resolved in and so `UTC` on a record whose timezone the
+   runtime does not know, and `slot`, which is `exact` on every record the
+   current zone database can produce, `shifted_past_gap` when the zone
+   sprang forward across the slot, and `earlier_of_two` when it fell back
+   across it. A whole `schedule` of `null` means the scheduler never ran:
+   the consent gate suppressed the record, or composition failed before it.
 
 ## 3. How logging actually works
 

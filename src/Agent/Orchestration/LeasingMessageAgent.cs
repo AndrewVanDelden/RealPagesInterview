@@ -98,9 +98,12 @@ public sealed class LeasingMessageAgent(
             return Suppressed(consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
         }
 
-        // Step 4: schedule (A4, A5).
-        DateTimeOffset sendAt = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
-        NextMessage finalMessage = composeResult.Value with { SendAt = sendAt };
+        // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
+        // diagnostics can name the floor, the zone and the slot the way they name the plan
+        // (D22); the slot is never a wall time the zone did not reach (A20).
+        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
+        NextMessage finalMessage = composeResult.Value with { SendAt = scheduled.SendAt };
+        var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot);
 
         // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
         // section 5): ValidatingMessageComposer already guarantees a clean message under
@@ -115,7 +118,8 @@ public sealed class LeasingMessageAgent(
             BrandStyleApplied: true,
             validation.Violations.Count,
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
-            actionPlan);
+            actionPlan,
+            scheduleNotes);
 
         if (hasViolations)
         {
