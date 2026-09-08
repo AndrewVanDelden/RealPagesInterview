@@ -36,7 +36,7 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
 
 | Exit code | Meaning | Next step |
 |---|---|---|
-| `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug, a suppressed message (`next_message: null`) is a valid *decision*, not a failure. Check `--diagnostics` if a suppression looks wrong. |
+| `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug: a suppressed message (a `next_message` with channel `none`) is a valid *decision*, not a failure. `--diagnostics` names the `suppression_reason`. |
 | `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, or a missing `OpenAI:ApiKey`. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, or the `dotnet user-secrets set` command to run). Nothing else ran; no records were processed. |
 | `2` (PartialFailure) | At least one record threw an unhandled exception during processing. | Every other record still completed and is in `--output`, this is deliberate per-record isolation, not a partial write. Find which record via the stderr line (`Record '<TaskId>' failed: <ExceptionType>: <message>`), or the log (see below) for the full stack trace. |
 
