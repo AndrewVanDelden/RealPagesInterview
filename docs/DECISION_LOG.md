@@ -604,3 +604,90 @@ the shared-counter retry attribution.
 the nine fixes above were additionally verified by reverting each one in isolation and
 confirming its new test goes red before reapplying it.
 
+
+## Latency decisions, proposed for Sprint 7 (2026-09-08)
+
+Written after the step 60 run, from its measurements rather than from preference. One scope
+note before them: DESIGN.md section 9 gives Sprint 7 to safety and states (D3). These are
+latency, so scheduling them means widening that row or giving them a sprint of their own, and
+that scheduling call is not taken here. A task citing any of these is not scheduled until it is.
+
+**D32. Measure a successful call before tuning anything (2026-09-08).** Question: which of the
+levers below is worth pulling, given that this project has never observed a successful model
+call. Options: tune from the failure path's arithmetic alone; or measure what one successful
+completion costs in wall-clock first, and tune against that number. Recommendation: measure
+first. The 5.7 seconds a record spends on the model path is entirely failure cost, four attempts
+capped at 1000 ms plus two backoffs, and every threshold below is arithmetic about a number
+nobody in this project has: how long a completion of this size actually takes. A tuning decision
+taken without it is a guess with a decimal point. Scopes: D33 to D36; any Sprint 7 latency task.
+Evidence: the step 60 run in DESIGN.md section 9, 23 records, 46 model calls, 92 HTTP attempts,
+zero successes. Assumption: A15.
+
+**D33. What a timeout is allowed to cost (2026-09-08).** Question: the SDK's retry policy treats
+a timeout as transient and retries it, so a call that was too slow is made a second time inside
+the same budget. Options: keep the default; or retry only the transient statuses the vendor
+names (408, 429, 5xx) and never a timeout. Recommendation: the second, on two measurements. A
+timeout says the completion did not fit the budget, and an identical second call inside the same
+budget has no mechanism by which it would fit; it costs one attempt plus one backoff, about 2.8
+of the 5.7 seconds. And it is not free: D31's addendum measured that about a third of abandoned
+attempts complete server-side and are billed in full, so a futile retry is a paid futile retry.
+Scopes: `OpenAiCompletionClient`'s retry policy, `CountingRetryPolicy`, and D35, which only
+exists because retries are counted into the budget. Evidence: the step 60 logs, four
+timeout-terminated attempts per record; the usage page, about 30 billable requests from 92
+attempts. Assumption: A15.
+
+**D34. What the compose-validate loop retries (2026-09-08).** Question: `ValidatingMessageComposer`
+composes a second time after any failure, including a transport failure. Options: keep it; or
+retry only a safety rejection, where the second attempt carries the rejection reason and can
+plausibly do better, and go straight to the fallback on a transport failure. Recommendation: the
+second. The corrective retry exists to feed a violation reason back into the prompt (playbook
+step 56); a timeout is not a content problem, so re-prompting is delay with no mechanism behind
+it, and it is the other half of the 5.7 seconds. The fallback composer is deterministic and
+always available, so the record still gets a message either way. Scopes:
+`ValidatingMessageComposer`, and `CompositionNotes.Attempts`, which would read 2 rather than 3
+on a transport-failed record; that changes a pinned test and how a diagnostics row reads.
+Evidence: the step 60 run, `attempts` 3 on every one of 23 records, two of the three failing for
+transport reasons. Assumption: A18.
+
+**D35. What one attempt is allowed to take, once a timeout is not retried (2026-09-08).**
+Question: D28 divides the stated budget by 1 + `MaxRetries` so that a call and its retry both
+fit inside it. If timeouts are not retried (D33), that division buys nothing for the case that
+actually happens, and it halves the time the one attempt that matters is given. Options: keep
+dividing; give one attempt the whole budget and let the transient-status retry path exceed it,
+stated rather than hidden; or divide only for the failure classes that are retried.
+Recommendation: none taken, because it needs D32's measurement. If a successful completion lands
+under 2000 ms, the second option roughly doubles the chance of success at no cost to the common
+path; if it lands over 2000 ms, no division scheme helps and D36 is the real question. Scopes:
+`OpenAiCompletionClient.PerAttemptTimeout`, D28 and its addendum. Evidence: none yet, which is
+the point of D32.
+
+**D36. What `p95_latency_ms` is (2026-09-08).** Question: D28 reads the records' stated threshold
+as a bound on the model call; D31's third way out reads it as a reporting threshold that the
+scorer measures and nothing enforces. Options: a bound, as today; a reporting threshold, with the
+call timeout configured separately; or a bound with a documented override for comparison runs,
+which is D31's second way out. Recommendation: not taken here. It needs D32 and the requester,
+because it decides whether this product can use a model at all on these records, and each option
+costs something different: as a bound with these thresholds the model answers nothing, which the
+step 60 run measured at 0 of 23; as a reporting threshold the product can use the model and the
+p95 check simply fails and says so, which is honest but means shipping a configuration that
+misses a stated threshold on purpose; the override keeps both and adds a flag whose only user is
+an evaluation run. Scopes: D28, D31, `ModelCallBudget`, the CLI. Evidence: the step 60 run.
+
+**D37. Batch concurrency (2026-09-08).** Question: `CliRunner`'s batch loop is sequential, so a
+batch's wall-clock is the sum of its per-record latencies, and with a model in the path that is
+seconds per record rather than milliseconds. Options: keep it sequential; or run records under
+bounded concurrency. Recommendation: worth doing, after D32, and the first prerequisite is
+already stated in the D31 addendum, which scoped this same finding out of the PR #21 review:
+the retry attribution has to stop diffing one shared counter before it can be made concurrent.
+This decision adds a second prerequisite that addendum does not name: D14 pairs output rows to
+input records by position, and the per-record log scope assumes one record at a time, so both
+have to survive out-of-order completion. Scopes: `CliRunner`'s batch loop, `CountingRetryPolicy`,
+D14. Evidence: the D31 addendum's measurement of retries reported as 2 and 0 for two concurrent
+calls; the step 60 run's 63 seconds of wall-clock for 12 records.
+
+**Not a lever, recorded so it is not proposed again.** Prompt caching does not apply here.
+Automatic caching engages above a prompt-prefix threshold these prompts do not reach, about 430
+tokens against roughly 1024, and the vendor's usage page reports a 0 percent hit rate for this
+project. The system prompt being identical on every record is what makes it look promising, and
+the length is what rules it out. If prompts grow past the threshold, this becomes a real lever
+and the numbers should be checked again.
