@@ -31,6 +31,7 @@ public class LeasingMessageAgentTests
         Assert.True(result.Diagnostics.FairHousingCheckPassed);
         Assert.True(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
+        Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
     }
 
     [Fact]
@@ -47,8 +48,10 @@ public class LeasingMessageAgentTests
         Assert.Equal(3, result.Output.NextAction.Value);
     }
 
+    // A2 and D2: consent first. Not contactable is a no_op with its reason and a
+    // next_message object with channel none; nothing else runs.
     [Fact]
-    public async Task RunAsync_NoConsentedChannel_SuppressesMessageButStillPlansNextAction()
+    public async Task RunAsync_NoConsentedChannel_EmitsNoneMessageAndNoOpWithReason()
     {
         IMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase suppressedCase = SampleProspectCases.Minimal() with
@@ -58,12 +61,16 @@ public class LeasingMessageAgentTests
 
         AgentRunResult result = await agent.RunAsync(suppressedCase, ReferenceTime);
 
-        Assert.Null(result.Output.NextMessage);
-        Assert.NotNull(result.Output.NextAction);
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Null(result.Output.NextMessage.Body);
+        Assert.Null(result.Output.NextMessage.SendAt);
+        Assert.Equal("no_op", result.Output.NextAction.Type);
+        Assert.Equal("no_contact_consent", result.Output.NextAction.Reason);
         Assert.True(result.Diagnostics.ConsentVerified);
         Assert.Null(result.Diagnostics.FairHousingCheckPassed);
         Assert.False(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
+        Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
     }
 
     [Fact]
@@ -80,12 +87,13 @@ public class LeasingMessageAgentTests
 
         AgentRunResult result = await agent.RunAsync(impossibleCase, ReferenceTime);
 
-        Assert.Null(result.Output.NextMessage);
-        Assert.NotNull(result.Output.NextAction);
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Equal("start_cadence", result.Output.NextAction.Type);
         Assert.True(result.Diagnostics.ConsentVerified);
         Assert.Null(result.Diagnostics.FairHousingCheckPassed);
         Assert.False(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
+        Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
     }
 
     // D1 end to end: a record carrying only the three required members runs to a message
@@ -117,11 +125,13 @@ public class LeasingMessageAgentTests
 
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
 
-        Assert.Null(result.Output.NextMessage);
-        Assert.NotNull(result.Output.NextAction);
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Null(result.Output.NextMessage.Body);
+        Assert.Equal("start_cadence", result.Output.NextAction.Type);
         Assert.False(result.Diagnostics.FairHousingCheckPassed);
         Assert.True(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
+        Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
     }
 
     [Fact]

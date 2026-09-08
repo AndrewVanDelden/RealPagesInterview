@@ -67,7 +67,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         }
 
         AgentRunResult result = run.Result;
-        NextMessage? actual = result.Output.NextMessage;
+        NextMessage? actual = AsPresent(result.Output.NextMessage);
         CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
         CaseThresholds thresholds = prospectCase.ThresholdsOrEmpty;
         string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(constraints.PrimaryCta);
@@ -111,6 +111,11 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
     // D3), and DESIGN.md section 2's null channel.
     private static CommunicationChannel EffectiveChannel(NextMessage? message) =>
         message?.Channel ?? CommunicationChannel.None;
+
+    // A suppressed message (D3's object with channel none) has no body, opt-out, or call
+    // to action to check; it is scored as no message.
+    private static NextMessage? AsPresent(NextMessage? message) =>
+        EffectiveChannel(message) == CommunicationChannel.None ? null : message;
 
     // Mirrors SafetyValidator.Validate's own search text (Subject+Body when Subject is
     // present), so this checks the same opt-out phrasing the validator actually enforces,

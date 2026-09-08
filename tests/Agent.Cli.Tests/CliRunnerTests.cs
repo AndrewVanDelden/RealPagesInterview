@@ -271,6 +271,42 @@ public class CliRunnerTests
         }
     }
 
+    // D3 on the wire: a record with no consented channel is a next_message object with
+    // channel none, a no_op with its reason, and a diagnostics row naming the suppression.
+    [Fact]
+    public async Task RunAsync_NoConsentedChannel_WritesNoneMessageNoOpAndSuppressionReason()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        string line = RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"email_opt_in\":true", "\"email_opt_in\":false")
+            .Replace("\"sms_opt_in\":true", "\"sms_opt_in\":false");
+        await File.WriteAllTextAsync(inputPath, line);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            JsonElement record = output.RootElement[0];
+            Assert.Equal("none", record.GetProperty("next_message").GetProperty("channel").GetString());
+            Assert.Equal(JsonValueKind.Null, record.GetProperty("next_message").GetProperty("body").ValueKind);
+            Assert.Equal("no_op", record.GetProperty("next_action").GetProperty("type").GetString());
+            Assert.Equal("no_contact_consent", record.GetProperty("next_action").GetProperty("reason").GetString());
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("no_contact_consent", diagnostics.RootElement[0].GetProperty("diagnostics").GetProperty("suppression_reason").GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure()
     {

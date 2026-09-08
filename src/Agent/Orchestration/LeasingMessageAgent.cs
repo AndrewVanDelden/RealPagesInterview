@@ -55,58 +55,78 @@ public sealed class LeasingMessageAgent(
     private async Task<AgentRunResult> RunUnguardedAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken)
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
+
+        // Step 1: consent first (D2). Not contactable is a no_op with its reason and
+        // nothing else runs.
         ConsentDecision consentDecision = consentGate.Evaluate(prospectCase.Consent, prospectCase.ChannelPreferences);
-        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
-        NextAction nextAction = planner.Plan(context.MoveDateTarget, referenceDate);
 
         if (!consentDecision.IsContactable)
         {
             log.LogInformation("Suppressing message: prospect is not contactable.");
-            return Suppressed(consentDecision, nextAction);
+            return Suppressed(consentDecision, SuppressionReason.NoContactConsent, new NextAction("no_op", Reason: "no_contact_consent"));
         }
 
         CommunicationChannel channel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent).Value;
 
+        // Step 2: plan from the horizon (A7), counted in the record's local date (D10).
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
+        NextAction nextAction = planner.Plan(context.MoveDateTarget, referenceDate);
+
+        // Step 3: compose.
         Result<NextMessage> composeResult = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         if (!composeResult.IsSuccess)
         {
             log.LogWarning("Suppressing message: composition failed ({Error}).", composeResult.Error);
-            return Suppressed(consentDecision, nextAction);
+            return Suppressed(consentDecision, SuppressionReason.CompositionFailed, nextAction);
         }
 
+        // Step 4: schedule (A4, A5).
         DateTimeOffset sendAt = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
         NextMessage finalMessage = composeResult.Value with { SendAt = sendAt };
 
+        // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
+        // section 5): ValidatingMessageComposer already guarantees a clean message under
+        // normal wiring, but this is the orchestrator's own gate, not borrowed trust in the
+        // composer's cooperation.
         SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.ConstraintsOrEmpty);
+
+        if (validation.Violations.Count > 0)
+        {
+            log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
+            var violationDiagnostics = new AgentDiagnostics(
+                consentDecision.ConsentVerified,
+                validation.FairHousingCheckPassed,
+                BrandStyleApplied: true,
+                validation.Violations.Count,
+                SuppressionReason.SafetyViolation);
+            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), violationDiagnostics);
+        }
+
+        // Step 6: emit.
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
             validation.FairHousingCheckPassed,
             BrandStyleApplied: true,
             validation.Violations.Count);
 
-        // An unsafe or off-brand draft never leaves the agent (DESIGN.md section 4):
-        // ValidatingMessageComposer already guarantees a clean message under normal
-        // wiring, but this is the orchestrator's own gate, not borrowed trust in the
-        // composer's cooperation.
-        if (validation.Violations.Count > 0)
-        {
-            log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
-            return new AgentRunResult(new AgentOutput(NextMessage: null, nextAction), diagnostics);
-        }
-
         log.LogInformation("Message composed: channel={Channel}, nextAction={NextAction}.", channel, nextAction.Type);
         return new AgentRunResult(new AgentOutput(finalMessage, nextAction), diagnostics);
     }
 
-    private static AgentRunResult Suppressed(ConsentDecision consentDecision, NextAction nextAction)
+    // D3: suppression on the wire is a next_message object with channel none and every
+    // other member null, the oracle's own spelling, never a null object.
+    private static NextMessage SuppressedMessage() => new(CommunicationChannel.None);
+
+    private static AgentRunResult Suppressed(ConsentDecision consentDecision, SuppressionReason reason, NextAction nextAction)
     {
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
             FairHousingCheckPassed: null,
             BrandStyleApplied: false,
-            SafetyViolationCount: 0);
+            SafetyViolationCount: 0,
+            reason);
 
-        return new AgentRunResult(new AgentOutput(NextMessage: null, nextAction), diagnostics);
+        return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
     }
 }

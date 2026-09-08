@@ -37,6 +37,10 @@ public class EvaluatorTests
     private static AgentRunResult SuppressedResult(NextAction? action = null) =>
         new(new AgentOutput(null, action ?? BaselineAction), new AgentDiagnostics(true, null, false, 0));
 
+    // D3: the agent's own suppressed shape is a next_message object with channel none.
+    private static AgentRunResult SuppressedAsNoneObjectResult(NextAction? action = null) =>
+        new(new AgentOutput(new NextMessage(CommunicationChannel.None), action ?? BaselineAction), new AgentDiagnostics(true, null, false, 0));
+
     private static ScoredRun Run(ProspectCase prospectCase, AgentRunResult result, double latencyMs = 1) =>
         new(prospectCase, result, latencyMs);
 
@@ -303,6 +307,24 @@ public class EvaluatorTests
     {
         ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(NextMessage: null, BaselineAction));
         AgentRunResult actual = SuppressedResult();
+
+        Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
+
+        RecordScore score = scorecard.RecordScores[0];
+        Assert.True(score.ChannelMatches);
+        Assert.True(score.OptOutPresent);
+        Assert.True(score.PrimaryCtaPresent);
+        Assert.Equal(1.0, score.PersonalizationScore);
+        Assert.True(score.Passed);
+    }
+
+    // D3: the agent's suppressed output (a next_message object with channel none) scores
+    // exactly like a null message: no message-shape check applies to it.
+    [Fact]
+    public void Evaluate_ActualSuppressedAsNoneObject_ScoresLikeANullMessage()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(NextMessage: null, BaselineAction));
+        AgentRunResult actual = SuppressedAsNoneObjectResult();
 
         Scorecard scorecard = Evaluator.Evaluate([Run(prospectCase, actual)]);
 

@@ -25,6 +25,39 @@ public class AgentOutputTests
         Assert.Equal("start_cadence", roundTripped.NextAction.Type);
     }
 
+    // D3: suppression on the wire is a next_message object with channel none and null
+    // fields, matching the oracle's shape; next_action omits the members it does not use.
+    [Fact]
+    public void Serializes_SuppressedOutput_AsNoneObjectWithNullFieldsAndNoOpWithReason()
+    {
+        var output = new AgentOutput(
+            new NextMessage(CommunicationChannel.None),
+            new NextAction("no_op", Reason: "no_contact_consent"));
+
+        string json = JsonSerializer.Serialize(output, AgentJsonOptions.Default);
+
+        Assert.Contains("\"channel\":\"none\"", json);
+        Assert.Contains("\"send_at\":null", json);
+        Assert.Contains("\"body\":null", json);
+        Assert.Contains("\"cta\":null", json);
+        Assert.Contains("\"type\":\"no_op\"", json);
+        Assert.Contains("\"reason\":\"no_contact_consent\"", json);
+        Assert.DoesNotContain("\"name\":null", json);
+        Assert.DoesNotContain("\"value\":null", json);
+    }
+
+    [Fact]
+    public void Serializes_NextActionWithValue_OmitsNameAndReason()
+    {
+        var output = new AgentOutput(new NextMessage(CommunicationChannel.Sms, Body: "hi"), new NextAction("follow_up_in_days", Value: 3));
+
+        string json = JsonSerializer.Serialize(output, AgentJsonOptions.Default);
+
+        Assert.Contains("\"value\":3", json);
+        Assert.DoesNotContain("\"name\"", json);
+        Assert.DoesNotContain("\"reason\"", json);
+    }
+
     [Fact]
     public void RoundTrips_ThroughAgentJsonOptions_WhenNextMessageIsSuppressed()
     {
