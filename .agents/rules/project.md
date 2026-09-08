@@ -52,8 +52,7 @@ sets it. Never read, print, or write the value.
 
 ## Current phase
 
-Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance, with one
-step of Phase 4 still open and blocked on the requester (step 60, named below).
+Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance.
 Phase 0 was restarted at step 1 on 2026-09-07 (D12) and passed the same day; Phase 1 passed on
 2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Phase 2 passed on 2026-09-08
 in Sprint 3: the labels of all three sets passed as actuals score 100 percent and one corrupted
@@ -78,14 +77,14 @@ evaluation sets, and only from rules earned on the fitting evidence and the synt
 payload 0 to 11 of 11 and language 10 to 11 of 11 on the hold-out, payload 0 to 10 of 10 and
 language 9 to 10 of 10 on the synthetic set, and records passing every check 1 to 4 of 12 and
 2 to 12 of 12. Every tally is in `docs/DESIGN.md` section 9 and pinned in `BaselineNumbersTests`.
-One step of Phase 4 is open and needs the requester: step 60, the live model run against the
-examples with both scores recorded side by side. It spends the OpenAI key, so it is not run
-without being asked. Two facts to carry into it: one call and its retry are bounded by the
-strictest stated `p95_latency_ms`, 2000 ms on these sets, so a slower call times out and the
-fallback shows up as `composer: template` in the diagnostics (D28, and its addendum for what
-that bound does and does not cover); and the same run under `--judge` is the first
-measurement the body has ever had, since the personalization proxy reads 1.00 on every template
-message by construction.
+Step 60 closed on 2026-09-08 with a live run against all three sets, so Phase 4 is complete.
+The model answered no record: every record reads `composer: template` with `attempts` 3, because
+the strictest stated `p95_latency_ms` is 2000 ms and the client splits that into two 1000 ms
+attempts (D28), which no completion of this size meets. 46 model calls, 92 HTTP requests, all
+abandoned at their timeout, no record lost. Every tally is unchanged from the offline run and
+the p95 check fails at about 5700 ms where it passes at 18 ms offline. D31 records the choice
+step 60 asks for, the offline path, and the open question a real comparison would need answered
+first.
 Check for Phase 5: every validator has a passing test, a failing test, and a false-positive
 test. Status: not passed; the safety validator has passing and failing tests and no
 false-positive tests, the required states of D3 are still claimed rather than earned, and
@@ -94,7 +93,9 @@ Next step: 61 to 71, Sprint 7, Safety and states (the Sprint 7 row of `docs/DESI
 D3): one validator per stated constraint with its own result, the hard-gate or soft-flag decision
 written down per validator, an allow-list for legitimate uses a keyword proxy would catch, the
 earned states in the diagnostics, and a review-queue record on a final validation failure.
-Open decisions: none; S1 to S4 and D1 to D30 are in `docs/DECISION_LOG.md`.
+Open decisions: one, the D31 open question on how a real model-versus-template comparison
+could be run at all, which needs the requester. S1 to S4 and D1 to D31 are in
+`docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and

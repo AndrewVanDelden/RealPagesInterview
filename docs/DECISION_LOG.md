@@ -472,3 +472,32 @@ transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the 
 still not bounded is stated rather than hidden: after a failed call the compose-validate loop
 composes once more before falling back, so a record that fails composition can spend up to
 twice its budget before the template composer answers, and the p95 check measures that.
+
+**D31. Which implementation the product uses on these sets (2026-09-08).** Question: playbook
+step 60 says to run the real implementation against the examples, compare its score to the
+offline one, record both per case type, and choose with a stated reason. Options: the model
+composer, the template composer, or a mix per case type. Recommendation: the template
+composer, on the measurement rather than on preference. The run was made on 2026-09-08 with
+`--composer openai` against all three sets, and the model answered no record at all: every
+record's `composition` reads `template` with `attempts` 3, which is two model attempts and the
+fallback. The cause is stated in D28 and was predicted before the run: the strictest stated
+`p95_latency_ms` on these sets is 2000 ms, the client divides that into two 1000 ms attempts,
+and a `gpt-4o-mini` completion of this size does not return in 1000 ms. So the comparison step
+60 asks for is degenerate on this data: both paths score identically because the same composer
+wrote every message. What the run does measure is the degradation path end to end, on real
+network calls: 23 records, 46 model calls, 92 HTTP requests, every one abandoned at its
+timeout, no record lost, no output row missing, and the diagnostics naming the fallback on
+every record. The p95 check, which passes at 18 ms offline, fails at about 5700 ms here, which
+is the honest cost of trying. Scopes: DESIGN.md section 9, the Phase 4 close, any future
+comparison run. Evidence: the run recorded in DESIGN.md section 9 under "Numbers after the step
+60 run". Assumptions: A15, A18.
+
+**D31 open question, for the requester.** A real model-versus-template comparison needs the
+model to answer at least once, and on these sets it cannot while the timeout is derived from
+the records' own stated budget. Three ways out, none taken without a decision: state that the
+stated budget and a live model are incompatible and leave the offline path as the answer, which
+is what this paragraph does today; add a documented override flag so a comparison run can raise
+the budget without editing the evaluation data, which is a product change earned only by this
+need; or treat `p95_latency_ms` as a reporting threshold rather than a call timeout, which
+contradicts playbook step 49 and D28. The first is free and honest, the second costs a flag and
+another live run, the third reopens a decision.

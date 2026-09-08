@@ -351,3 +351,25 @@ facts by construction, and the judge, which is the check with teeth, is off. A r
 `--judge` measures it, and the honest comparison of the offline and the model paths (playbook
 step 60) is a live run, recorded here when it is made. Measurements, not targets (D6, D9);
 `BaselineNumbersTests` pins every tally in this paragraph.
+
+**Numbers after the step 60 run**, `--composer openai` against all three sets on 2026-09-08,
+the first live model run this project has made. The model wrote nothing: on all 23 records that
+have a message, `diagnostics.composition` reads `composer: template` with `attempts: 3`, which
+is the compose-validate loop's two model attempts and then the fallback. Every model call was
+abandoned at its timeout, 46 calls and 92 HTTP requests in total, because the strictest stated
+`p95_latency_ms` is 2000 ms, the client splits that into two 1000 ms attempts (D28), and a
+completion of this size does not come back in 1000 ms. Every per-check tally is therefore
+identical to the offline run above, since the same composer wrote every message: 2 of 2, 4 of
+12 and 12 of 12 records passing, with exit codes 0, 0 and 2. The one number that moved is
+latency: the batch p95 is 5704 ms, 5698 ms and 5699 ms against a 2000 ms budget, so the p95
+check fails on all three sets where it passes at 18 ms offline. That is the cost of trying, and
+it is what the fallback path is for: no record was lost, no output row is missing, and the
+diagnostics name the fallback on every one.
+
+What this settles and what it does not. It settles step 60's choice, which is D31: the offline
+path is what this product uses on these sets, on the measurement rather than on preference. It
+does not settle whether the model writes better messages than the template, because on this
+data it never got to write one; that comparison needs the open question in D31 answered first.
+It does settle that the degradation path works on real network failures rather than only on
+fabricated ones: the timeout, the retry, the bounded compose loop, the fallback and the
+diagnostics all behaved as the tests said they would, against the live API.
