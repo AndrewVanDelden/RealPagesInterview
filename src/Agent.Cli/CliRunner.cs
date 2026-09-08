@@ -48,7 +48,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         string? replayPath = GetOption(args, "--replay");
 
         // D30: the judge is off unless it is asked for. It is a presence flag, not an
-        // option with a value: there is one judge and its model is configuration.
+        // option with a value: there is one judge, and its model is pinned rather than
+        // chosen per run (playbook step 31).
         bool judgeRequested = args.Contains("--judge", StringComparer.Ordinal);
 
         if (inputPath is null || (outputPath is null && replayPath is null))
