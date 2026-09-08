@@ -132,7 +132,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallTimeout(cases)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases)),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };

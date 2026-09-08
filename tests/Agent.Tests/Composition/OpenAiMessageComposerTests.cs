@@ -578,4 +578,31 @@ public class OpenAiMessageComposerTests
             """,
             fakeClient.LastUserPrompt);
     }
+
+    // A10: the payload shape is the channel's rule, not the model's choice. A model that
+    // legally returns no options still has to produce an sms with options, and they come
+    // from the record's own language set so a Spanish message does not get English ones.
+    [Fact]
+    public async Task ComposeAsync_SmsAndTheModelReturnsNoOptions_FallsBackToTheLanguageSetsOptions()
+    {
+        const string json = """{"subject":null,"body":"hola","cta_type":"schedule_tour","cta_options":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(["jueves", "viernes"], result.Value!.Message.Cta!.Options);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_SmsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsOptions()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":[]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(["Thu", "Fri"], result.Value!.Message.Cta!.Options);
+    }
 }

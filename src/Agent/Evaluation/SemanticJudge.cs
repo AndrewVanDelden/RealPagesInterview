@@ -64,7 +64,11 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
             judged.Add(score with { ActionSemantic = action, BodySemantic = body });
         }
 
-        return scorecard with { RecordScores = judged };
+        // Constructed, not copied with a `with` expression: Scorecard computes its per-check
+        // tallies and its p95 once at construction, and a copy would carry the unjudged
+        // numbers into a report whose rows say otherwise. The per-check line is where the
+        // reported numbers come from.
+        return new Scorecard(judged, scorecard.LatencyBudgetMs);
     }
 
     private async Task<(CheckResult Action, CheckResult Body)> GradeAsync(ScoredRun run, CancellationToken cancellationToken)

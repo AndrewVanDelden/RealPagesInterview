@@ -30,23 +30,24 @@ public sealed class OpenAiCompletionClient : ICompletionClient
 
     // Only reached when no record in the batch states p95_latency_ms. It exists to stop a
     // hung call, not to express a budget.
-    private static readonly TimeSpan DefaultCallTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultCallBudget = TimeSpan.FromSeconds(30);
 
     private const string StructuredOutputSchemaName = "composed_message";
 
     private readonly ChatClient chatClient;
     private readonly CountingRetryPolicy retryPolicy;
-    private readonly TimeSpan callTimeout;
+    private readonly TimeSpan callBudget;
 
-    public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callTimeout = null)
+    // callBudget bounds one call including its retry, not one attempt: see PerAttemptTimeout.
+    public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
     {
         retryPolicy = new CountingRetryPolicy(MaxRetries);
-        this.callTimeout = callTimeout ?? DefaultCallTimeout;
+        this.callBudget = callBudget ?? DefaultCallBudget;
 
         var options = new OpenAIClientOptions
         {
             Transport = new HttpClientPipelineTransport(httpClient),
-            NetworkTimeout = this.callTimeout,
+            NetworkTimeout = PerAttemptTimeout(this.callBudget),
             RetryPolicy = retryPolicy,
         };
 
@@ -83,12 +84,28 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             // one cancellation. Named here so the composer above catches a timeout by its
             // own type instead of unwrapping the SDK's, and so a caller's cancellation,
             // which arrives in the same shapes, still propagates untouched.
-            throw new TimeoutException($"OpenAI call exceeded the configured timeout of {callTimeout}.", ex);
+            throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
         int retries = Math.Max(retryPolicy.Attempts - attemptsBefore - 1, 0);
 
-        string content = result.Value.Content.Count > 0 ? result.Value.Content[0].Text : string.Empty;
+        string content;
+        try
+        {
+            content = result.Value.Content.Count > 0 ? result.Value.Content[0].Text : string.Empty;
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            // A 200 whose body carries no choice at all. ClientResult deserializes on the
+            // first read of Value, not on the await, so the SDK reaches for a choice that is
+            // not there and throws from inside itself, after the call has already returned.
+            // Named here as the same failure an empty message body is, because the composer
+            // catches that one into a Result and the compose-validate loop turns it into a
+            // fallback; an ArgumentOutOfRangeException escapes all of that and costs the
+            // record its output row. This is the guarantee the hand-rolled client gave with
+            // "Choices?.FirstOrDefault()?.Message?.Content ?? throw" before D27 replaced it.
+            throw new InvalidOperationException("OpenAI response contained no completion choice.", ex);
+        }
 
         return content.Length > 0
             ? new ModelCompletion(content, retries)
@@ -98,6 +115,15 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     private static bool IsTimeout(Exception exception) =>
         exception is OperationCanceledException ||
         (exception is AggregateException aggregate && aggregate.Flatten().InnerExceptions.Any(inner => inner is OperationCanceledException));
+
+    // NetworkTimeout bounds one attempt, and the policy above may make MaxRetries more of
+    // them, so a budget handed straight to it would be exceeded by the retry beside it: a
+    // bound that is documented and not enforced. Dividing makes the whole call, its retry
+    // included, fit inside the budget the record stated. What this does not bound is the
+    // compose-validate loop above: after a failed call it composes once more before falling
+    // back, so a record that fails composition can spend up to twice its budget before the
+    // template composer answers, which the p95 check then measures and reports.
+    public static TimeSpan PerAttemptTimeout(TimeSpan callBudget) => callBudget / (1 + MaxRetries);
 
     // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.
     // When the caller supplies a schema, Structured Outputs (strict) makes the API itself

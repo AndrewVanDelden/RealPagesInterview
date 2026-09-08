@@ -251,4 +251,39 @@ public class SemanticJudgeTests
         Assert.Contains("subject: none", fakeClient.LastUserPrompt);
         Assert.Contains("body: none", fakeClient.LastUserPrompt);
     }
+
+    // The per-check line is where the reported numbers come from, so a verdict that only
+    // reaches the row and not the tally is a verdict nobody reads. Scorecard computes its
+    // tallies once at construction, so the judged scorecard has to be constructed, not
+    // copied from the unjudged one.
+    [Fact]
+    public async Task JudgeAsync_AfterGrading_TheVerdictsReachThePerCheckTally()
+    {
+        ScoredRun run = Run();
+        var judge = new SemanticJudge(new FakeCompletionClient("""{"action_matches":true,"body_matches":false,"reason":"no"}"""));
+
+        Scorecard judged = await judge.JudgeAsync(ScorecardFor(run), [run]);
+
+        Assert.Equal(1, judged.MeasuredCountOf(EvaluationCheck.ActionSemantic));
+        Assert.Equal(1, judged.PassedCountOf(EvaluationCheck.ActionSemantic));
+        Assert.Equal(1, judged.MeasuredCountOf(EvaluationCheck.BodySemantic));
+        Assert.Equal(0, judged.PassedCountOf(EvaluationCheck.BodySemantic));
+        Assert.Contains("ActionSem 1/1", ScorecardFormatter.Format(judged));
+        Assert.Contains("BodySem 0/1", ScorecardFormatter.Format(judged));
+    }
+
+    // The batch p95 is computed at construction too, so it has to survive judging unchanged
+    // rather than being recomputed from a list the judge rebuilt.
+    [Fact]
+    public async Task JudgeAsync_AfterGrading_KeepsTheLatencyP95AndItsBudget()
+    {
+        ScoredRun run = Run();
+        Scorecard before = ScorecardFor(run);
+        var judge = new SemanticJudge(new FakeCompletionClient(BothMatchJson));
+
+        Scorecard judged = await judge.JudgeAsync(before, [run]);
+
+        Assert.Equal(before.LatencyP95Ms, judged.LatencyP95Ms);
+        Assert.Equal(before.LatencyBudgetMs, judged.LatencyBudgetMs);
+    }
 }

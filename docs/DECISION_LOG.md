@@ -451,3 +451,24 @@ which is the mitigation the literature gives. No new interface: the judge is a c
 existing `ICompletionClient` seam, whose fake already exists (EA). Scopes: Sprint 6,
 `Agent.Evaluation`, the CLI, DESIGN.md section 6, D5, D6, D15. Evidence: playbook step 31; the
 judge-bias guidance summarized above; S4. Assumptions: A8, A15.
+
+**D25 addendum, PR review (2026-09-08).** The catalog shipped with an sms option list on
+every row, and after D26 moved the prose into the language sets nothing read it: the option
+text a message carries comes from `MessageTemplates.SmsOptions`, keyed on the call-to-action
+type, while the catalog's copy was keyed on `primary_cta` and could drift from it with nothing
+to catch the drift. Flagged in a cold-context review of the sprint diff. The column is removed;
+`CallToAction` is now the type and the link path, and the header comment no longer claims to
+own an option list it does not. The rule that survives: the catalog owns what a call to action
+is and where its link points, and the language sets own every word a person reads (LC, HSC).
+
+**D28 addendum, PR review (2026-09-08).** The paragraph above says the per-call timeout comes
+from the strictest stated `p95_latency_ms`, and the first implementation handed that number
+straight to `NetworkTimeout`, which bounds one attempt. With `MaxRetries = 1` beside it, a
+2000 ms budget was measured taking 4828 ms over two attempts, and the compose-validate loop's
+second call can double that again, so the bound the code and the docs stated was not the bound
+the code enforced. Flagged in a cold-context review of the sprint diff, measured against a hung
+transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the budget over
+`1 + MaxRetries`, so one call and its retry fit inside the number the record stated. What is
+still not bounded is stated rather than hidden: after a failed call the compose-validate loop
+composes once more before falling back, so a record that fails composition can spend up to
+twice its budget before the template composer answers, and the p95 check measures that.

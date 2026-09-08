@@ -4,6 +4,8 @@ namespace Agent.Evaluation;
 // (a p95 under the strictest budget is under every budget), null when none states one.
 public sealed record Scorecard(IReadOnlyList<RecordScore> RecordScores, int? LatencyBudgetMs)
 {
+    // Computed once at construction, so a `with` copy that replaces RecordScores would carry
+    // these numbers unchanged: build a new Scorecard instead (SemanticJudge does).
     // Computed once at construction, not on every read: ScorecardFormatter reads
     // LatencyP95Ms and LatencyP95 (which reads LatencyP95Ms again) in the same report, and
     // PassedCountOf/MeasuredCountOf are each called once per check per report.

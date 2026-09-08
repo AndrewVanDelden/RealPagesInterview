@@ -70,7 +70,8 @@ consent gate suppressed, which have no message and so no composer, the same rule
 Steps 47 to 60 landed in Sprint 6: the composer's own working in the diagnostics (D24), the
 call-to-action catalog and the link built from the property slug (D25, A21), language sets with
 no allowlist anywhere (D26), the real client on the official OpenAI package pinned at 2.13.0
-with one retry, a timeout from the batch's strictest stated budget and a counted retry (D27,
+with one retry, a per-attempt timeout that divides the batch's strictest stated budget, and a
+counted retry (D27,
 D28), the model prompt's full field list and its untrusted-data boundary pinned by golden tests
 (D29), and the reference-based judge behind `--judge` (D30, closing D15). Numbers moved on both
 evaluation sets, and only from rules earned on the fitting evidence and the synthetic set:
@@ -79,9 +80,10 @@ language 9 to 10 of 10 on the synthetic set, and records passing every check 1 t
 2 to 12 of 12. Every tally is in `docs/DESIGN.md` section 9 and pinned in `BaselineNumbersTests`.
 One step of Phase 4 is open and needs the requester: step 60, the live model run against the
 examples with both scores recorded side by side. It spends the OpenAI key, so it is not run
-without being asked. Two facts to carry into it: the per-call timeout is the strictest stated
-`p95_latency_ms`, 2000 ms on these sets, so a slower call times out and the fallback shows up as
-`composer: template` in the diagnostics (D28); and the same run under `--judge` is the first
+without being asked. Two facts to carry into it: one call and its retry are bounded by the
+strictest stated `p95_latency_ms`, 2000 ms on these sets, so a slower call times out and the
+fallback shows up as `composer: template` in the diagnostics (D28, and its addendum for what
+that bound does and does not cover); and the same run under `--judge` is the first
 measurement the body has ever had, since the personalization proxy reads 1.00 on every template
 message by construction.
 Check for Phase 5: every validator has a passing test, a failing test, and a false-positive
@@ -183,6 +185,10 @@ Update this section at the end of every sprint. It is the first thing an agent r
   gamed: `TimeZones.ResolveSlot` is proved against the custom zones in
   `tests/Agent.Tests/TestSupport/SlotResolutionTestZones.cs`, whose transitions do cover the
   slot, plus a sweep of every system zone across every 2026 transition (D21, A20).
+- `Scorecard` computes its per-check tallies and its p95 once, in field initializers, so a
+  `with` copy that replaces `RecordScores` carries the old numbers into a report whose rows say
+  otherwise. Build a new `Scorecard`; `SemanticJudge.JudgeAsync` does, and a test pins the
+  tally after judging. A PR review caught this one, not the suite.
 - Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
   `docs/CODE_REVIEW.md` before flagging either.
 

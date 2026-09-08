@@ -82,16 +82,17 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
-    // D28: the per-call timeout is a stated value, so a call that outlives it fails instead
-    // of holding the batch open. The pipeline retries a timeout, so the failure arrives as
-    // an AggregateException of TaskCanceledException; the client names it TimeoutException
-    // so the composer catches a timeout by its own type.
+    // D28: the budget is a stated value and it bounds the whole call, so the client divides
+    // it into per-attempt timeouts and a call that outlives it fails instead of holding the
+    // batch open. The pipeline retries a timeout, so the failure arrives as an
+    // AggregateException of TaskCanceledException; the client names it TimeoutException so
+    // the composer catches a timeout by its own type.
     [Fact]
     public async Task CompleteAsync_CallOutlivesTheTimeout_ThrowsTimeoutException()
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromSeconds(5) };
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callTimeout: TimeSpan.FromMilliseconds(50));
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(100));
 
         await Assert.ThrowsAsync<TimeoutException>(() => client.CompleteAsync("system", "user"));
     }
@@ -168,5 +169,21 @@ public class OpenAiCompletionClientTests
 
         Assert.Contains("\"type\":\"json_object\"", handler.LastRequestBody);
         Assert.DoesNotContain("\"json_schema\"", handler.LastRequestBody);
+    }
+
+    // A 200 with no choice at all is a response shape the API can return and the composer
+    // has to survive: it becomes the same InvalidOperationException an empty message does,
+    // which the composer catches into a Result failure and the loop turns into a fallback.
+    // Anything else escapes the agent and costs the record its output row.
+    [Theory]
+    [InlineData("""{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""")]
+    [InlineData("""{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini"}""")]
+    public async Task CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException(string responseJson)
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync("system", "user"));
     }
 }

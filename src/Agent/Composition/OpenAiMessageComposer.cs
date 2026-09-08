@@ -120,7 +120,17 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, CallToActionCatalog.Resolve(primaryCta).LinkPath)
             : null;
 
-        var cta = new Cta(payload.CtaType, isEmail ? null : payload.CtaOptions, link);
+        // A10: the payload shape is the channel's rule, not the model's choice. The schema
+        // lets cta_options come back null, so an sms whose options the model left out takes
+        // the record's own language set's pair rather than going out with no payload at all,
+        // which is the same list the offline composer would have used.
+        IReadOnlyList<string>? options = isEmail
+            ? null
+            : payload.CtaOptions is { Count: > 0 } modelOptions
+                ? modelOptions
+                : MessageTemplateCatalog.Resolve(prospectCase.ContextOrEmpty.Language).Templates.SmsOptions(payload.CtaType);
+
+        var cta = new Cta(payload.CtaType, options, link);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
         var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1, LocaleApplied: true, completion.NetworkRetries));
 
