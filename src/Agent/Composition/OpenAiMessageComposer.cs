@@ -65,7 +65,8 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.ConstraintsOrEmpty.PrimaryCta);
+        string? primaryCta = prospectCase.ConstraintsOrEmpty.PrimaryCta;
+        string? requiredCtaType = Presence.IsAbsent(primaryCta) ? null : CallToActionCatalog.Resolve(primaryCta).Type;
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
