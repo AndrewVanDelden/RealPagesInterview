@@ -156,6 +156,12 @@ Listed here so this file is complete:
 
 ## 7. Plan to completion
 
+**Superseded 2026-09-07.** Phase 0 was restarted at step 1 on Andrew's decision (D12 in
+`docs/DECISION_LOG.md`) under a new frame: the twelve-record file is an evaluation set and
+nothing is fitted to it (D9). D1 to D8 below are restated there under that frame, and the
+sprint table below is replaced by `docs/DESIGN.md` section 9. This section stays as the record
+of what was decided on 2026-09-06.
+
 Two parts, named by the playbook phase they belong to so the numbering cannot drift.
 Decisions (playbook Phase 0, steps 9 to 13, redone) make every choice that scopes the rest
 and write it into DESIGN.md before any code changes. Sprints (playbook Phases 2 through 9)

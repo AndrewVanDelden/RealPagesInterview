@@ -36,21 +36,25 @@ sets it. Never read, print, or write the value.
   `Ingest/` reader and writer; `Common/` `Option`, `Result`, logging helpers.
 - `src/Agent.Cli`: thin shell, `CliRunner` is the composition root.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
-- `docs/DESIGN.md` architecture and assumptions log. `docs/CODE_REVIEW.md` review angles
-  and deliberate scope decisions. `TalkingPoints.md` one sentence per decision, the
-  walkthrough. `docs/RETROSPECTIVE_2026-09-06.md` why the hold-out scored 2 of 12, decisions
-  D1 to D8, and the plan to completion.
+- `docs/DESIGN.md` problem, inputs, rules with evidence, architecture, evaluation contract,
+  assumptions log, sprint plan. `docs/DECISION_LOG.md` every decision in the recording form
+  (S1 to S4, D1 to D12). `docs/CODE_REVIEW.md` review angles and deliberate scope decisions.
+  `TalkingPoints.md` one sentence per decision, the walkthrough.
+  `docs/RETROSPECTIVE_2026-09-06.md` why the hold-out scored 2 of 12; its plan is superseded.
+- `sample.jsonl` the two given records, the only evidence rules are fitted to.
+  `holdout_12.jsonl` the twelve-record evaluation set: run and reported, never fitted to (D9).
 
 ## Current phase
 
-Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, redone after the hold-out retrospective.
-Check: the design doc's assumptions log has an evidence column with no blanks. Status: not passed;
-`docs/DESIGN.md` section 9 is a prose list today and becomes that table in Sprint 1 (retrospective
-section 7).
-Next step: 4, inventory every input with type, nullability, and which sample it appears in.
-Provisional: retrospective section 9 leaves open a restart at step 1, which would change this line to 1.
-Open decisions: D1 to D8 in `docs/RETROSPECTIVE_2026-09-06.md` section 7 and the two items in
-section 9; none written into `docs/DESIGN.md` yet.
+Phase 1 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Environment and agent setup. Phase 0 was
+restarted at step 1 on 2026-09-07 (D12) and its check passed the same day: `docs/DESIGN.md`
+section 7 is the assumptions table and every evidence cell is filled.
+Check: a fresh clone builds and runs the empty test suite from one documented command. Status:
+passed on 2026-09-07; the `test` check of `.github/workflows/test.yml` was green on PR #16's
+first run and `dev` now requires it.
+Next step: 28, build the evaluator before the product (Phase 2; steps 24 to 27 exist from the
+first build and are revised in Sprint 3).
+Open decisions: none; S1 to S4 and D1 to D12 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
