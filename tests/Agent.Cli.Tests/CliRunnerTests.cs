@@ -160,21 +160,21 @@ public class CliRunnerTests
         }
     }
 
+    // Per-record isolation. No input can make a record throw any more (D1 gives every
+    // shape a default), so the fault is injected through the composer seam.
     [Fact]
-    public async Task RunAsync_OneRecordFailsPlanning_OtherRecordStillWrittenAndReturnsPartialFailure()
+    public async Task RunAsync_OneRecordThrows_OtherRecordStillWrittenAndReturnsPartialFailure()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        // t1 is valid (move date after last interaction). t2's move date precedes its
-        // last interaction, so NextActionPlanner.Plan throws ArgumentOutOfRangeException.
         string content = string.Join(
             Environment.NewLine,
             RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
-            RecordJson("t2", "2025-01-01", "2025-12-08T15:04:00Z"));
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
         await File.WriteAllTextAsync(inputPath, content);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t2"));
 
         try
         {
@@ -189,6 +189,85 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+        }
+    }
+
+    // D10: the run's reference time comes from --now; the send day follows it (A4).
+    [Fact]
+    public async Task RunAsync_NowFlagProvided_SendAtFollowsTheReferenceDay()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--now", "2025-12-20T00:00:00-06:00"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            string sendAt = output.RootElement[0].GetProperty("next_message").GetProperty("send_at").GetString()!;
+            Assert.StartsWith("2025-12-20T09:00:00-06:00", sendAt);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_NowFlagUnparseable_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--now", "yesterday"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--now", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D1: the diagnostics file names every unknown member and every defaulted decision input.
+    [Fact]
+    public async Task RunAsync_RecordWithUnknownAndAbsentMembers_DiagnosticsNameThem()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        string line = RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"persona\":\"prospect\",", string.Empty);
+        await File.WriteAllTextAsync(inputPath, line);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement notes = diagnostics.RootElement[0].GetProperty("ingest_notes");
+            Assert.Equal("input.unit", notes.GetProperty("unknown_members")[0].GetString());
+            Assert.Equal("persona", notes.GetProperty("defaulted_fields")[0].GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
         }
     }
 
@@ -568,7 +647,7 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_RecordFailsPlanning_LogFileCapturesTheFailureWithExceptionType()
+    public async Task RunAsync_RecordThrows_LogFileCapturesTheFailureWithExceptionType()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
@@ -576,11 +655,11 @@ public class CliRunnerTests
         string content = string.Join(
             Environment.NewLine,
             RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
-            RecordJson("t2", "2025-01-01", "2025-12-08T15:04:00Z"));
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
         await File.WriteAllTextAsync(inputPath, content);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t2"));
 
         try
         {
@@ -589,7 +668,7 @@ public class CliRunnerTests
             Assert.Equal(CliExitCodes.PartialFailure, exitCode);
             string logContent = await File.ReadAllTextAsync(logFilePath);
             Assert.Contains("t2", logContent);
-            Assert.Contains("ArgumentOutOfRangeException", logContent);
+            Assert.Contains("InvalidOperationException", logContent);
         }
         finally
         {

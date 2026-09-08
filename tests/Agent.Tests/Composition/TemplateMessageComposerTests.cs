@@ -83,33 +83,65 @@ public class TemplateMessageComposerTests
         Assert.Equal("call_now", result.Value!.Cta!.Type);
     }
 
+    // A12: an absent first name means no name in the greeting, not a failed record.
     [Fact]
-    public async Task ComposeAsync_EmptyFirstName_ReturnsFailure()
+    public async Task ComposeAsync_AbsentFirstName_ComposesWithoutAName()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: null);
 
         Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsSuccess);
+        Assert.DoesNotContain("Taylor", result.Value.Body);
+        Assert.StartsWith("Hi!", result.Value.Body);
+        Assert.Contains("STOP", result.Value.Body);
     }
 
     [Fact]
-    public async Task ComposeAsync_EmptyPropertyName_ReturnsFailure()
+    public async Task ComposeAsync_AbsentPropertyName_ComposesWithoutAPropertyFact()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: "");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: null);
+
+        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.True(result.IsSuccess);
+        Assert.DoesNotContain("Oak Ridge", result.Value.Body);
+        Assert.Equal("Your next step", result.Value.Subject);
+    }
+
+    // A9: no primary_cta means the generic reply call to action.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCta_UsesTheGenericReplyCallToAction()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
 
         Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("reply", result.Value.Cta!.Type);
+        Assert.Contains("Reply to learn more", result.Value.Body);
     }
 
     [Fact]
-    public async Task ComposeAsync_EmptyPrimaryCta_ReturnsFailure()
+    public async Task ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent()
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
 
         Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("reply", result.Value.Cta!.Type);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_NoContextAtAll_StillComposesAMessageWithOptOut()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal() with { Input = null, Assertions = null };
+
+        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Contains("STOP", result.Value.Body);
+        Assert.Equal("reply", result.Value.Cta!.Type);
     }
 }

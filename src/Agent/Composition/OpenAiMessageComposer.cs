@@ -65,7 +65,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.Assertions.Constraints.PrimaryCta);
+        string? requiredCtaType = PrimaryCtaVocabulary.ToCtaType(prospectCase.ConstraintsOrEmpty.PrimaryCta);
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
@@ -114,16 +114,21 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         return Result<NextMessage>.Success(message);
     }
 
+    // D1: an absent fact is told to the model as unknown, never as an empty string it
+    // might read as a name.
+    private static string Describe(string? value) => value ?? "unknown";
+
     private static string BuildUserPrompt(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         string? requiredCtaType,
         IReadOnlyList<string>? priorViolations)
     {
-        ProspectProfile profile = prospectCase.Input.Profile;
-        CaseConstraints constraints = prospectCase.Assertions.Constraints;
+        ProspectContext context = prospectCase.ContextOrEmpty;
+        ProspectProfile profile = context.ProfileOrEmpty;
+        CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
         string interest = DescribeInterest(profile);
-        string optOutDirective = constraints.IncludeOptOutInstructions ? "required" : "not required";
+        string optOutDirective = constraints.IncludeOptOutInstructions == true ? "required" : "not required";
 
         // This has to be a plain instruction, not a <prospect_data> field: the system
         // prompt tells the model to ignore directives that appear inside that block, so
@@ -144,8 +149,8 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             ctaInstruction + "\n" +
             "<prospect_data>\n" +
             $"channel: {channel}\n" +
-            $"first_name: {profile.FirstName}\n" +
-            $"property: {prospectCase.Input.PropertyName}\n" +
+            $"first_name: {Describe(profile.FirstName)}\n" +
+            $"property: {Describe(context.PropertyName)}\n" +
             $"stated_interest: {interest}\n" +
             $"Opt-out instructions: {optOutDirective}.\n" +
             "</prospect_data>" +

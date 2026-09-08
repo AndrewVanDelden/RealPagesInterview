@@ -3,8 +3,9 @@ using Agent.Domain;
 
 namespace Agent.Decisions;
 
-// No separate quiet-hours window: deliberately scoped out, see
-// docs/DESIGN.md assumptions log #2 and docs/CODE_REVIEW.md.
+// A4 and A5: the channel's slot on the first day at or after max(reference time,
+// last_interaction) in the record's timezone; an absent or unknown timezone is UTC (A6).
+// No quiet-hours window and no minutes: DESIGN.md section 8 and docs/CODE_REVIEW.md.
 public sealed class SendScheduler : ISendScheduler
 {
     private static readonly IReadOnlyDictionary<CommunicationChannel, TimeOnly> DefaultSendHour = new Dictionary<CommunicationChannel, TimeOnly>
@@ -14,25 +15,24 @@ public sealed class SendScheduler : ISendScheduler
         [CommunicationChannel.Voice] = new TimeOnly(9, 0),
     };
 
-    public DateTimeOffset Resolve(DateTimeOffset lastInteraction, string timeZoneId, CommunicationChannel channel)
+    public DateTimeOffset Resolve(DateTimeOffset referenceTime, DateTimeOffset? lastInteraction, string? timeZoneId, CommunicationChannel channel)
     {
-        TimeZoneInfo timeZone = TimeZones.Resolve(timeZoneId);
-        DateTimeOffset localLastInteraction = TimeZoneInfo.ConvertTime(lastInteraction, timeZone);
-
         if (!DefaultSendHour.TryGetValue(channel, out TimeOnly defaultHour))
         {
             throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unknown communication channel.");
         }
 
-        DateOnly candidateDate = DateOnly.FromDateTime(localLastInteraction.DateTime);
-        DateTime candidateLocal = candidateDate.ToDateTime(defaultHour);
+        TimeZoneInfo timeZone = TimeZones.ResolveOrUtc(timeZoneId);
+        DateTimeOffset floor = lastInteraction is { } last && last > referenceTime ? last : referenceTime;
+        DateTime localFloor = TimeZoneInfo.ConvertTime(floor, timeZone).DateTime;
 
-        if (candidateLocal <= localLastInteraction.DateTime)
+        DateTime candidateLocal = DateOnly.FromDateTime(localFloor).ToDateTime(defaultHour);
+
+        if (candidateLocal <= localFloor)
         {
             candidateLocal = candidateLocal.AddDays(1);
         }
 
-        TimeSpan offset = timeZone.GetUtcOffset(candidateLocal);
-        return new DateTimeOffset(candidateLocal, offset);
+        return new DateTimeOffset(candidateLocal, timeZone.GetUtcOffset(candidateLocal));
     }
 }

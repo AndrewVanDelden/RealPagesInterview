@@ -32,7 +32,7 @@ public sealed class ValidatingMessageComposer(
 
             if (attemptResult.IsSuccess)
             {
-                SafetyValidationResult validation = validator.Validate(attemptResult.Value, prospectCase.Assertions.Constraints);
+                SafetyValidationResult validation = validator.Validate(attemptResult.Value, prospectCase.ConstraintsOrEmpty);
 
                 if (validation.Violations.Count == 0)
                 {
@@ -60,7 +60,7 @@ public sealed class ValidatingMessageComposer(
         Result<NextMessage> fallbackResult = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         if (fallbackResult.IsSuccess &&
-            validator.Validate(fallbackResult.Value, prospectCase.Assertions.Constraints).Violations.Count == 0)
+            validator.Validate(fallbackResult.Value, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
         {
             return fallbackResult;
         }

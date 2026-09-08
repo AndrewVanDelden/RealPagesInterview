@@ -61,7 +61,7 @@ public class ValidatingMessageComposerTests
         Result<NextMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        SafetyValidationResult finalValidation = Validator.Validate(result.Value!, prospectCase.Assertions.Constraints);
+        SafetyValidationResult finalValidation = Validator.Validate(result.Value!, prospectCase.ConstraintsOrEmpty);
         Assert.Empty(finalValidation.Violations);
     }
 

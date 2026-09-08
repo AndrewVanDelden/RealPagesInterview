@@ -5,8 +5,8 @@ namespace Agent.Tests.TestSupport;
 internal static class SampleProspectCases
 {
     public static ProspectCase Minimal(
-        string firstName = "Taylor",
-        string propertyName = "Oak Ridge Apartments",
+        string? firstName = "Taylor",
+        string? propertyName = "Oak Ridge Apartments",
         string? cityInterest = "Richardson, TX",
         IReadOnlyList<string>? amenityInterest = null,
         string? primaryCta = "book_tour",

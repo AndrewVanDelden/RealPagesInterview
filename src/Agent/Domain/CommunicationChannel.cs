@@ -9,4 +9,7 @@ public enum CommunicationChannel
     Sms,
     Email,
     Voice,
+    // A channel name the file used that this program does not know (A3). Kept as a real
+    // value so the record parses; the selector skips it and the ingest notes count it.
+    Unknown,
 }

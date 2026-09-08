@@ -26,7 +26,7 @@ public sealed class LeasingMessageAgent(
 {
     private readonly ILogger<LeasingMessageAgent> log = logger.OrNullLogger();
 
-    public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, CancellationToken cancellationToken = default)
+    public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
     {
         // Correlation ID for every log line emitted anywhere downstream of this call
         // (ValidatingMessageComposer, OpenAiMessageComposer) - opened here, not by the
@@ -43,7 +43,7 @@ public sealed class LeasingMessageAgent(
         // Error would make a clean shutdown indistinguishable from a real crash.
         try
         {
-            return await RunUnguardedAsync(prospectCase, cancellationToken);
+            return await RunUnguardedAsync(prospectCase, referenceTime, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -52,10 +52,12 @@ public sealed class LeasingMessageAgent(
         }
     }
 
-    private async Task<AgentRunResult> RunUnguardedAsync(ProspectCase prospectCase, CancellationToken cancellationToken)
+    private async Task<AgentRunResult> RunUnguardedAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken)
     {
+        ProspectContext context = prospectCase.ContextOrEmpty;
         ConsentDecision consentDecision = consentGate.Evaluate(prospectCase.Consent, prospectCase.ChannelPreferences);
-        NextAction nextAction = planner.Plan(prospectCase.Input.MoveDateTarget, prospectCase.Input.LastInteraction, prospectCase.Input.TimeZoneId);
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
+        NextAction nextAction = planner.Plan(context.MoveDateTarget, referenceDate);
 
         if (!consentDecision.IsContactable)
         {
@@ -73,10 +75,10 @@ public sealed class LeasingMessageAgent(
             return Suppressed(consentDecision, nextAction);
         }
 
-        DateTimeOffset sendAt = scheduler.Resolve(prospectCase.Input.LastInteraction, prospectCase.Input.TimeZoneId, channel);
+        DateTimeOffset sendAt = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
         NextMessage finalMessage = composeResult.Value with { SendAt = sendAt };
 
-        SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.Assertions.Constraints);
+        SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.ConstraintsOrEmpty);
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
             validation.FairHousingCheckPassed,
