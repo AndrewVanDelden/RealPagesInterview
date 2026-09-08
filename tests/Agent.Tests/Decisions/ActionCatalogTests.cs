@@ -1,0 +1,245 @@
+using Agent.Common;
+using Agent.Decisions;
+using Agent.Domain;
+using Xunit;
+
+namespace Agent.Tests.Decisions;
+
+// D17 and D18. The catalog is keyed on persona and lifecycle stage and holds one action per
+// horizon branch. A branch a row does not state has no evidence behind it (A8), so it falls
+// to the generic row and the match says so; a persona or stage with no row does the same.
+// Create is the one gate every catalog goes through, including Default.
+public class ActionCatalogTests
+{
+    private static readonly NextAction Cadence = new(ActionTypes.StartCadence, "prospect_welcome_short_horizon");
+    private static readonly NextAction FollowUp = new(ActionTypes.FollowUpInDays, Value: 3);
+    private static readonly GenericActionRow Generic = new(Cadence, FollowUp);
+
+    private static ActionCatalogRow Row(string persona, string stage, Option<NextAction> shortHorizon, Option<NextAction> longHorizon) =>
+        new(persona, stage, shortHorizon, longHorizon);
+
+    private static ActionCatalog CatalogOf(params ActionCatalogRow[] rows) =>
+        ActionCatalog.Create(Generic, rows).Value;
+
+    [Fact]
+    public void Create_ValidRows_Succeeds()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(Generic, [Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None())]);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_RowWithBlankPersona_Fails(string persona)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(Generic, [Row(persona, "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None())]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("persona", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_RowWithBlankLifecycleStage_Fails(string stage)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(Generic, [Row("prospect", stage, Option<NextAction>.Some(Cadence), Option<NextAction>.None())]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("lifecycle stage", result.Error, StringComparison.Ordinal);
+    }
+
+    // The lookup compares case-insensitively, so two rows differing only by case are one key
+    // with two answers, not two keys.
+    [Fact]
+    public void Create_DuplicateKeyDifferingOnlyByCase_Fails()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [
+                Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()),
+                Row("Prospect", "NEW", Option<NextAction>.None(), Option<NextAction>.Some(FollowUp)),
+            ]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("prospect/new", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Create_RowActionTypeOutsideVocabulary_Fails()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [Row("prospect", "new", Option<NextAction>.Some(new NextAction("reset_cadence")), Option<NextAction>.None())]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("reset_cadence", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Create_GenericRowActionTypeOutsideVocabulary_Fails()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(new NextAction("branch_on_intent"), FollowUp), []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("branch_on_intent", result.Error, StringComparison.Ordinal);
+    }
+
+    // The deleted NextActionPlannerOptions threw when longHorizonFollowUpDays was not
+    // positive; Create is the row's replacement gate, so the same guarantee belongs here.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_RowWithNonPositiveValueOnLongHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [Row("prospect", "open", Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: value)))]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("prospect/open", result.Error, StringComparison.Ordinal);
+    }
+
+    // The short-horizon branch is checked first; this exercises that side of the check
+    // rather than only the long-horizon side above.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_RowWithNonPositiveValueOnShortHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [Row("prospect", "new", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: value)), Option<NextAction>.None())]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("prospect/new", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_GenericRowWithNonPositiveValueOnLongHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(Cadence, new NextAction(ActionTypes.FollowUpInDays, Value: value)), []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Generic catalog row", result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public void Create_GenericRowWithNonPositiveValueOnShortHorizonBranch_Fails(int value)
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(new NextAction(ActionTypes.FollowUpInDays, Value: value), FollowUp), []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Generic catalog row", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_KeyWithStatedBranch_ReturnsTheRowAction()
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve("prospect", "new", HorizonBranch.Short);
+
+        Assert.Equal(Cadence, match.Action);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // A8: the samples show one branch per row, so the other branch has no evidence and the
+    // generic row answers it. The match records which of the two fallbacks fired.
+    [Fact]
+    public void Resolve_KeyWithUnstatedBranch_FallsBackToGenericRow()
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve("prospect", "new", HorizonBranch.Long);
+
+        Assert.Equal(FollowUp, match.Action);
+        Assert.Equal(ActionSource.GenericRowNoBranch, match.Source);
+    }
+
+    [Fact]
+    public void Resolve_KeyWithNoRow_FallsBackToGenericRow()
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve("resident", "renewal", HorizonBranch.Short);
+
+        Assert.Equal(Cadence, match.Action);
+        Assert.Equal(ActionSource.GenericRowNoMatch, match.Source);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(null, "new")]
+    [InlineData("prospect", null)]
+    public void Resolve_AbsentPersonaOrStage_FallsBackToGenericRow(string? persona, string? stage)
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve(persona, stage, HorizonBranch.Short);
+
+        Assert.Equal(ActionSource.GenericRowNoMatch, match.Source);
+    }
+
+    [Fact]
+    public void Resolve_KeyDifferingByCaseAndSurroundingSpace_MatchesTheRow()
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve("  Prospect ", "NEW", HorizonBranch.Short);
+
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // Sample 1: prospect at new, 32 days out, start_cadence with the cadence name.
+    [Fact]
+    public void Default_ProspectNew_ShortHorizon_IsTheSampleOneAction()
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", "new", HorizonBranch.Short);
+
+        Assert.Equal(ActionTypes.StartCadence, match.Action.Type);
+        Assert.Equal("prospect_welcome_short_horizon", match.Action.Name);
+        Assert.Null(match.Action.Value);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // Sample 2: prospect at open, 68 days out, follow_up_in_days 3.
+    [Fact]
+    public void Default_ProspectOpen_LongHorizon_IsTheSampleTwoAction()
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", "open", HorizonBranch.Long);
+
+        Assert.Equal(ActionTypes.FollowUpInDays, match.Action.Type);
+        Assert.Equal(3, match.Action.Value);
+        Assert.Null(match.Action.Name);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // The branches the two samples never showed: neither row states them, so both come from
+    // the generic row and the diagnostics can say so.
+    [Theory]
+    [InlineData("new", HorizonBranch.Long)]
+    [InlineData("open", HorizonBranch.Short)]
+    public void Default_UnobservedBranchOfAKnownRow_ComesFromTheGenericRow(string stage, HorizonBranch branch)
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", stage, branch);
+
+        Assert.Equal(ActionSource.GenericRowNoBranch, match.Source);
+    }
+
+    [Fact]
+    public void Default_UnknownPersona_ComesFromTheGenericRow()
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("resident", "renewal", HorizonBranch.Long);
+
+        Assert.Equal(ActionTypes.FollowUpInDays, match.Action.Type);
+        Assert.Equal(3, match.Action.Value);
+        Assert.Equal(ActionSource.GenericRowNoMatch, match.Source);
+    }
+}

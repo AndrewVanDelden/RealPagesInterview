@@ -114,6 +114,12 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - D14 (Sprint 3): the output carries no task id, so replay pairs rows by position and refuses a count mismatch.
 - D15 (Sprint 3): the model judge waits for Sprint 6 so one pinned model and one rubric have one owner.
 - D16 (Sprint 3): the CLI loop is the one owner of the task id log scope; the agent opening a second one printed the id twice on every line.
+- D17 (Sprint 4): the catalog is a table compiled into one file, not a data file, because three rows nothing has asked to change without a rebuild do not earn a parser, and the compiler checks them.
+- D18 (Sprint 4): the generic row makes every record classifiable, so the planner has no failure to return; the `Result` sits on catalog construction, where a blank key, a duplicate key, and an unknown action type are all real and all testable.
+- D18 also: the planner returns why beside what, so the diagnostics carry the horizon branch, the horizon in days, and which row answered.
+- Each catalog row states only the horizon branch a sample actually showed, so prospect/new has no long branch and prospect/open no short one, and both fall to the generic row rather than to a value nobody observed.
+- D19 (Sprint 4): the row's default call to action waits for Sprint 6, where a composer reads it; a column nothing reads is a column the coverage gate would need a fake test to touch.
+- D20 (Sprint 4): the planner's settings record is deleted, because the one value left in it is the threshold the design says is not configurable.
 - After Sprint 3 the hold-out passes 1 of 12 and the synthetic set 2 of 12, because the template composer emits no options or link; the numbers are pinned in the suite so a drop fails CI.
 
 ## Definitions worth having ready

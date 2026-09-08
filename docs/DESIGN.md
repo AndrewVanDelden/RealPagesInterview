@@ -100,8 +100,8 @@ values (the confound). Ids and names are labels, not evidence.
 | Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel | all present | all present | A12 |
 | Call to action type | `constraints.primary_cta` through a vocabulary table | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9) |
 | Call to action payload | sms carries numbered options in the body and `cta.options`; email carries `cta.link` | options | link | link value unseen beyond one host; A10 |
-| Next action | horizon = `move_date_target` minus reference date; short: `start_cadence`; long: `follow_up_in_days` | 32 days: start_cadence | 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7 |
-| Unknown persona or stage | generic policy: the rule above with the long-horizon branch, diagnostics name the fallback | n/a | n/a | A8 |
+| Next action | horizon = `move_date_target` minus reference date picks the branch (short or long); the branch reads the catalog row for `persona` and `lifecycle_stage` | prospect/new, 32 days: start_cadence | prospect/open, 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7 |
+| Unknown persona or stage, or a branch no row states | the generic row, and `action_plan.source` in the diagnostics names which of the two fallbacks fired | prospect/new states no long branch | prospect/open states no short branch | A8 |
 | Language | body in `input.language`; a language with no template goes to the model composer, or English with a diagnostic in template mode | en | en | A13 |
 | Required states | earned by the step that proves them, recorded in diagnostics; unknown names are reported as not earned | 3 named | 3 named | A14 |
 
@@ -217,7 +217,7 @@ constant until a second known value earns a setting.
 | A5 | Send hour by channel: sms 09:00, email 10:00, voice 09:00 local; no minutes | sample 1 09:00 sms, sample 2 10:00 email; voice and minutes unseen | no |
 | A6 | Unknown or absent timezone resolves as UTC with a diagnostic | both samples America/Chicago; the field is a free string | no |
 | A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); an absent date is long (no date, no cadence to start); a past date is short (the move is due) | 32 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 falls inside the open interval (32, 68]; it is not the midpoint (50), just a round number in range; absent and past are unseen | no |
-| A8 | Unknown persona or stage uses the generic row: A7's rule, diagnostics name the fallback; the catalog names `start_cadence`, `follow_up_in_days`, `no_op` | both samples are prospects at `new` and `open`; other values are unseen | the catalog file |
+| A8 | Unknown persona or stage uses the generic row: A7's rule, diagnostics name the fallback; the catalog names `start_cadence`, `follow_up_in_days`, `no_op`. A row states only the horizon branch a sample showed, so prospect/new has no long branch and prospect/open no short one, and both fall to the generic row rather than to an invented value (A19) | both samples are prospects at `new` and `open`; other values are unseen | the catalog file, `src/Agent/Decisions/ActionCatalog.cs` (D17) |
 | A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply` | one pair in both samples; absence unseen | the catalog file |
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
@@ -248,7 +248,7 @@ Each sprint cites decisions in the log; one PR per sprint against `dev`.
 | 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4, D8 to D12) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |
 | 2 Contracts (landed 2026-09-08) | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape and reason, consent first (D1, D3, D10, the first line of D2) | every record of both files parses to one row and runs to a valid output; diagnostics name every defaulted field and every unknown member |
 | 3 Harness (landed 2026-09-08) | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6, D13 to D16) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for all three sets recorded and pinned in the suite |
-| 4 Decision core | catalog, generic fallback, plan after consent, `Result` from the planner (D2) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
+| 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling | reference time, floor, timezone and DST property tests (D4); repoint the `SendScheduler` comment from "assumptions log #2" to A4 and A5 | property tests green; unknown timezone is a row, not an exit |
 | 6 Composition | facts, language handling, catalog-driven call to action, model prompt inputs, judge (D5) | both sets compose on the offline path with the network disabled |
 | 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
@@ -286,3 +286,18 @@ construction: the check can fail (the proof corrupts it) but it cannot fail this
 the body judge of Sprint 6 is the check with teeth for content. Measurements, not targets
 (D6, D9); `BaselineNumbersTests` pins every tally so a drop fails CI and a rise is recorded
 here and in the README together.
+
+**Numbers after Sprint 4** are the Sprint 3 numbers, every tally unchanged on all three sets,
+and that is the result the sprint set out to get. The catalog reproduces A7's rule exactly:
+its generic row is that rule, and the two keyed rows state only the branch a sample showed,
+so no record's action moved. What the sprint adds is the account of the decision. On
+`holdout_12.jsonl`, `action_plan.source` reads `catalog_row` on 3 records,
+`generic_row_no_branch` on 1, `generic_row_no_match` on 7, and is null on the 1 record the
+consent gate suppressed before the planner ran. Against the action check's 7 of 12: all 3
+`catalog_row` records pass, the suppressed record passes, 3 of the 7 `generic_row_no_match`
+records pass, and every one of the 5 misses used the generic row, 4 of them because no row
+exists for that persona and stage and 1 because the row that matched states no action for
+that horizon branch. On `synthetic_12.jsonl`: `catalog_row` on 7, `generic_row_no_branch` on
+2, `generic_row_no_match` on 1, null on 2, and the action check is 12 of 12, so the generic
+row answers those three records correctly. Measurements, not targets (D6, D9);
+`BaselineNumbersTests` still pins every tally.

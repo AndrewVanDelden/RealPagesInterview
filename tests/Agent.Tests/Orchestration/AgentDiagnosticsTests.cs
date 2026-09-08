@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Agent.Common;
+using Agent.Decisions;
 using Agent.Orchestration;
 using Xunit;
 
@@ -27,5 +28,36 @@ public class AgentDiagnosticsTests
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
         Assert.Contains("\"suppression_reason\":\"none\"", json);
+    }
+
+    // D18 and the Phase 3 check: the diagnostics say which horizon branch the record took,
+    // how many days that was, and which catalog row answered. Both enums are spelled the
+    // way every other enum on the wire is (D3).
+    [Fact]
+    public void Serializes_ActionPlan_WithSnakeCaseBranchAndSource()
+    {
+        var diagnostics = new AgentDiagnostics(
+            true,
+            true,
+            true,
+            0,
+            SuppressionReason.None,
+            new ActionPlanNotes(HorizonBranch.Long, 68, ActionSource.GenericRowNoBranch));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"action_plan\":{\"branch\":\"long\",\"horizon_days\":68,\"source\":\"generic_row_no_branch\"}", json);
+    }
+
+    // The planner never ran on a record the consent gate suppressed, so there is no plan to
+    // explain and the diagnostics say nothing rather than reporting a branch nobody took.
+    [Fact]
+    public void Serializes_AbsentActionPlan_AsNull()
+    {
+        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"action_plan\":null", json);
     }
 }

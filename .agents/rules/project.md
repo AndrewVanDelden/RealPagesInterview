@@ -35,7 +35,7 @@ sets it. Never read, print, or write the value.
 ## Layout
 
 - `src/Agent` library: `Domain/` records, `Decisions/` consent, channel, scheduler,
-  planner; `Composition/` template and OpenAI composers; `Safety/` validator and
+  planner, and the action catalog (`ActionTypes`, `ActionCatalog`, D17); `Composition/` template and OpenAI composers; `Safety/` validator and
   compose-validate loop; `Orchestration/` `LeasingMessageAgent`; `Evaluation/` scorer;
   `Ingest/` reader and writer; `Common/` `Option`, `Result`, logging helpers.
 - `src/Agent.Cli`: thin shell, `CliRunner` is the composition root.
@@ -61,9 +61,16 @@ both proofs run in the suite (`ScorerProofTests`). Steps 28 to 36 landed in Spri
 the model judge, is deferred to Sprint 6 (D15); step 37, a sidecar, is not needed.
 Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and
 the diagnostics explain every decision. Status: not passed.
-Next step: 38 to 43, the catalog with the generic row and the planner `Result` (Sprint 4, the
-decision-core row of `docs/DESIGN.md` section 9, D2).
-Open decisions: none; S1 to S4 and D1 to D16 are in `docs/DECISION_LOG.md`.
+Steps 38 to 43 landed in Sprint 4: the catalog keyed on persona and lifecycle stage with its
+generic row, the whole action vocabulary in `ActionTypes`, the `Result` on
+`ActionCatalog.Create` rather than on `Plan` (D18), and `diagnostics.action_plan`, which names
+the horizon branch, the horizon in days, and which row answered. Every tally on all three sets
+is unchanged, which is what a catalog that reproduces A7's rule should do.
+Next step: 44 and 45, the boundaries the synthetic set exposed and the timezone and
+daylight-saving property tests (Sprint 5, the scheduling row of `docs/DESIGN.md` section 9,
+D4). Step 46, the synthetic set through the core with the fuzzy parts stubbed, is the phase
+check itself and closes with Sprint 5.
+Open decisions: none; S1 to S4 and D1 to D20 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
@@ -137,6 +144,17 @@ Update this section at the end of every sprint. It is the first thing an agent r
 - The safety validator's whole-word check calls static `Regex.IsMatch` per term (about
   25 terms) against a 15-entry cache, so patterns recompile on every message. Known,
   unfixed.
+- The action catalog is a compiled-in table, not a data file (D17). Every action type the
+  program can emit is a constant on `ActionTypes`, and `ActionCatalog.Create` refuses a row
+  whose type is not in `ActionTypes.All`, so a new action type is added there first.
+  `ActionCatalog.Default` goes through `Create` like every other catalog.
+- `generic_row_no_branch` and `generic_row_no_match` are different facts and the diagnostics
+  keep them apart: the first is a row that matched but states no action for that horizon
+  branch, because no sample showed one (prospect/new has no long branch, prospect/open no
+  short one); the second is no row for that persona and stage at all. Neither is an error.
+- The planner does not return a `Result`; `ActionCatalog.Create` does (D18). Adding a
+  per-record failure to `Plan` re-opens a decision that was closed because the generic row
+  makes every record classifiable.
 - Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
   `docs/CODE_REVIEW.md` before flagging either.
 
