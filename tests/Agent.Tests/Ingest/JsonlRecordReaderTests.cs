@@ -217,6 +217,20 @@ public class JsonlRecordReaderTests
         Assert.Equal([CommunicationChannel.Unknown, CommunicationChannel.Unknown, CommunicationChannel.Sms], parsedCase.ChannelPreferences);
     }
 
+    // Enum.TryParse also accepts a purely numeric string and casts it to the underlying
+    // ordinal (Sms = 1) - a numeric channel name is never valid input and must not be
+    // mistaken for the real channel that happens to share its ordinal.
+    [Fact]
+    public void ReadAll_ChannelPreferenceNumericStringMatchingARealOrdinal_ParsesAsUnknown()
+    {
+        string lineWithNumericEntry = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"]", "\"channel_preferences\":[\"1\",\"sms\"]");
+        using TextReader reader = new StringReader(lineWithNumericEntry + Environment.NewLine);
+
+        ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
+
+        Assert.Equal([CommunicationChannel.Unknown, CommunicationChannel.Sms], parsedCase.ChannelPreferences);
+    }
+
     // A16: members the record types do not declare are kept, at any depth, so diagnostics
     // can name them and nothing the file carries is silently dropped.
     [Fact]

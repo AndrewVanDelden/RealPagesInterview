@@ -10,8 +10,13 @@ public sealed class LenientChannelConverter : JsonConverter<CommunicationChannel
 {
     public override CommunicationChannel Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
+        // Enum.TryParse also accepts a purely numeric string and casts it to the
+        // underlying ordinal (e.g. "1" -> Sms) - excluded up front so a numeric channel
+        // name is never mistaken for the real channel that happens to share its ordinal.
         if (reader.TokenType == JsonTokenType.String
-            && Enum.TryParse(reader.GetString(), ignoreCase: true, out CommunicationChannel channel)
+            && reader.GetString() is { } value
+            && !int.TryParse(value, out _)
+            && Enum.TryParse(value, ignoreCase: true, out CommunicationChannel channel)
             && Enum.IsDefined(channel))
         {
             return channel;

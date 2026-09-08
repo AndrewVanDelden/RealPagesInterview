@@ -43,7 +43,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
         return Task.FromResult(Result<NextMessage>.Success(message));
     }
 
-    private static string? Present(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+    private static string? Present(string? value) => Presence.IsAbsent(value) ? null : value;
 
     private static string BuildInterestPhrase(ProspectProfile profile)
     {

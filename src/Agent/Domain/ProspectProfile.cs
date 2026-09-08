@@ -1,16 +1,10 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace Agent.Domain;
 
 public sealed record ProspectProfile(
     string? FirstName = null,
     string? CityInterest = null,
-    IReadOnlyList<string>? AmenityInterest = null)
+    IReadOnlyList<string>? AmenityInterest = null) : HasUnknownMembers
 {
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownMembers { get; init; }
-
     // Normalized, always-non-null views of the two interest fields, used by every
     // composer that describes stated interest - the null/empty-vs-non-empty guard lives
     // here once instead of being duplicated at each call site.

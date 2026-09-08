@@ -36,8 +36,7 @@ public sealed partial class SafetyValidator : ISafetyValidator
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
 
-        // D1: an absent constraint is not required.
-        if (constraints.IncludeOptOutInstructions == true && FindFirst(text, OptOutPhrases) is null)
+        if (constraints.RequiresOptOutInstructions() && FindFirst(text, OptOutPhrases) is null)
         {
             violations.Add("Missing required opt-out instructions.");
         }

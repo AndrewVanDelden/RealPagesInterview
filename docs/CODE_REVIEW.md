@@ -64,3 +64,22 @@ or human) doesn't re-flag them as missing behavior.
   runs regardless of its value, since fair housing law has no legitimate
   per-case opt-out (unlike opt-out messaging or generic PII sensitivity,
   which can vary case by case).
+
+- **Timezone resolved more than once per record (PR #17 review).** `IngestNotes`,
+  `LeasingMessageAgent`, and `SendScheduler` each independently resolve the same
+  record's `TimeZoneInfo`. Flagged as an efficiency finding; not fixed. `TimeZoneInfo`
+  already caches by id internally (a lock-protected dictionary lookup), so the marginal
+  cost is a few extra cached lookups per record, not repeated OS/registry work. Threading
+  one resolved `TimeZoneInfo` through `IngestNotes.Describe`, `LeasingMessageAgent`, and
+  `ISendScheduler.Resolve` would mean changing `ISendScheduler`'s signature and every test
+  built against it (`SendSchedulerTests` passes a raw timezone id string throughout) for a
+  gain that duplicates work the BCL is already doing. Not worth the churn.
+
+- **CliRunner's ingest-notes log line is not level-gated (PR #17 review).** Flagged
+  because `log.LogInformation(...)` builds two joined strings as ordinary method
+  arguments before the call, so they're computed even when Information logging is
+  filtered out. Not fixed: `CliRunner.BuildLoggerFactory` hardcodes
+  `SetMinimumLevel(LogLevel.Information)` with no CLI flag to raise it, so
+  `log.IsEnabled(LogLevel.Information)` is always `true` in this codebase today - adding
+  the guard would be an always-true branch the coverage gate can't exercise on the
+  `false` side. Revisit if a `--log-level` flag is ever added.

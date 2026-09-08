@@ -76,7 +76,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
         bool nextActionTypeMatches = expected.NextAction.Type == result.Output.NextAction.Type;
 
         bool optOutPresent = actual is null
-            || constraints.IncludeOptOutInstructions != true
+            || !constraints.RequiresOptOutInstructions()
             || ContainsOptOutPhrase(actual);
 
         // Trivially satisfied when the case states no primary CTA at all - there is

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Agent.Domain;
@@ -11,10 +10,7 @@ public sealed record ProspectContext(
     DateTimeOffset? LastInteraction = null,
     [property: JsonPropertyName("timezone")] string? TimeZoneId = null,
     string? Language = null,
-    ProspectProfile? Profile = null)
+    ProspectProfile? Profile = null) : HasUnknownMembers
 {
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownMembers { get; init; }
-
     public ProspectProfile ProfileOrEmpty => Profile ?? new ProspectProfile();
 }

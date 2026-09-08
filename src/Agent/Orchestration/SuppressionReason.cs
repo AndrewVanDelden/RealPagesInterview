@@ -21,3 +21,11 @@ public sealed class SuppressionReasonConverter : JsonStringEnumConverter<Suppres
     {
     }
 }
+
+public static class SuppressionReasonExtensions
+{
+    // The same snake_case spelling SuppressionReasonConverter writes to the wire, derived
+    // once instead of hand-spelled wherever a reason also has to appear as next_action.reason.
+    public static string ToWireName(this SuppressionReason reason) =>
+        JsonNamingPolicy.SnakeCaseLower.ConvertName(reason.ToString());
+}

@@ -63,7 +63,7 @@ public sealed class LeasingMessageAgent(
         if (!consentDecision.IsContactable)
         {
             log.LogInformation("Suppressing message: prospect is not contactable.");
-            return Suppressed(consentDecision, SuppressionReason.NoContactConsent, new NextAction("no_op", Reason: "no_contact_consent"));
+            return Suppressed(consentDecision, SuppressionReason.NoContactConsent, new NextAction("no_op", Reason: SuppressionReason.NoContactConsent.ToWireName()));
         }
 
         CommunicationChannel channel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent).Value;
@@ -91,25 +91,21 @@ public sealed class LeasingMessageAgent(
         // composer's cooperation.
         SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.ConstraintsOrEmpty);
 
-        if (validation.Violations.Count > 0)
-        {
-            log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
-            var violationDiagnostics = new AgentDiagnostics(
-                consentDecision.ConsentVerified,
-                validation.FairHousingCheckPassed,
-                BrandStyleApplied: true,
-                validation.Violations.Count,
-                SuppressionReason.SafetyViolation);
-            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), violationDiagnostics);
-        }
-
-        // Step 6: emit.
+        bool hasViolations = validation.Violations.Count > 0;
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
             validation.FairHousingCheckPassed,
             BrandStyleApplied: true,
-            validation.Violations.Count);
+            validation.Violations.Count,
+            hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None);
 
+        if (hasViolations)
+        {
+            log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
+            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
+        }
+
+        // Step 6: emit.
         log.LogInformation("Message composed: channel={Channel}, nextAction={NextAction}.", channel, nextAction.Type);
         return new AgentRunResult(new AgentOutput(finalMessage, nextAction), diagnostics);
     }
