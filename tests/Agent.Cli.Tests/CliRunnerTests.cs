@@ -955,4 +955,61 @@ public class CliRunnerTests
             TestFiles.DeleteWithRetry(logFilePath);
         }
     }
+
+    // D30: the judge is off unless --judge is passed, and it needs the same key the model
+    // composer does. An empty input file builds it and scores nothing, so no call is made.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithApiKeyAndNoRecords_ScoresWithoutCallingTheModel()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, string.Empty);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage")])
+            .Build();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(configuration, outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("ActionSem", await File.ReadAllTextAsync(reportPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
+    // Playbook step 77: bad configuration fails before any work, and a judge with no key is
+    // bad configuration, not a run that quietly scores nothing.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithoutApiKey_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--judge needs OpenAI:ApiKey", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
 }

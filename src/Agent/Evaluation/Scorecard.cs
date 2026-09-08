@@ -47,7 +47,7 @@ public sealed record Scorecard(IReadOnlyList<RecordScore> RecordScores, int? Lat
     // instead of one full scan per check.
     private static IReadOnlyDictionary<EvaluationCheck, (int Passed, int Measured)> ComputeTallies(IReadOnlyList<RecordScore> recordScores)
     {
-        EvaluationCheck[] allChecks = Enum.GetValues<EvaluationCheck>();
+        EvaluationCheck[] allChecks = EvaluationChecks.All;
         var tallies = allChecks.ToDictionary(check => check, _ => (Passed: 0, Measured: 0));
 
         foreach (RecordScore score in recordScores)
