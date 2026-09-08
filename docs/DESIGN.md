@@ -94,13 +94,13 @@ values (the confound). Ids and names are labels, not evidence.
 |---|---|---|---|---|
 | Communicate | at least one preferred channel is opted in (`consent`, `channel_preferences`) | sms and email on: yes | email on: yes | no negative sample; suppression shape is A2 |
 | Channel | first entry of `channel_preferences` that is opted in | [sms, email], sms on: sms | [email, sms], sms off: email | "sms when consented, else email" fits both too; A3 picks preference order because the list is ordered |
-| Send day | first day at or after max(reference time, `last_interaction`) in `input.timezone` | last 12-08 09:04 local, ref 12-09: 12-09 | last 12-06 06:30 local, ref 12-09: 12-09 | "last_interaction plus N" needs N=1 and N=3, two constants for two rows; the reference time is A4 |
+| Send day | first day at or after max(reference time, `last_interaction`) in `input.timezone` | last 12-08 09:04 local, ref 12-09: 12-09 | last 12-06 05:30 local, ref 12-09: 12-09 | "last_interaction plus N" needs N=1 and N=3, two constants for two rows; the reference time is A4 |
 | Send hour | by channel: sms 09:00, email 10:00 local | 09:00 | 10:00 | voice unseen; minutes unseen; A5 |
 | Subject | email only | null | present | A11 |
 | Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel | all present | all present | A12 |
 | Call to action type | `constraints.primary_cta` through a vocabulary table | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9) |
 | Call to action payload | sms carries numbered options in the body and `cta.options`; email carries `cta.link` | options | link | link value unseen beyond one host; A10 |
-| Next action | horizon = `move_date_target` minus reference date; short: `start_cadence`; long: `follow_up_in_days` | 33 days: start_cadence | 68 days: follow_up_in_days 3 | threshold anywhere in (33, 68]; N seen once; absent date; A7 |
+| Next action | horizon = `move_date_target` minus reference date; short: `start_cadence`; long: `follow_up_in_days` | 32 days: start_cadence | 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7 |
 | Unknown persona or stage | generic policy: the rule above with the long-horizon branch, diagnostics name the fallback | n/a | n/a | A8 |
 | Language | body in `input.language`; a language with no template goes to the model composer, or English with a diagnostic in template mode | en | en | A13 |
 | Required states | earned by the step that proves them, recorded in diagnostics; unknown names are reported as not earned | 3 named | 3 named | A14 |
@@ -155,9 +155,9 @@ flowchart TD
     E -- still failing --> S2[Suppress: reason composition_failed]
     E -- clean --> F[5 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
     F --> G[6 Plan: next_action from the policy row and the horizon]
-    S --> G
-    S2 --> G
-    G --> H[Emit output plus diagnostics: every decision input, every defaulted field, every fallback]
+    S --> H[Emit output plus diagnostics: every decision input, every defaulted field, every fallback]
+    S2 --> H
+    G --> H
 ```
 
 | Component | Responsibility | Seam |
@@ -203,7 +203,7 @@ constant until a second known value earns a setting.
 | A4 | Send day is the first day at or after max(reference time, `last_interaction`) in the record's timezone; reference time comes from `--now`, default current UTC time | sample 2's date is three days after its last interaction and sample 1's is one day after, so a time outside the record sets the day; answer from the requester, D10 | the flag only |
 | A5 | Send hour by channel: sms 09:00, email 10:00, voice 09:00 local; no minutes | sample 1 09:00 sms, sample 2 10:00 email; voice and minutes unseen | no |
 | A6 | Unknown or absent timezone resolves as UTC with a diagnostic | both samples America/Chicago; the field is a free string | no |
-| A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); absent date is long | 33 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 is the midpoint of the open interval; absent is unseen | no |
+| A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); absent date is long | 32 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 falls inside the open interval (32, 68]; it is not the midpoint (50), just a round number in range; absent is unseen | no |
 | A8 | Unknown persona or stage uses the generic row: A7's rule, diagnostics name the fallback; the catalog names `start_cadence`, `follow_up_in_days`, `no_op` | both samples are prospects at `new` and `open`; other values are unseen | the catalog file |
 | A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply` | one pair in both samples; absence unseen | the catalog file |
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |

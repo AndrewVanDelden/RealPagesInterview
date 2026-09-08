@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: ["**"]
+    branches: [dev, main]
   pull_request:
     branches: [dev, main]
 
@@ -16,9 +16,8 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Build
-        run: dotnet build --configuration Debug
-
+      # test.ps1's dotnet test does its own restore and build (no --no-build), so a separate
+      # build step here would only recompile the same solution twice.
       # Windows PowerShell 5.1, the same shell the script is written for locally. The script
       # exits with the dotnet test exit code, so a red suite or a coverage gate under 100
       # percent fails this step.

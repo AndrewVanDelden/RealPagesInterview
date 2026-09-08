@@ -24,7 +24,7 @@ between it and the outside world.
 ```mermaid
 flowchart TD
     A[Ingest JSONL record] --> B{Consent gate}
-    B -- no consented channel --> S[Suppress: next_message = null]
+    B -- no consented channel --> S[Suppress: channel none, next_message fields null]
     B -- contactable --> C[Select channel: first preferred with opt-in]
     C --> D[Compose message: LLM node or template]
     D --> E{Validate: opt-out, no PII, no steering}

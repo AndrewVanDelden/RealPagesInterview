@@ -131,9 +131,10 @@ input data." Assumption: A19.
 **D10. Reference time (2026-09-07).** Question: how a run learns the date its send times are
 relative to. Options: a `--now` flag with the current UTC time as default; or a default derived
 from the latest `last_interaction` in the batch. Recommendation: the flag, on the requester's
-answer. The documented run against the twelve passes `--now 2025-12-09T00:00:00-06:00` and the
-README says so. Scopes: D4, the CLI, Sprint 3. Evidence: section 3, the send-day row; the field
-is absent from most records. Assumption: A4.
+answer. The `--now` flag does not exist yet; it lands with the CLI contract work in Sprint 3.
+The documented run against the twelve will pass `--now 2025-12-09T00:00:00-06:00`, and the
+README will record that command once the flag ships. Scopes: D4, the CLI, Sprint 3. Evidence:
+section 3, the send-day row; the field is absent from most records. Assumption: A4.
 
 **D11. Where the twelve-record file lives (2026-09-07).** Question: whether CI can read the
 evaluation set. Options: in the repo beside `sample.jsonl`, linked into the test output; or
