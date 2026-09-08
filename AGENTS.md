@@ -16,9 +16,11 @@ dotnet build                      # whole solution (.slnx)
 dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.json
 ```
 
-CLI flags: `--input <jsonl>` `--output <json>` `[--composer template|openai]`
+CLI flags: `--input <jsonl>` `--output <json>` `[--now <ISO-8601>]` `[--composer template|openai]`
 `[--diagnostics <json>] [--eval-report <txt>] [--log-file <log>]`. Exit codes: 0 success,
-1 usage error, 2 partial failure. Full reference: `docs/OPERATIONS.md`.
+1 usage error, 2 partial failure. `--now` is the run's reference time (D10), default the
+current UTC time; the run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`.
+Full reference: `docs/OPERATIONS.md`.
 
 The OpenAI key is `OpenAI:ApiKey` in `dotnet user-secrets` for `src/Agent.Cli`. The user
 sets it. Never read, print, or write the value.
@@ -41,14 +43,14 @@ sets it. Never read, print, or write the value.
 
 ## Current phase
 
-Phase 1 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Environment and agent setup. Phase 0 was
-restarted at step 1 on 2026-09-07 (D12) and its check passed the same day: `docs/DESIGN.md`
-section 7 is the assumptions table and every evidence cell is filled.
-Check: a fresh clone builds and runs the empty test suite from one documented command. Status:
-passed on 2026-09-07; the `test` check of `.github/workflows/test.yml` was green on PR #16's
-first run and `dev` now requires it.
-Next step: 28, build the evaluator before the product (Phase 2; steps 24 to 27 exist from the
-first build and are revised in Sprint 3).
+Phase 2 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Scaffold and verification harness first.
+Phase 0 was restarted at step 1 on 2026-09-07 (D12) and passed the same day; Phase 1 passed on
+2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Steps 25 to 27 landed in
+Sprint 2 on 2026-09-08 (every member optional except three, per-record reader, output shape).
+Check: the evaluator scores the golden expected outputs at 100 percent, and a deliberately
+wrong output at less. Status: not passed.
+Next step: 28, build the evaluator before the product (Sprint 3, the harness row of
+`docs/DESIGN.md` section 9).
 Open decisions: none; S1 to S4 and D1 to D12 are in `docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
@@ -95,21 +97,23 @@ Update this section at the end of every sprint. It is the first thing an agent r
 
 ## Gotchas
 
-- Missing JSON properties never default silently: `AgentJsonOptions.Default` sets
-  `RespectRequiredConstructorParameters`, so every constructor parameter without a default
-  is required and its absence is a failure row from the reader. An optional member carries
-  `= null`, or the record has a `[JsonConstructor]` listing only its required members
-  where C# forbids a default before a required parameter (`CaseConstraints`,
-  `ExpectedOutcome`, `AgentOutput`). Silent year-0001 dates were the real hold-out failure;
-  `move_date_target` and `last_interaction` stay required until D2 and D4 define what runs
-  without them.
-- `expected.next_message.channel` can be `"none"` in real data. `CommunicationChannel.None`
-  (first in the enum, so the default value is the absence) and a nullable `Body` let that
-  shape parse, and the evaluator scores the agent's null message, the oracle's `none`, and
-  a null channel as one channel. Any other unlisted value still makes
-  `LenientExpectedOutcomeConverter` set `Expected` to null and the record scores as
-  unscoreable. The agent itself still emits a null `next_message` on suppression; D3's
-  object shape is Sprint 3 and 6 work.
+- Only `task_id`, `consent`, and `channel_preferences` are required (D1); `ProspectCase`
+  has a `[JsonConstructor]` listing exactly those three and `AgentJsonOptions.Default` sets
+  `RespectRequiredConstructorParameters`, so a line missing one is a failure row naming it.
+  Every other member is nullable with a `= null` default; a decision that needs one applies
+  the assumption that names the default (DESIGN.md section 7) and `IngestNotes.Describe`
+  lists the field per record. Undeclared members at any depth land in `UnknownMembers`
+  (`[JsonExtensionData]`) and are listed by path. Silent year-0001 dates were the real
+  hold-out failure; a non-nullable value-type member on an input record is the bug to
+  refuse in review.
+- `CommunicationChannel` has `None` (first, so the default is the absence) and `Unknown`
+  (any name the file uses that the program does not know; never opted in). A suppressed
+  record emits a `next_message` object with channel `none` and null members, the oracle's
+  own spelling; the evaluator scores that object, a null message, and a null channel as
+  one value. `expected` that cannot parse at all still makes
+  `LenientExpectedOutcomeConverter` set `Expected` to null and the record is unscoreable.
+- The reference time is a value: `--now` on the CLI, a parameter on the agent, the planner,
+  and the scheduler. Nothing in `src/Agent` reads a clock.
 - The safety validator's whole-word check calls static `Regex.IsMatch` per term (about
   25 terms) against a 15-entry cache, so patterns recompile on every message. Known,
   unfixed.

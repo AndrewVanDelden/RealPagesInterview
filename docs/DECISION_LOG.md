@@ -47,9 +47,12 @@ error row naming the member; every other member is optional, its absence gets a 
 diagnostics line naming the field; members the record types do not declare are kept as
 extension data, listed in diagnostics, and logged per record; a value-type property on an input
 record is either required or nullable, enforced by a reflection test over every record type.
-Scopes: D2, D4, D5, Sprint 3. Evidence: DESIGN.md section 2; the statement promises cases the
+Scopes: D2, D4, D5, Sprint 2. Evidence: DESIGN.md section 2; the statement promises cases the
 samples do not show; the retrospective's finding 4 (silent year-0001 dates). Assumptions: A16,
-A17.
+A17. Landed 2026-09-08 in Sprint 2, with one difference from the paragraph above: the
+reflection test over the record types is not written, because every value-type member is now
+nullable by construction and the reader test over `holdout_12.jsonl` (12 of 12 rows) is the
+check that holds; the test returns to scope if a non-nullable value-type member is ever added.
 
 **D2. Decision model (revised 2026-09-07).** Question: how `next_action` is chosen. Options: a
 policy table with one row per stage observed in the twelve; or a catalog with the rows the
@@ -62,7 +65,9 @@ picks the template's branch; a persona or stage with no row uses the generic row
 diagnostics name the fallback; the planner returns a `Result` and never applies the nearest
 rule to a record it cannot classify. `NextAction` is one record with `Type` and nullable
 `Name`, `Value`, `Reason`, nulls omitted on the wire. Scopes: Sprint 4, the orchestrator order.
-Evidence: section 3 of DESIGN.md; playbook steps 41 to 43. Assumptions: A7, A8.
+Evidence: section 3 of DESIGN.md; playbook steps 41 to 43. Assumptions: A7, A8. Landed early,
+2026-09-08 in Sprint 2: consent first with `no_op` and its reason, and the `NextAction` shape.
+The catalog, the generic row, and the `Result` from the planner remain Sprint 4.
 
 **D3. Output contract.** Question: what suppression looks like and what diagnostics carry.
 Options: a null `next_message`; or an object with channel `none` and null fields.
@@ -71,8 +76,10 @@ both spellings and a null channel as one value. Diagnostics carry `suppression_r
 (`none`, `no_contact_consent`, `composition_failed`, `safety_violation`), the decision inputs,
 every defaulted field, every fallback, and the earned states: `consent_verified` only when the
 selector ran, `fair_housing_check_passed` as the validator's verdict, `brand_style_applied` as a
-check that can fail, any other name as not earned. Scopes: Sprint 3, Sprint 7. Evidence: the
-statement's "(or not sent)"; A2, A14.
+check that can fail, any other name as not earned. Scopes: Sprint 2, Sprint 7. Evidence: the
+statement's "(or not sent)"; A2, A14. Landed 2026-09-08 in Sprint 2: the object with channel
+`none`, `suppression_reason` in diagnostics, and the ingest notes (defaulted fields, unknown
+members) on every diagnostics row. The earned states remain Sprint 7.
 
 **D4. Scheduling (revised 2026-09-07).** Question: what `send_at` is a function of. Options:
 per-stage day offsets and minutes fitted to the twelve; or the channel slot on the first day at
@@ -132,9 +139,11 @@ input data." Assumption: A19.
 relative to. Options: a `--now` flag with the current UTC time as default; or a default derived
 from the latest `last_interaction` in the batch. Recommendation: the flag, on the requester's
 answer. The `--now` flag does not exist yet; it lands with the CLI contract work in Sprint 3.
-The documented run against the twelve will pass `--now 2025-12-09T00:00:00-06:00`, and the
-README will record that command once the flag ships. Scopes: D4, the CLI, Sprint 3. Evidence:
-section 3, the send-day row; the field is absent from most records. Assumption: A4.
+The documented run against the twelve passes `--now 2025-12-09T00:00:00-06:00`, and the
+README records that command. Scopes: D4, the CLI, Sprint 2. Evidence: section 3, the send-day
+row; the field is absent from most records. Assumption: A4. Landed 2026-09-08 in Sprint 2:
+`--now` on the CLI, logged once per run, passed as a value to the agent, the planner, and
+the scheduler.
 
 **D11. Where the twelve-record file lives (2026-09-07).** Question: whether CI can read the
 evaluation set. Options: in the repo beside `sample.jsonl`, linked into the test output; or

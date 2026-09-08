@@ -96,14 +96,17 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 
 ## Decisions to finish the project
 
-- D1 Input contract: nine required fields, every other value-type field nullable and logged when absent, a test that fails on a field that is neither, unknown fields logged, a `--now` reference time.
-- D2 Decision model: consent first, then a policy table keyed on persona and stage, horizon only inside the prospect rows and the row's default when the move date is absent, "no policy" as a result.
-- D3 Output contract: a real `none` channel, a suppression reason in diagnostics, required states earned by checks that can fail.
-- D4 Scheduling: default slot on or after the later of reference time and last interaction, scored to day and hour.
-- D5 Composition: templates keyed on stage, channel, and language, options on SMS, link on email, missing CTA means the row's default.
-- D6 Evaluation: every output field scored, scorer proven able to fail, the twelve labeled as training data and a frozen synthetic set as the honest number.
+- D9 (the frame, 2026-09-07): the twelve-record file is an evaluation set, never fitted to; the two samples are the only evidence a rule is fitted to; the honest number is reported, never targeted.
+- D1 Input contract (landed Sprint 2): three required members, every other member nullable and named per record when absent, unknown members kept and listed by path, an unknown channel name is a real `Unknown` value.
+- D2 Decision model: consent first (landed), then a catalog with the rows the samples justify plus one generic row, "no policy" as a result, never the nearest rule.
+- D3 Output contract (shape landed Sprint 2): suppression is a `next_message` object with channel `none`, a suppression reason in diagnostics, required states earned by checks that can fail.
+- D4 Scheduling: the channel's slot on or after the later of reference time and last interaction, in the record's timezone, scored to day and hour; minutes not modeled.
+- D5 Composition: templates keyed on persona and channel from the facts the record carries, English shipped, other languages to the model composer, options on SMS, link on email, missing CTA means the generic reply.
+- D6 Evaluation: every output field scored, scorer proven able to fail, both the twelve and a frozen synthetic set reported as evaluation sets.
 - D7 Structure: keep the three interfaces with substitutes, remove the eight without, six named steps in the orchestrator.
-- D8 Gates: CI on every push, branch protection on `dev`, the golden test in the suite.
+- D8 Gates (landed Sprint 1): CI on every push, branch protection on `dev`.
+- D10 (landed Sprint 2): `--now` is the run's reference time, a value passed in; nothing in the library reads a clock.
+- D11 and D12: the twelve live in the repo beside the samples; Phase 0 restarted at step 1.
 
 ## Definitions worth having ready
 

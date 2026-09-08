@@ -61,6 +61,16 @@ is the full pipeline; see [TalkingPoints.md](TalkingPoints.md) for one sentence 
 mattered more than a self-imposed symmetry once we noticed the problem statement never
 required it.
 
+Add `--now <ISO-8601 date-time>` to fix the run's reference time (send days are floored
+to it and horizons counted from it); without it the current UTC time is used. The run
+against the twelve-record evaluation set is
+`--input holdout_12.jsonl --now 2025-12-09T00:00:00-06:00`, the oracle's own date. That
+file is an evaluation set, never fitted to: the two records in `sample.jsonl` are the only
+evidence any rule is fitted to (decision D9 in
+[docs/DECISION_LOG.md](docs/DECISION_LOG.md)). After Sprint 2 it produces 12 valid rows,
+matches the channel on 12 of 12 and the action type on 7 of 12; the misses are vocabulary
+the samples never showed. Measurements, not targets.
+
 Add `--eval-report <file>` against a labeled file (one with `expected` populated,
 like `sample.jsonl`) to get a scorecard proving the agent meets its thresholds -
 channel, `next_action.type`, opt-out/CTA presence, safety, personalization, and

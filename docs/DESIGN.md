@@ -199,11 +199,11 @@ constant until a second known value earns a setting.
 |---|---|---|---|
 | A1 | Contactable when any preferred channel is opted in | both samples contactable; sample 2 with sms off chose email | no |
 | A2 | Suppression emits `next_message` with channel `none` and null fields, and `next_action` `no_op` with a reason | no negative sample; the statement says a message may be "not sent"; the output object must always have both members | no |
-| A3 | Channel is the first opted-in entry of `channel_preferences`; unknown channel names are skipped and reported | sample 1 and 2 as in section 3; the list is ordered by name | no |
+| A3 | Channel is the first opted-in entry of `channel_preferences`; an unknown channel name parses as the `Unknown` value, which is never opted in, and the ingest notes name it | sample 1 and 2 as in section 3; the list is ordered by name | no |
 | A4 | Send day is the first day at or after max(reference time, `last_interaction`) in the record's timezone; reference time comes from `--now`, default current UTC time | sample 2's date is three days after its last interaction and sample 1's is one day after, so a time outside the record sets the day; answer from the requester, D10 | the flag only |
 | A5 | Send hour by channel: sms 09:00, email 10:00, voice 09:00 local; no minutes | sample 1 09:00 sms, sample 2 10:00 email; voice and minutes unseen | no |
 | A6 | Unknown or absent timezone resolves as UTC with a diagnostic | both samples America/Chicago; the field is a free string | no |
-| A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); absent date is long | 32 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 falls inside the open interval (32, 68]; it is not the midpoint (50), just a round number in range; absent is unseen | no |
+| A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); an absent date is long (no date, no cadence to start); a past date is short (the move is due) | 32 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 falls inside the open interval (32, 68]; it is not the midpoint (50), just a round number in range; absent and past are unseen | no |
 | A8 | Unknown persona or stage uses the generic row: A7's rule, diagnostics name the fallback; the catalog names `start_cadence`, `follow_up_in_days`, `no_op` | both samples are prospects at `new` and `open`; other values are unseen | the catalog file |
 | A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply` | one pair in both samples; absence unseen | the catalog file |
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |
@@ -233,10 +233,22 @@ Each sprint cites decisions in the log; one PR per sprint against `dev`.
 | Sprint | Implements | Proof |
 |---|---|---|
 | 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4, D8 to D12) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |
-| 2 Harness | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode (D6) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for both sets recorded |
-| 3 Contracts | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape (D1, D3, D10) | every section 4 record parses to one row; diagnostics name every defaulted field |
+| 2 Contracts (landed 2026-09-08) | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape and reason, consent first (D1, D3, D10, the first line of D2) | every record of both files parses to one row and runs to a valid output; diagnostics name every defaulted field and every unknown member |
+| 3 Harness | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for both sets recorded |
 | 4 Decision core | catalog, generic fallback, plan after consent, `Result` from the planner (D2) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling | reference time, floor, timezone and DST property tests (D4); repoint the `SendScheduler` comment from "assumptions log #2" to A4 and A5 | property tests green; unknown timezone is a row, not an exit |
 | 6 Composition | facts, language handling, catalog-driven call to action, model prompt inputs, judge (D5) | both sets compose on the offline path with the network disabled |
 | 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
 | 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
+
+Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
+file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
+the output types) precede step 28 (the evaluator) inside Phase 2.
+
+**Numbers after Sprint 2**, `holdout_12.jsonl` with `--now 2025-12-09T00:00:00-06:00`, the
+evaluator as it stood before Sprint 3 (channel, action type, opt-out, call to action against
+the constraint, safety, personalization, latency): 12 of 12 rows valid, exit code 0; channel
+12 of 12; `next_action.type` 7 of 12, every miss a value the two samples never showed
+(`reset_cadence`, `schedule_sms_reminder`, `branch_on_intent`, `start_esign_flow`, and the
+long-horizon welcome cadence); 7 of 12 rows pass every check. `sample.jsonl`: 2 of 2. These are
+measurements, not targets (D6, D9).
