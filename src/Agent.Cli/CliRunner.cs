@@ -47,6 +47,12 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             return CliExitCodes.UsageError;
         }
 
+        if (outputPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--output and --replay are mutually exclusive: pass exactly one.");
+            return CliExitCodes.UsageError;
+        }
+
         // D10: the run's reference time is a value passed in, never a clock read inside the
         // library. Without the flag it is the current UTC time, so send times are relative
         // to today; the documented run against holdout_12.jsonl passes the oracle's date.
@@ -123,6 +129,11 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
         (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
 
+        // Fixed before the loop below can add processing failures onto the same
+        // failureCount: a record that throws stays in `cases` (per-record isolation), so
+        // cases.Count + failureCount after the loop would count it twice.
+        int recordsRead = cases.Count + failureCount;
+
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output/diagnostics path (bad directory, no write permission) must fail immediately,
         // not after every record has already run through the composer and any LLM calls.
@@ -180,7 +191,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, stopwatch.Elapsed.TotalMilliseconds));
         }
 
-        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", cases.Count + failureCount, failureCount);
+        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", recordsRead, failureCount);
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
         await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
@@ -228,8 +239,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
         if (!aligned.IsSuccess)
         {
-            log.LogError("Replay refused: {Error}", aligned.Error);
-            error.WriteLine($"--replay '{replayPath}': {aligned.Error}");
+            ReportFailure(log, LogLevel.Error, $"--replay '{replayPath}': {aligned.Error}");
             return CliExitCodes.UsageError;
         }
 
@@ -242,6 +252,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
     // A line that did not parse is one failure row with its line number; there is no task
     // id to scope the log line on, so the line number is the only identity it has.
+    // O(n) in the file size: one line parsed, and on failure reported, per iteration.
     private (List<ProspectCase> Cases, int FailureCount) ReadInput(string inputPath, ILogger<CliRunner> log)
     {
         IReadOnlyList<Result<ProspectCase>> readResults;
@@ -262,8 +273,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             }
 
             failureCount++;
-            log.LogError("Record failed to parse: {Error}", readResult.Error);
-            error.WriteLine($"Record failed to parse: {readResult.Error}");
+            ReportFailure(log, LogLevel.Error, $"Record failed to parse: {readResult.Error}");
         }
 
         return (cases, failureCount);
@@ -271,15 +281,15 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
 
     // A case missing its labeled expected outcome shows up as an unscoreable row rather
     // than aborting the whole report. The report always goes to the console; the file is
-    // optional.
+    // optional. O(n) in the batch size: one record's scoring error reported per iteration,
+    // plus one file write.
     private async Task WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
     {
         foreach (RecordScore score in scorecard.RecordScores)
         {
             if (score.ScoringError is not null)
             {
-                log.LogWarning("Eval: record '{TaskId}' could not be scored: {Error}", score.TaskId, score.ScoringError);
-                error.WriteLine($"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
+                ReportFailure(log, LogLevel.Warning, $"Eval: record '{score.TaskId}' could not be scored: {score.ScoringError}");
             }
         }
 
@@ -290,6 +300,14 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         {
             await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
         }
+    }
+
+    // The log line and the stderr line always carry the same text: one failure, reported
+    // through both channels, never independently worded.
+    private void ReportFailure(ILogger log, LogLevel level, string message)
+    {
+        log.Log(level, message);
+        error.WriteLine(message);
     }
 
     private static string? GetOption(string[] cliArgs, string name)

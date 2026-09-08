@@ -896,4 +896,63 @@ public class CliRunnerTests
         Assert.Equal(CliExitCodes.UsageError, exitCode);
         Assert.Contains("--replay", errorWriter.ToString());
     }
+
+    // --output and --replay select mutually exclusive modes (D14); passing both used to
+    // silently run --replay and never write --output, with no diagnostic.
+    [Fact]
+    public async Task RunAsync_OutputAndReplayBothGiven_WritesUsageAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--output", errorWriter.ToString());
+            Assert.Contains("--replay", errorWriter.ToString());
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // The total in "Batch complete" must count records read, not records read plus
+    // processing failures: a record that throws stays in `cases` (per-record isolation)
+    // and previously got added into the total a second time via failureCount.
+    [Fact]
+    public async Task RunAsync_OneRecordThrows_BatchCompleteReportsTheRecordsReadNotDoubleCounted()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), new ThrowingComposer("t2"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("Batch complete: 2 record(s), 1 failure(s).", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
 }

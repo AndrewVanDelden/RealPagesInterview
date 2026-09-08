@@ -44,18 +44,18 @@ public sealed record RecordScore(
     // visible in the scorecard instead of aborting the batch (playbook step 34).
     public static RecordScore Unscoreable(string taskId, string reason) =>
         new(
-            taskId,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
-            CheckResult.NotMeasured,
+            TaskId: taskId,
+            Channel: CheckResult.NotMeasured,
+            SendAtDay: CheckResult.NotMeasured,
+            SendAtHour: CheckResult.NotMeasured,
+            NextActionType: CheckResult.NotMeasured,
+            OptOut: CheckResult.NotMeasured,
+            CtaType: CheckResult.NotMeasured,
+            CtaPayload: CheckResult.NotMeasured,
+            BodyLanguage: CheckResult.NotMeasured,
+            Safety: CheckResult.NotMeasured,
             PersonalizationScore: null,
-            CheckResult.NotMeasured,
+            Personalization: CheckResult.NotMeasured,
             LatencyMs: null,
-            reason);
+            ScoringError: reason);
 }

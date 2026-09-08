@@ -9,6 +9,8 @@ public class OptOutInstructionsTests
     [InlineData("Reply STOP to opt out.")]
     [InlineData("Responde STOP para cancelar.")]
     [InlineData("Text STOP anytime.")]
+    [InlineData("Reply stop to end texts.")]
+    [InlineData("You can text stop anytime.")]
     [InlineData("You can opt out at any time.")]
     [InlineData("Opt-out here.")]
     [InlineData("Opt\u2011out here.")]

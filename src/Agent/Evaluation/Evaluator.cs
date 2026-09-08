@@ -78,7 +78,11 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             : Verdict(actual.Cta?.Type == expectedCtaType);
 
         CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual);
-        CheckResult bodyLanguage = ScoreLanguage(context.Language, text);
+
+        // Tokenized once and shared: BodyLanguage and Personalization both check words
+        // drawn from the same message text.
+        HashSet<string>? words = text is null ? null : MessageWords.Of(text);
+        CheckResult bodyLanguage = ScoreLanguage(context.Language, words);
 
         // A15: a budget the record does not state is zero; a count the run did not record
         // is not measured (replay, D14).
@@ -86,25 +90,25 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             ? CheckResult.NotMeasured
             : Verdict(violationCount <= (thresholds.SafetyViolationsMax ?? 0));
 
-        double? personalizationScore = text is null ? null : ComputePersonalizationScore(context, text);
+        double? personalizationScore = words is null ? null : ComputePersonalizationScore(context, words);
         CheckResult personalization = personalizationScore is not { } score || thresholds.PersonalizationScoreMin is not { } minimumScore
             ? CheckResult.NotMeasured
             : Verdict(score >= minimumScore);
 
         return new RecordScore(
-            prospectCase.TaskId,
-            channel,
-            sendAtDay,
-            sendAtHour,
-            nextActionType,
-            optOut,
-            ctaType,
-            ctaPayload,
-            bodyLanguage,
-            safety,
-            personalizationScore,
-            personalization,
-            run.LatencyMs);
+            TaskId: prospectCase.TaskId,
+            Channel: channel,
+            SendAtDay: sendAtDay,
+            SendAtHour: sendAtHour,
+            NextActionType: nextActionType,
+            OptOut: optOut,
+            CtaType: ctaType,
+            CtaPayload: ctaPayload,
+            BodyLanguage: bodyLanguage,
+            Safety: safety,
+            PersonalizationScore: personalizationScore,
+            Personalization: personalization,
+            LatencyMs: run.LatencyMs);
     }
 
     private static CheckResult Verdict(bool passed) => passed ? CheckResult.Passed : CheckResult.Failed;
@@ -156,19 +160,19 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
     // A13 and D13 c: not measured without a message, without a stated language, or for a
     // language the detector does not know; a body with no stop words at all fails.
-    private static CheckResult ScoreLanguage(string? languageTag, string? text)
+    private static CheckResult ScoreLanguage(string? languageTag, HashSet<string>? words)
     {
-        if (text is null || !LanguageDetector.TryParseTag(languageTag, out MessageLanguage stated))
+        if (words is null || !LanguageDetector.TryParseTag(languageTag, out MessageLanguage stated))
         {
             return CheckResult.NotMeasured;
         }
 
-        return Verdict(LanguageDetector.Detect(text) == stated);
+        return Verdict(LanguageDetector.Detect(words) == stated);
     }
 
     // D13 a: coverage of the first name and the property name. A record carrying neither
     // has nothing to personalize and scores 1.0.
-    private static double ComputePersonalizationScore(ProspectContext context, string text)
+    private static double ComputePersonalizationScore(ProspectContext context, HashSet<string> words)
     {
         var facts = new List<string>(2);
 
@@ -187,7 +191,6 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             return 1.0;
         }
 
-        HashSet<string> words = MessageWords.Of(text);
         int covered = facts.Count(fact => MessageWords.Covers(words, fact));
 
         return (double)covered / facts.Count;

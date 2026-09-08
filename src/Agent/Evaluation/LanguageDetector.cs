@@ -17,17 +17,23 @@ public static class LanguageDetector
     {
         "el", "la", "los", "las", "para", "por", "tu", "tus", "en", "una", "un", "esta", "este",
         "de", "que", "y", "con", "responde", "gracias", "hola", "quieres", "aquí", "semana",
-        "visita", "nuestro", "nuestra", "puedes", "cancelar", "interés", "ahora",
+        "nuestro", "nuestra", "puedes", "cancelar", "ahora", "no", "se", "su", "sus", "al",
+        "del", "mi", "mis", "más", "pero", "si", "también",
     };
 
     // O(n) in the text length: one tokenizing pass, two set lookups per distinct word.
+    public static MessageLanguage? Detect(string text) => Detect(MessageWords.Of(text));
+
+    // O(n) in the word count: two set lookups per distinct word. Takes an already
+    // tokenized set so a caller scoring more than one thing about the same text (Evaluator
+    // also checks personalization coverage) tokenizes it once, not once per check.
     // Null when neither language leads: no stop words at all, or an exact tie.
-    public static MessageLanguage? Detect(string text)
+    internal static MessageLanguage? Detect(IReadOnlySet<string> words)
     {
         int english = 0;
         int spanish = 0;
 
-        foreach (string word in MessageWords.Of(text))
+        foreach (string word in words)
         {
             if (EnglishStopWords.Contains(word))
             {
