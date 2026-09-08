@@ -287,6 +287,20 @@ rule is stated over a zone's adjustment rules, not over today's zone database, a
 against custom zones built in the test whose transitions do cover the slot, plus a sweep over
 every system zone's real transitions. Assumption: A20.
 
+**D21 addendum, PR #20 review (2026-09-08).** The first implementation did not match this
+decision: `ResolveSlot`'s gap branch shifted the wall time forward by the gap's own width
+(`GetUtcOffset` before the transition, re-stamped after) rather than landing on the transition
+instant. The two agree only when the requested slot falls exactly at the gap's start; for any
+slot farther into the gap, the shift overshoots past the transition instant by however far into
+the gap the slot fell, which contradicts the "stays closest to A5's hour" reasoning above.
+Flagged in PR #20 by a Claude review and independently by an Antigravity (Gemini 3.8 Flash)
+review comment on the same line. Fixed by having `ResolveSlot` binary-search
+`TimeZoneInfo.IsInvalidTime` for the earliest valid instant instead of computing an offset
+shift, since the zone's own transition boundary is not exposed by public `TimeZoneInfo` API.
+No tally on any of the three sets moved: no zone in the current database reaches this branch
+(A20), so the bug was invisible to every check the product runs, only to the property tests
+built to cover it, and to review.
+
 **D22. What the diagnostics say about `send_at` (2026-09-08).** Question: whether the schedule
 decision gets the account D18 gave the action plan, and what is in it. Options: leave `send_at`
 unexplained, since the ingest notes already name an unrecognized timezone; log the transition

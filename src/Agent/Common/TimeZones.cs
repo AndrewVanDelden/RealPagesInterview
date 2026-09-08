@@ -39,11 +39,7 @@ public static class TimeZones
     {
         if (timeZone.IsInvalidTime(localWallTime))
         {
-            // GetUtcOffset returns the offset from before the transition for a wall time
-            // inside the gap, so this instant is already past the gap. Re-stamping it with
-            // the offset the zone was on when it got there is what makes the value true.
-            var pastTheGap = new DateTimeOffset(localWallTime, timeZone.GetUtcOffset(localWallTime));
-            return new ResolvedSlot(pastTheGap.ToOffset(timeZone.GetUtcOffset(pastTheGap)), SlotResolution.ShiftedPastGap);
+            return new ResolvedSlot(TransitionInstantAtOrAfter(timeZone, localWallTime), SlotResolution.ShiftedPastGap);
         }
 
         if (timeZone.IsAmbiguousTime(localWallTime))
@@ -54,5 +50,38 @@ public static class TimeZones
         }
 
         return new ResolvedSlot(new DateTimeOffset(localWallTime, timeZone.GetUtcOffset(localWallTime)), SlotResolution.Exact);
+    }
+
+    // D21: the earliest instant at or after a gap's local wall time, found without assuming
+    // the gap's width - a zone's rule tables are not public API, so this locates the boundary
+    // by search rather than by reading the rule. GetUtcOffset on an invalid wall time returns
+    // the offset from before the transition (documented behavior), so stamping that offset on
+    // the wall time and re-reading the offset at the resulting instant gives a point already
+    // past the gap: pre-offset and post-offset differ by exactly the gap's width, so that
+    // point is never more than one gap-width past the boundary, which bounds the search.
+    private static DateTimeOffset TransitionInstantAtOrAfter(TimeZoneInfo timeZone, DateTime localWallTime)
+    {
+        TimeSpan beforeOffset = timeZone.GetUtcOffset(localWallTime);
+        var pastTheGap = new DateTimeOffset(localWallTime, beforeOffset);
+        TimeSpan afterOffset = timeZone.GetUtcOffset(pastTheGap);
+
+        DateTime invalid = localWallTime;
+        DateTime valid = localWallTime + (afterOffset - beforeOffset);
+
+        while (valid - invalid > TimeSpan.FromTicks(1))
+        {
+            DateTime midpoint = invalid + TimeSpan.FromTicks((valid - invalid).Ticks / 2);
+
+            if (timeZone.IsInvalidTime(midpoint))
+            {
+                invalid = midpoint;
+            }
+            else
+            {
+                valid = midpoint;
+            }
+        }
+
+        return new DateTimeOffset(valid, afterOffset);
     }
 }

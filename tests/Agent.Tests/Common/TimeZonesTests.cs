@@ -79,15 +79,34 @@ public class TimeZonesTests
         Assert.Equal(new DateTimeOffset(slot, TimeSpan.FromHours(-5)), resolved.Instant);
     }
 
+    // PR #20 review (D21 addendum): the slot must resolve to the transition instant itself
+    // (09:30, the first valid instant), not to the wall time shifted by the gap's width
+    // (10:00) - the shift overshoots by however far into the gap the slot fell, which is
+    // farther from A5's requested hour than the transition instant is.
     [Fact]
-    public void ResolveSlot_WallTimeInsideASpringForwardGap_ShiftsPastTheGap()
+    public void ResolveSlot_WallTimeInsideASpringForwardGap_ResolvesToTheTransitionInstant()
     {
         var slot = new DateTime(2026, 3, 15, 9, 0, 0);
 
         ResolvedSlot resolved = TimeZones.ResolveSlot(SlotResolutionTestZones.SpringForwardAcrossNineAm, slot);
 
         Assert.Equal(SlotResolution.ShiftedPastGap, resolved.Resolution);
-        Assert.Equal(new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.FromHours(-5)), resolved.Instant);
+        Assert.Equal(new DateTimeOffset(2026, 3, 15, 9, 30, 0, TimeSpan.FromHours(-5)), resolved.Instant);
+    }
+
+    // A slot requested right at the gap's own start is the case where the transition instant
+    // and "shift by the gap width" agree (both land exactly on the gap's far edge); this is
+    // the boundary the two candidate rules cannot be told apart by, so it is covered on its
+    // own rather than only through the property sweep below.
+    [Fact]
+    public void ResolveSlot_WallTimeAtTheStartOfAGap_ResolvesToTheTransitionInstant()
+    {
+        var slot = new DateTime(2026, 3, 15, 8, 30, 0);
+
+        ResolvedSlot resolved = TimeZones.ResolveSlot(SlotResolutionTestZones.SpringForwardAcrossNineAm, slot);
+
+        Assert.Equal(SlotResolution.ShiftedPastGap, resolved.Resolution);
+        Assert.Equal(new DateTimeOffset(2026, 3, 15, 9, 30, 0, TimeSpan.FromHours(-5)), resolved.Instant);
     }
 
     [Fact]
@@ -130,35 +149,52 @@ public class TimeZonesTests
     // repeat. One test rather than one case per zone, because the count of system zones is a
     // property of the runtime and would otherwise move the suite's test count from machine to
     // machine. Every failure is collected, so one run names every zone that broke the rule.
+    // The slots are swept once, in TransitionSlots below, and shared by both [Fact]s that call
+    // this: TransitionDaysIn's output depends only on the zone and the year, not on which
+    // property is being checked, so sweeping it separately per [Fact] would pay the same
+    // ~140-zone, 365-day scan twice for no difference in coverage (PR #20 review).
     private static void AssertOverEverySystemZoneTransition(string failure, Func<TimeZoneInfo, DateTime, ResolvedSlot, bool> holds)
     {
         List<string> failures = [];
-        var zonesSwept = 0;
+
+        foreach ((TimeZoneInfo timeZone, DateTime wallTime) in TransitionSlots.Value)
+        {
+            ResolvedSlot resolved = TimeZones.ResolveSlot(timeZone, wallTime);
+
+            if (!holds(timeZone, wallTime, resolved))
+            {
+                failures.Add($"{timeZone.Id} at {wallTime:O} {failure}: {resolved.Instant:O} ({resolved.Resolution})");
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        Assert.NotEmpty(TransitionSlots.Value);
+    }
+
+    private static readonly int[] SendHours = [9, 10];
+
+    // Lazy, not eager: built on first use by whichever [Fact] runs first, then reused by the
+    // other, rather than computed for every test class instantiation whether or not a
+    // transition-sweep test runs.
+    private static readonly Lazy<IReadOnlyList<(TimeZoneInfo TimeZone, DateTime WallTime)>> TransitionSlots = new(BuildTransitionSlots);
+
+    private static List<(TimeZoneInfo TimeZone, DateTime WallTime)> BuildTransitionSlots()
+    {
+        List<(TimeZoneInfo, DateTime)> slots = [];
 
         foreach (TimeZoneInfo timeZone in TimeZoneInfo.GetSystemTimeZones())
         {
             foreach (DateOnly day in TransitionDaysIn(timeZone, year: 2026))
             {
-                zonesSwept++;
-
                 foreach (int hour in SendHours)
                 {
-                    DateTime wallTime = day.ToDateTime(new TimeOnly(hour, 0));
-                    ResolvedSlot resolved = TimeZones.ResolveSlot(timeZone, wallTime);
-
-                    if (!holds(timeZone, wallTime, resolved))
-                    {
-                        failures.Add($"{timeZone.Id} at {wallTime:O} {failure}: {resolved.Instant:O} ({resolved.Resolution})");
-                    }
+                    slots.Add((timeZone, day.ToDateTime(new TimeOnly(hour, 0))));
                 }
             }
         }
 
-        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
-        Assert.NotEqual(0, zonesSwept);
+        return slots;
     }
-
-    private static readonly int[] SendHours = [9, 10];
 
     // The days a zone's offset changes in the given year, plus the day before each, found by
     // walking the year a day at a time: a transition inside a day shows up as a change between
