@@ -18,9 +18,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $failures = @()
 
+# Anchored to the script's own directory, not the caller's, so this runs the same whether
+# invoked as .\check-instruction-files.ps1 from the repo root or by absolute path from
+# anywhere else (an editor run button, a wrapper, a template stamped into another repo).
+$AgentsPath = [System.IO.Path]::Combine($PSScriptRoot, $AgentsPath)
+
 if (-not $DecisionLogPath) {
     $DecisionLogPath = @('docs/DECISION_LOG.md', 'DECISION_LOG.md') |
+        ForEach-Object { [System.IO.Path]::Combine($PSScriptRoot, $_) } |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+}
+else {
+    $DecisionLogPath = [System.IO.Path]::Combine($PSScriptRoot, $DecisionLogPath)
 }
 
 if (-not (Test-Path -LiteralPath $AgentsPath)) {
@@ -38,6 +47,9 @@ else {
 
 if (-not $DecisionLogPath) {
     $failures += "No decision log found at docs/DECISION_LOG.md or DECISION_LOG.md. Phase First reads its Current phase section."
+}
+elseif (-not (Test-Path -LiteralPath $DecisionLogPath)) {
+    $failures += "$DecisionLogPath not found."
 }
 else {
     $log = Get-Content -LiteralPath $DecisionLogPath
