@@ -913,3 +913,45 @@ inconsistency, not the fix. Scopes: `SafetyValidator.SocialSecurityNumberPattern
 2026-09-09; `Ssn_ZipPlusFour_IsAKnownFalsePositive`, the test that recorded the defect, is
 inverted to assert it is not a violation, so the fix is visible in the diff the way D40's
 inversion is. Assumption: A17 is not involved; this check is unconditional under D40.
+
+**D46. What an exception is allowed to say, and who says a missing member's name (2026-09-09).**
+Question: step 68 says never log a prompt, a raw model response, or a secret above debug level.
+An audit of every log call site found the leak is not in any message template: it is
+`LogLineFormatter` appending the whole `Exception.ToString()`, so a `ClientResultException`
+renders the vendor's raw error response body and a `JsonException` renders the offending
+character of whatever it was parsing, both at Warning, to stderr and to `--log-file`. Options:
+redact inside `ToDiagnosticString`, which every failure row already uses; or add a second
+function and choose per call site. Recommendation: the second. `ToDiagnosticString` has four
+remaining callers and every one of them reports an exception whose message this program or the
+operating system wrote, an unopenable `--log-file`, an unknown `--composer`, a missing API key,
+and a per-record bug; redacting those degrades the stderr usage rows and buys no safety.
+`ToRedactedDiagnosticString` reports a type name, and for the two types that carry content a
+bounded locator instead of the content: an HTTP status for `ClientResultException`, a line and
+byte position for `JsonException`, never `Message` and never `Path`. It is used exactly where
+the message can carry vendor, model, or record text. Two rows deliberately change what an
+operator reads: the per-record parse failure and the `--replay` file-format failure now name a
+position rather than the parser's prose, which is accepted because stderr is where the console
+provider renders and is therefore a log stream. Scopes: `ExceptionFormatting`,
+`OpenAiMessageComposer`, `SemanticJudge`, `LenientExpectedOutcomeConverter`, both readers,
+`IngestNotes`, `CliRunner`'s ingest line. Evidence: a real `ClientResultException` built through
+the SDK over `FakeHttpMessageHandler`, asserted to carry the vendor body in `ex.Message` before
+being asserted absent from the rendered line, with a negative control proving the assertions are
+not vacuous. Assumption: A16 for the unknown-member count.
+
+Addendum, the one piece of new logic. Redacting the reader's message broke a stated contract:
+D1 promises that a line missing a required member produces an error row naming the member, and
+that name came only from the deserializer's prose. `JsonlRecordReader` now states it from its
+own `RequiredMembers` constants, which is program-authored text rather than record text. This
+re-establishes D1 rather than adding anything, and it is recorded because a reviewer reading
+the diff would otherwise see a redaction commit growing a feature.
+
+Two findings the audit raised and the implementation disproved, recorded so neither is chased
+again. The `expected` block's parse error does not leak label text: that converter only ever
+sees a well-formed JSON value, because a malformed one fails the outer record read first, and a
+well-formed value's exception carries only declared type and property names plus a position.
+What did reach the log was the full `ToString()`, twenty or more stack frames with absolute
+local source paths, which is why the change was made anyway. And `ReportFailure` passing an
+already-interpolated string as a message template is not the format-injection bug it looked
+like: with no arguments, `FormattedLogValues` never builds a formatter and returns the string
+verbatim, proved by probing five brace shapes through the console provider, so it was left
+alone rather than fixed for a case that cannot occur.
