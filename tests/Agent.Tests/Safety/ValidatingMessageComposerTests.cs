@@ -177,8 +177,11 @@ public class ValidatingMessageComposerTests
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
+    // The error text can carry raw model response content on the OpenAI path, so the log
+    // records the failure category and the text itself never reaches a log sink. The
+    // correction still carries it to the next attempt, which the test above proves.
     [Fact]
-    public async Task ComposeAsync_FirstAttemptResultFailure_LogsWarningWithTheFailureReason()
+    public async Task ComposeAsync_FirstAttemptResultFailure_LogsTheCategoryAndNotTheErrorText()
     {
         var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
         var innerComposer = new SequenceMessageComposer(
@@ -190,7 +193,8 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Contains(capturingLogger.Entries, entry =>
-            entry.Level == LogLevel.Warning && entry.Message.Contains("call_now", StringComparison.Ordinal));
+            entry.Level == LogLevel.Warning && entry.Message.Contains("returned a failure result", StringComparison.Ordinal));
+        Assert.DoesNotContain(capturingLogger.Entries, entry => entry.Message.Contains("call_now", StringComparison.Ordinal));
     }
 
     [Fact]

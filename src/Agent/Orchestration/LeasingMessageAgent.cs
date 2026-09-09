@@ -112,9 +112,16 @@ public sealed class LeasingMessageAgent(
         SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.ConstraintsOrEmpty);
 
         bool hasViolations = validation.Violations.Count > 0;
+
+        // D38: the fair-housing state is the fair-housing check's own verdict, never
+        // "no violations at all". A message that merely omitted its opt-out line used to
+        // record a fair-housing failure that never happened, and A14 says a state is
+        // earned by the step that proves it.
+        bool fairHousingCheckPassed = validation.VerdictOf(SafetyCheck.FairHousing) == SafetyCheckVerdict.Passed;
+
         var diagnostics = new AgentDiagnostics(
             consentDecision.ConsentVerified,
-            validation.FairHousingCheckPassed,
+            fairHousingCheckPassed,
             BrandStyleApplied: true,
             validation.Violations.Count,
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,

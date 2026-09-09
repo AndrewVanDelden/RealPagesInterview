@@ -3,58 +3,166 @@ using Agent.Domain;
 
 namespace Agent.Safety;
 
-// Keyword/pattern heuristic, not a comprehensive fair-housing compliance system: see
-// docs/CODE_REVIEW.md for the explicit scope note. The opt-out check is
-// OptOutInstructions, the one definition the evaluator measures against too (D13 b).
+// Four keyword and pattern proxies, not a comprehensive fair-housing or PII compliance
+// system: step 63 says a proxy says so in the code, so this comment is the place it says
+// it. What the proxies do not catch, with the D41 probe run of 37 inputs as the evidence
+// rather than an opinion: semantic paraphrase (the scope-out already recorded in
+// docs/CODE_REVIEW.md), letter spacing and interior punctuation (matching across arbitrary
+// separators would make short terms like "color" fire on unrelated letter sequences), and
+// Cyrillic homoglyphs (the text under validation is written by this system's own composer,
+// not by an adversary who controls the bytes: A18).
 //
-// NoSensitiveDiscrimination (CaseConstraints) is intentionally never read here: the
-// protected-class/steering check always runs regardless of its value. Fair housing law
-// has no legitimate per-case opt-out, unlike opt-out messaging (transactional exemptions
-// are real) or generic PII sensitivity (which can vary case by case).
+// Each check answers for itself (D38), all four are hard gates (D39), and D40 decides
+// which of them a record may switch off: SocialSecurityNumber and FairHousing are
+// unconditional, OptOutInstructions is gated on include_opt_out_instructions, and
+// LongDigitRun is gated on no_pii_leak because it is the one proxy that also matches a
+// legitimate long identifier. NoSensitiveDiscrimination is never read: fair housing law
+// has no legitimate per-case opt-out.
+//
+// The opt-out check is OptOutInstructions, the one definition the evaluator measures
+// against too (D13 b).
 public sealed partial class SafetyValidator : ISafetyValidator
 {
-    private static readonly string[] ProtectedClassAndSteeringTerms =
-    [
-        "race", "racial", "religion", "religious", "national origin", "familial status",
-        "disability", "disabled", "handicap", "gender", "color", "ethnicity",
-        "families only", "no children", "no kids", "singles only", "adults only",
-        "christian", "muslim", "jewish", "catholic",
-    ];
+    private const string SocialSecurityNumberDetail =
+        "Body appears to contain a leaked personal identifier (Social Security number pattern).";
 
+    private const string LongDigitRunDetail =
+        "Body appears to contain a leaked personal identifier (long numeric sequence).";
+
+    // O(n) in the combined subject and body length: each check is a bounded number of
+    // single passes over that text.
     public SafetyValidationResult Validate(NextMessage message, CaseConstraints constraints)
     {
-        var violations = new List<string>();
         string text = message.Subject is { Length: > 0 }
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
 
-        if (constraints.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(text))
-        {
-            violations.Add("Missing required opt-out instructions.");
-        }
-
-        if (constraints.NoPiiLeak == true && (SsnPattern().IsMatch(text) || LongDigitRunPattern().IsMatch(text)))
-        {
-            violations.Add("Body appears to contain a leaked personal identifier (SSN-like or long numeric sequence).");
-        }
-
-        string? steeringTerm = FindWholeWord(text, ProtectedClassAndSteeringTerms);
-        if (steeringTerm is not null)
-        {
-            violations.Add($"Body contains protected-class or steering language: '{steeringTerm}'.");
-        }
-
-        return new SafetyValidationResult(violations, FairHousingCheckPassed: violations.Count == 0);
+        return new SafetyValidationResult(
+            OptOutInstructionsCheck(text, constraints),
+            SocialSecurityNumberCheck(text),
+            LongDigitRunCheck(text, constraints),
+            FairHousingCheck(text));
     }
 
-    private static string? FindWholeWord(string text, IReadOnlyList<string> terms) =>
-        terms.FirstOrDefault(term => Regex.IsMatch(text, $@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase));
+    // O(n) in the text length.
+    private static SafetyCheckResult OptOutInstructionsCheck(string text, CaseConstraints constraints)
+    {
+        if (!constraints.RequiresOptOutInstructions())
+        {
+            return SafetyCheckResult.NotApplicable(SafetyCheck.OptOutInstructions);
+        }
 
-    [GeneratedRegex(@"\b\d{3}-\d{2}-\d{4}\b")]
-    private static partial Regex SsnPattern();
+        return OptOutInstructions.IsPresent(text)
+            ? SafetyCheckResult.Passed(SafetyCheck.OptOutInstructions)
+            : SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]);
+    }
+
+    // D40: unconditional. No leasing message legitimately carries a Social Security
+    // number, so there is no case the flag would be protecting, and a record that says
+    // no_pii_leak: false is saying it does not need the heuristic, not that it consents to
+    // a leak. This check owns any nine-digit span: the pattern needs a word boundary after
+    // exactly nine digits, and LongDigitRunPattern needs at least thirteen, so the two can
+    // never claim the same text and one leak is never counted twice.
+    // O(n) in the text length.
+    private static SafetyCheckResult SocialSecurityNumberCheck(string text) =>
+        SocialSecurityNumberPattern().IsMatch(text)
+            ? SafetyCheckResult.Failed(SafetyCheck.SocialSecurityNumber, [SocialSecurityNumberDetail])
+            : SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber);
+
+    // O(n) in the text length: one exempt-span pass, one pattern pass.
+    private static SafetyCheckResult LongDigitRunCheck(string text, CaseConstraints constraints)
+    {
+        if (constraints.NoPiiLeak != true)
+        {
+            return SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun);
+        }
+
+        string scannable = IntroducedIdentifierSpan().Replace(text, " ");
+
+        return LongDigitRunPattern().IsMatch(scannable)
+            ? SafetyCheckResult.Failed(SafetyCheck.LongDigitRun, [LongDigitRunDetail])
+            : SafetyCheckResult.Passed(SafetyCheck.LongDigitRun);
+    }
+
+    // Every distinct matched term, not the first one: FindWholeWord was FirstOrDefault, so
+    // a message matching six protected-class terms emitted exactly one violation and
+    // safety_violations_max was scored against that count (D38).
+    // O(n) in the text length: normalize, remove the exempt spans, then one pass of the
+    // term alternation, which is one compiled regex rather than one per term.
+    private static SafetyCheckResult FairHousingCheck(string text)
+    {
+        string scannable = ExemptSpans().Replace(SafetyTextNormalizer.NormalizeForTermMatching(text), " ");
+
+        List<string> details = ProtectedClassAndSteeringTerms()
+            .Matches(scannable)
+            .Select(match => match.Value.ToLowerInvariant())
+            .Distinct()
+            .Select(term => $"Body contains protected-class or steering language: '{term}'.")
+            .ToList();
+
+        return details.Count == 0
+            ? SafetyCheckResult.Passed(SafetyCheck.FairHousing)
+            : SafetyCheckResult.Failed(SafetyCheck.FairHousing, details);
+    }
+
+    // Hyphens are spaces and whitespace runs are single spaces by the time this runs, so
+    // every multi-word term is written with one space and matches "families-only" and
+    // "families  only" alike.
+    private const string ProtectedClassAndSteeringTermPattern =
+        @"\b(?:national origin|familial status|families only|no children|no kids|singles only|adults only" +
+        @"|race|racial|religion|religious|disability|disabled|handicap|gender|color|ethnicity" +
+        @"|christian|muslim|jewish|catholic)\b";
+
+    // The allow-list is a span list, never a term list (D41): a matched span is removed
+    // from the copy being scanned, so "disability" and "color" stay live terms that still
+    // fire elsewhere in the same message. Each row with the case that proves it:
+    //
+    //   do/does not discriminate,     the Equal Housing Opportunity disclosure, the
+    //   to the sentence end
+    //                                  sentence a compliant leasing message is expected to
+    //                                  carry. It matched six terms and was suppressed,
+    //                                  which is the proxy blocking the compliant message
+    //                                  and passing nothing in its place. Matched as a
+    //                                  phrase to the end of its sentence, not verbatim, so
+    //                                  ordinary variations of it pass too, and a steering
+    //                                  sentence after it is still read.
+    //   disability accommodations      "We offer disability accommodations on request."
+    //   wheelchair accessible          "Every home is wheelchair accessible." No term on
+    //                                  the current list matches this span, so this row
+    //                                  removes nothing today; SafetyValidatorAllowListTests
+    //                                  pins that.
+    //   color scheme                   "The color scheme is warm neutrals."
+    //   <n>k race                      "Join our 5K race on Saturday."
+    //   gender neutral                 "The clubhouse has gender-neutral restrooms."
+    //   race simulator                 "The game room has a race simulator."
+    [GeneratedRegex(
+        @"(?:do|does) not discriminate[^.!?]*"
+        + @"|disability accommodations"
+        + @"|wheelchair accessible"
+        + @"|color scheme"
+        + @"|\d+k race"
+        + @"|gender neutral"
+        + @"|race simulator",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex ExemptSpans();
+
+    [GeneratedRegex(ProtectedClassAndSteeringTermPattern, RegexOptions.IgnoreCase)]
+    private static partial Regex ProtectedClassAndSteeringTerms();
+
+    // D41: hyphens, spaces, or bare. The pattern was hyphens only, so "123 45 6789" and
+    // "123456789" both missed.
+    [GeneratedRegex(@"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b")]
+    private static partial Regex SocialSecurityNumberPattern();
 
     // Same 13-19 total digit threshold as a bare unbroken run, but tolerant of the
     // space/dash grouping real formatted numbers (e.g. credit cards) actually use.
     [GeneratedRegex(@"\b\d(?:[- ]?\d){12,18}\b")]
     private static partial Regex LongDigitRunPattern();
+
+    // D41 case 26: a fourteen-digit confirmation number matched the long-digit run. Fixed
+    // by an exempt span, not by loosening the pattern. The introducer reaches at most 20
+    // characters and never across a sentence terminator, so a number in the next sentence
+    // is not exempted by a confirmation mentioned in this one.
+    [GeneratedRegex(@"(?:confirmation(?:\s+number)?|reference)[^.!?\d]{0,20}\d(?:[- ]?\d)*", RegexOptions.IgnoreCase)]
+    private static partial Regex IntroducedIdentifierSpan();
 }

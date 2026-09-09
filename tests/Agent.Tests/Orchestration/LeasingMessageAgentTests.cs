@@ -16,6 +16,22 @@ public class LeasingMessageAgentTests
     // D10: the reference time is a value the caller passes, never a clock the agent reads.
     private static readonly DateTimeOffset ReferenceTime = DateTimeOffset.Parse("2025-12-09T00:00:00-06:00");
 
+    // D38: the validator answers per check, so a fake stands one up the same way the real
+    // one does. Only the fair-housing check failed here.
+    private static SafetyValidationResult FairHousingFailure() =>
+        new(SafetyCheckResult.NotApplicable(SafetyCheck.OptOutInstructions),
+            SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
+            SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
+            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
+
+    // The defect D38 names: fair_housing_check_passed was violations.Count == 0, so this
+    // record recorded a fair-housing failure that never happened.
+    private static SafetyValidationResult OptOutFailureOnly() =>
+        new(SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]),
+            SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
+            SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
+            SafetyCheckResult.Passed(SafetyCheck.FairHousing));
+
     [Fact]
     public async Task RunAsync_Sample1_ProducesSmsAndStartCadence()
     {
@@ -195,7 +211,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage()
     {
-        var violatingResult = new SafetyValidationResult(["Body contains protected-class or steering language: 'disability'."], FairHousingCheckPassed: false);
+        SafetyValidationResult violatingResult = FairHousingFailure();
         IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(violatingResult));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
@@ -214,6 +230,23 @@ public class LeasingMessageAgentTests
         // other two suppression cases below (RunAsync_ComposerCannotProduceAnyValidMessage_...
         // and RunAsync_NoConsentedChannel_RecordsNoComposition).
         Assert.Null(result.Diagnostics.Composition);
+    }
+
+    // D38: fair_housing_check_passed now comes from the fair-housing check's own verdict,
+    // never from "no violations at all". A record that only omitted its opt-out line is
+    // still suppressed, and no longer records a fair-housing failure that never happened.
+    [Fact]
+    public async Task RunAsync_OnlyTheOptOutCheckFails_RecordsFairHousingAsPassedAndStillSuppresses()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(OptOutFailureOnly()));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.True(result.Diagnostics.FairHousingCheckPassed);
+        Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
+        Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
     }
 
     [Fact]
@@ -330,7 +363,7 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_FinalSafetyValidationFindsViolations_LogsWarning()
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
-        var violatingResult = new SafetyValidationResult(["Body contains protected-class or steering language: 'disability'."], FairHousingCheckPassed: false);
+        SafetyValidationResult violatingResult = FairHousingFailure();
         var agent = new LeasingMessageAgent(
             new ConsentGate(),
             new ChannelSelector(),

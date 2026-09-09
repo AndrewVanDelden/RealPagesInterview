@@ -60,7 +60,11 @@ public sealed class ValidatingMessageComposer(
                 // know about - otherwise a retry after a Result.Failure (a wrong cta_type,
                 // a malformed completion) repeats the exact same prompt with no corrective
                 // signal, wasting the one retry this loop has.
-                log.LogWarning("Compose attempt {Attempt} failed: {Error}.", attempt, attemptResult.Error);
+                // The error text can carry raw model response content on the OpenAI path,
+                // so the log records the failure category and never the content. The text
+                // itself still reaches the next attempt as a correction below; it just
+                // never reaches a log sink.
+                log.LogWarning("Compose attempt {Attempt} failed: the composer returned a failure result.", attempt);
                 violationsForNextAttempt = [attemptResult.Error];
             }
         }
