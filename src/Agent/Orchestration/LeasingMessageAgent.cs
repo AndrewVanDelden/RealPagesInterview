@@ -62,6 +62,7 @@ public sealed class LeasingMessageAgent(
         {
             log.LogInformation("Suppressing message: prospect is not contactable.");
             return Suppressed(
+                prospectCase,
                 consentDecision,
                 SuppressionReason.NoContactConsent,
                 new NextAction(ActionTypes.NoOp, Reason: SuppressionReason.NoContactConsent.ToWireName()),
@@ -95,7 +96,7 @@ public sealed class LeasingMessageAgent(
         if (!composeResult.IsSuccess)
         {
             log.LogWarning("Suppressing message: composition failed ({Error}).", composeResult.Error);
-            return Suppressed(consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
+            return Suppressed(prospectCase, consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
@@ -119,11 +120,28 @@ public sealed class LeasingMessageAgent(
         // earned by the step that proves it.
         bool fairHousingCheckPassed = validation.VerdictOf(SafetyCheck.FairHousing) == SafetyCheckVerdict.Passed;
 
+        // D42's second part, and D39's classification of it: brand style is a diagnostic, so
+        // it is checked here and never gates. A message that breaks a rule still goes out and
+        // the state is recorded not earned, because an off-voice message is off-voice and not
+        // unlawful. It is not in ValidatingMessageComposer's loop for the same reason.
+        BrandStyleValidationResult brandStyle = BrandStyleValidator.Validate(finalMessage);
+
+        // Playbook step 43's rule applied to this check: the diagnostics file carries the
+        // failed rules too, but only when the run was given --diagnostics, and a reader of the
+        // log should not have to guess which of the three rules the message broke.
+        if (!brandStyle.Applied)
+        {
+            log.LogWarning("Brand style not applied: {FailedRules}.", string.Join(", ", brandStyle.FailedRules));
+        }
+
         var diagnostics = new AgentDiagnostics(
-            consentDecision.ConsentVerified,
-            fairHousingCheckPassed,
-            BrandStyleApplied: true,
+            RequiredStateMap.For(
+                prospectCase.Assertions?.RequiredStates,
+                Verdict(consentDecision.ConsentVerified),
+                Verdict(fairHousingCheckPassed),
+                Verdict(brandStyle.Applied)),
             validation.Violations.Count,
+            brandStyle.FailedRules,
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
             actionPlan,
             scheduleNotes,
@@ -148,13 +166,29 @@ public sealed class LeasingMessageAgent(
     // other member null, the oracle's own spelling, never a null object.
     private static NextMessage SuppressedMessage() => new(CommunicationChannel.None);
 
-    private static AgentRunResult Suppressed(ConsentDecision consentDecision, SuppressionReason reason, NextAction nextAction, ActionPlanNotes? actionPlan)
+    // A14: a state is earned by the step that proves it. One helper for all three states, so
+    // "the step ran and said no" is spelled the same way wherever it comes from.
+    private static RequiredStateVerdict Verdict(bool earned) =>
+        earned ? RequiredStateVerdict.Earned : RequiredStateVerdict.NotEarned;
+
+    // The consent gate ran on every record that reaches here, so consent_verified is answered.
+    // Neither the safety validator nor the brand-style validator did, because this record has
+    // no message: not evaluated is the honest answer, and it is not a pass (A15).
+    private static AgentRunResult Suppressed(
+        ProspectCase prospectCase,
+        ConsentDecision consentDecision,
+        SuppressionReason reason,
+        NextAction nextAction,
+        ActionPlanNotes? actionPlan)
     {
         var diagnostics = new AgentDiagnostics(
-            consentDecision.ConsentVerified,
-            FairHousingCheckPassed: null,
-            BrandStyleApplied: false,
+            RequiredStateMap.For(
+                prospectCase.Assertions?.RequiredStates,
+                Verdict(consentDecision.ConsentVerified),
+                RequiredStateVerdict.NotEvaluated,
+                RequiredStateVerdict.NotEvaluated),
             SafetyViolationCount: 0,
+            BrandStyleFailures: null,
             reason,
             actionPlan);
 

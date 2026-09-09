@@ -32,6 +32,16 @@ public class LeasingMessageAgentTests
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
             SafetyCheckResult.Passed(SafetyCheck.FairHousing));
 
+    // SampleProspectCases.Minimal asserts no state, so a test that wants a verdict in the map
+    // has to say which state the record asserts. The constraints come along unchanged: the
+    // opt-out gate of D40 reads them.
+    private static ProspectCase Asserting(params string[] requiredStates)
+    {
+        ProspectCase minimal = SampleProspectCases.Minimal();
+
+        return minimal with { Assertions = new CaseAssertions(requiredStates, minimal.ConstraintsOrEmpty) };
+    }
+
     [Fact]
     public async Task RunAsync_Sample1_ProducesSmsAndStartCadence()
     {
@@ -44,9 +54,19 @@ public class LeasingMessageAgentTests
         Assert.Equal(CommunicationChannel.Sms, result.Output.NextMessage!.Channel);
         Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage.SendAt);
         Assert.Equal("start_cadence", result.Output.NextAction.Type);
-        Assert.True(result.Diagnostics.ConsentVerified);
-        Assert.True(result.Diagnostics.FairHousingCheckPassed);
-        Assert.True(result.Diagnostics.BrandStyleApplied);
+
+        // D42: sample 1 asserts all three states this program has a check for, and each is
+        // answered by its own source rather than claimed. brand_style_applied is the check of
+        // D42's second part, not the literal true it replaced.
+        Assert.Equal(
+            new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal)
+            {
+                ["consent_verified"] = RequiredStateVerdict.Earned,
+                ["fair_housing_check_passed"] = RequiredStateVerdict.Earned,
+                ["brand_style_applied"] = RequiredStateVerdict.Earned,
+            },
+            result.Diagnostics.RequiredStates);
+        Assert.Empty(result.Diagnostics.BrandStyleFailures!);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
         Assert.Equal(new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow), result.Diagnostics.ActionPlan);
@@ -79,7 +99,7 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_NoConsentedChannel_EmitsNoneMessageAndNoOpWithReason()
     {
         IMessageAgent agent = RealAgentFactory.BuildRealAgent();
-        ProspectCase suppressedCase = SampleProspectCases.Minimal() with
+        ProspectCase suppressedCase = Asserting("consent_verified", "fair_housing_check_passed", "brand_style_applied") with
         {
             Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
         };
@@ -91,9 +111,14 @@ public class LeasingMessageAgentTests
         Assert.Null(result.Output.NextMessage.SendAt);
         Assert.Equal("no_op", result.Output.NextAction.Type);
         Assert.Equal("no_contact_consent", result.Output.NextAction.Reason);
-        Assert.True(result.Diagnostics.ConsentVerified);
-        Assert.Null(result.Diagnostics.FairHousingCheckPassed);
-        Assert.False(result.Diagnostics.BrandStyleApplied);
+
+        // The consent gate ran, so consent_verified is earned. Neither the safety validator
+        // nor the brand-style validator ran, because there is no message: not evaluated is
+        // the honest answer and it is not a pass (A15).
+        Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["consent_verified"]);
+        Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
+        Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["brand_style_applied"]);
+        Assert.Null(result.Diagnostics.BrandStyleFailures);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
         Assert.Null(result.Diagnostics.ActionPlan);
@@ -175,15 +200,15 @@ public class LeasingMessageAgentTests
             new SafetyValidator(),
             new SendScheduler(),
             new NextActionPlanner());
-        ProspectCase impossibleCase = SampleProspectCases.Minimal();
+        ProspectCase impossibleCase = Asserting("consent_verified", "brand_style_applied");
 
         AgentRunResult result = await agent.RunAsync(impossibleCase, ReferenceTime);
 
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
         Assert.Equal("start_cadence", result.Output.NextAction.Type);
-        Assert.True(result.Diagnostics.ConsentVerified);
-        Assert.Null(result.Diagnostics.FairHousingCheckPassed);
-        Assert.False(result.Diagnostics.BrandStyleApplied);
+        Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["consent_verified"]);
+        Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["brand_style_applied"]);
+        Assert.Null(result.Diagnostics.BrandStyleFailures);
         Assert.Equal(0, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
     }
@@ -205,7 +230,10 @@ public class LeasingMessageAgentTests
         Assert.Equal(CommunicationChannel.Sms, result.Output.NextMessage!.Channel);
         Assert.Equal(TimeSpan.Zero, result.Output.NextMessage.SendAt!.Value.Offset);
         Assert.Equal("follow_up_in_days", result.Output.NextAction.Type);
-        Assert.True(result.Diagnostics.ConsentVerified);
+
+        // D1: this record carries no assertions at all, so it asserts no state and the map is
+        // the complete answer to a list with no items.
+        Assert.Empty(result.Diagnostics.RequiredStates);
     }
 
     [Fact]
@@ -213,15 +241,19 @@ public class LeasingMessageAgentTests
     {
         SafetyValidationResult violatingResult = FairHousingFailure();
         IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(violatingResult));
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
+        ProspectCase prospectCase = Asserting("fair_housing_check_passed", "brand_style_applied");
 
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
 
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
         Assert.Null(result.Output.NextMessage.Body);
         Assert.Equal("start_cadence", result.Output.NextAction.Type);
-        Assert.False(result.Diagnostics.FairHousingCheckPassed);
-        Assert.True(result.Diagnostics.BrandStyleApplied);
+        Assert.Equal(RequiredStateVerdict.NotEarned, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
+
+        // The draft existed and was checked before the safety gate discarded it, so its brand
+        // verdict is a real answer, not "not evaluated". D43's review queue is where the draft
+        // itself goes.
+        Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["brand_style_applied"]);
         Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
 
@@ -239,11 +271,11 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_OnlyTheOptOutCheckFails_RecordsFairHousingAsPassedAndStillSuppresses()
     {
         IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(OptOutFailureOnly()));
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
+        ProspectCase prospectCase = Asserting("fair_housing_check_passed");
 
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
 
-        Assert.True(result.Diagnostics.FairHousingCheckPassed);
+        Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
         Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
@@ -391,6 +423,114 @@ public class LeasingMessageAgentTests
         AgentRunResult result = await agent.RunAsync(sample1, ReferenceTime);
 
         Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 1, LocaleApplied: true), result.Diagnostics.Composition);
+    }
+
+    // D1 on the suppression path, the other side of RunAsync_OnlyRequiredMembers_...: a record
+    // carrying only the three required members states no assertions object at all, and one
+    // whose consent object opts in to nothing is not contactable. It asserts no state, so the
+    // map is empty rather than absent, and reading the states of a record with no assertions
+    // does not throw.
+    [Fact]
+    public async Task RunAsync_OnlyRequiredMembersAndNoConsent_SuppressesAndAssertsNoState()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        var bareCase = new ProspectCase("bare", new ConsentPreferences(), []);
+
+        AgentRunResult result = await agent.RunAsync(bareCase, ReferenceTime);
+
+        Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
+        Assert.Empty(result.Diagnostics.RequiredStates);
+    }
+
+    // D42 and docs/CODE_REVIEW.md, against the record that actually asserts it: hold-out 6
+    // names renewal_offer_loaded and carries a renewal_offer_id a rule could obviously be
+    // fitted to. No rule is written for it, because the hold-out is an evaluation set and
+    // nothing is fitted to it (D9, A19). The name is recorded, by name, as one this program
+    // has no check for, and the two states that do have checks are answered beside it.
+    [Fact]
+    public async Task RunAsync_RecordAssertingAStateWithNoCheck_RecordsItByNameAsNotEarned()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase renewalCase = RealAgentFactory.ReadCases("holdout_12.jsonl")
+            .Single(prospectCase => prospectCase.TaskId == "resident_renewal_undecided_followup");
+
+        AgentRunResult result = await agent.RunAsync(renewalCase, ReferenceTime);
+
+        Assert.Equal(
+            new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal)
+            {
+                ["consent_verified"] = RequiredStateVerdict.Earned,
+                ["fair_housing_check_passed"] = RequiredStateVerdict.Earned,
+                ["renewal_offer_loaded"] = RequiredStateVerdict.NoCheckDefined,
+            },
+            result.Diagnostics.RequiredStates);
+    }
+
+    // D39 and D42: brand style is a diagnostic and never suppresses. The composed message
+    // breaks the exclamation rule and nothing else, so it is still sent, the state is recorded
+    // not earned, and the row names the rule that failed rather than saying only "false".
+    [Fact]
+    public async Task RunAsync_MessageBreaksABrandRule_StillSendsAndRecordsWhichRuleFailed()
+    {
+        IMessageAgent agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Success(
+                new NextMessage(CommunicationChannel.Sms, Body: "Hi Taylor! Tours are open! Reply STOP to opt out."))),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner());
+
+        AgentRunResult result = await agent.RunAsync(Asserting("brand_style_applied"), ReferenceTime);
+
+        Assert.Equal(CommunicationChannel.Sms, result.Output.NextMessage!.Channel);
+        Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
+        Assert.Equal(RequiredStateVerdict.NotEarned, result.Diagnostics.RequiredStates["brand_style_applied"]);
+        Assert.Equal([BrandStyleRule.ExclamationLimit], result.Diagnostics.BrandStyleFailures);
+    }
+
+    // The same fact in the log, for the same reason the generic-row fallback is logged: the
+    // diagnostics file only exists when the run was given --diagnostics, and the log is
+    // always on.
+    [Fact]
+    public async Task RunAsync_MessageBreaksABrandRule_LogsWhichRuleFailed()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Success(
+                new NextMessage(CommunicationChannel.Sms, Subject: "Tour Oak Ridge", Body: "Reply STOP to opt out."))),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+
+        await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.Contains(
+            capturingLogger.Entries,
+            entry => entry.Level == LogLevel.Warning && entry.Message.Contains(nameof(BrandStyleRule.SubjectMatchesChannel), StringComparison.Ordinal));
+    }
+
+    // The other side of that branch: a message that breaks no rule says nothing about brand
+    // style in the log.
+    [Fact]
+    public async Task RunAsync_MessageAppliesEveryBrandRule_LogsNoBrandStyleWarning()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new TemplateMessageComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+
+        await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.DoesNotContain(capturingLogger.Entries, entry => entry.Message.Contains("Brand style", StringComparison.Ordinal));
     }
 
     // A record with no message has no composer to name.
