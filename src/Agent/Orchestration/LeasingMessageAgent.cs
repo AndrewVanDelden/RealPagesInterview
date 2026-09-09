@@ -11,7 +11,7 @@ namespace Agent.Orchestration;
 // delegated to the component that owns it. `.Value` on Option<CommunicationChannel>
 // at the channel-selection step is used deliberately, not defensively re-checked:
 // IsContactable already guarantees a consented channel exists, so re-checking here
-// would be dead code no test could reach honestly. composeResult and the final
+// would be dead code no test could reach honestly. The compose outcome and the final
 // safety validation are different: both are real, reachable failure modes (an
 // unsalvageable compose-validate loop, or a violation slipping past composition),
 // so both are handled explicitly below rather than trusted with .Value.
@@ -90,20 +90,43 @@ public sealed class LeasingMessageAgent(
                 planned.Branch);
         }
 
-        // Step 3: compose.
-        Result<ComposedMessage> composeResult = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
+        // Step 3: compose. Three outcomes, and two of them carry a draft (D43): a composed
+        // message, and one the compose-validate loop refused on safety. The refused draft is
+        // scheduled and validated below exactly like a composed one, so step 5 is the one
+        // place that names the violations; a composition that produced no draft at all is the
+        // only one that short-circuits here, because there is nothing to validate.
+        ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
-        if (!composeResult.IsSuccess)
+        NextMessage draft;
+        CompositionNotes? compositionNotes;
+
+        switch (composeOutcome)
         {
-            log.LogWarning("Suppressing message: composition failed ({Error}).", composeResult.Error);
-            return Suppressed(prospectCase, consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
+            case ComposeOutcome.Composed composed:
+                draft = composed.Message.Message;
+                compositionNotes = composed.Message.Notes;
+                break;
+
+            // The notes are the loop's account of a message it is returning, and it is not
+            // returning this one, so a refused draft has none. suppression_reason and the
+            // queue row are what say what happened to it.
+            case ComposeOutcome.Refused refused:
+                log.LogWarning("Compose-validate loop refused its draft ({Error}); validating it here to record which checks it failed.", refused.Error);
+                draft = refused.Draft;
+                compositionNotes = null;
+                break;
+
+            default:
+                var failed = (ComposeOutcome.Failed)composeOutcome;
+                log.LogWarning("Suppressing message: composition failed ({Error}).", failed.Error);
+                return Suppressed(prospectCase, consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
         // diagnostics can name the floor, the zone and the slot the way they name the plan
         // (D22); the slot is never a wall time the zone did not reach (A20).
         ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
-        NextMessage finalMessage = composeResult.Value.Message with { SendAt = scheduled.SendAt };
+        NextMessage finalMessage = draft with { SendAt = scheduled.SendAt };
         var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot);
 
         // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
@@ -145,7 +168,7 @@ public sealed class LeasingMessageAgent(
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
             actionPlan,
             scheduleNotes,
-            composeResult.Value.Notes);
+            compositionNotes);
 
         if (hasViolations)
         {
@@ -154,7 +177,14 @@ public sealed class LeasingMessageAgent(
             // Composition is null on a record that has no message (AgentDiagnostics.cs):
             // this record joins the other two suppression cases in having none, so it
             // joins them in nulling the field the compose step already wrote.
-            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics with { Composition = null });
+            //
+            // D43: the draft goes out with the result rather than being dropped here. It
+            // carries this validation's own violations, by check, so the one gate that
+            // rejected the message is the one source of the reason it was rejected.
+            return new AgentRunResult(
+                new AgentOutput(SuppressedMessage(), nextAction),
+                diagnostics with { Composition = null },
+                new RejectedDraft(finalMessage, validation.ViolationsByCheck()));
         }
 
         // Step 6: emit.

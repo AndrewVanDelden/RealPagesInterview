@@ -20,7 +20,7 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
     // retries should have).
     public IReadOnlyList<int?> NetworkRetries { get; init; } = [];
 
-    public Task<Result<ComposedMessage>> ComposeAsync(
+    public Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
@@ -31,8 +31,11 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
         int? networkRetries = NetworkRetries.Count == 0 ? null : NetworkRetries[Math.Min(CallCount, NetworkRetries.Count - 1)];
         CallCount++;
 
-        return Task.FromResult(result.IsSuccess
-            ? Result<ComposedMessage>.Success(new ComposedMessage(result.Value, CompositionNotes.ForComposer(Name, localeApplied: true, networkRetries)))
-            : Result<ComposedMessage>.Failure(result.Error));
+        // The scripted results stay Result<NextMessage>: a test scripts the messages it cares
+        // about, and a composer that could not build one is the seam's Failed case. No
+        // composer in this program refuses its own draft, so this fake does not either.
+        return Task.FromResult<ComposeOutcome>(result.IsSuccess
+            ? new ComposeOutcome.Composed(new ComposedMessage(result.Value, CompositionNotes.ForComposer(Name, localeApplied: true, networkRetries)))
+            : new ComposeOutcome.Failed(result.Error));
     }
 }

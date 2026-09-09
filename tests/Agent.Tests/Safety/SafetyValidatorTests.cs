@@ -266,6 +266,30 @@ public class SafetyValidatorTests
         Assert.Equal(SafetyCheckVerdict.Failed, result.VerdictOf(SafetyCheck.FairHousing));
     }
 
+    // The review queue of D43 is read by a person who has to decide what to do about the
+    // draft, so each line arrives attached to the check that produced it rather than as a
+    // flat string the reader has to classify. Same lines, same order, one field more.
+    [Fact]
+    public void ViolationsByCheck_PairsEveryDetailLineWithItsOwnCheck()
+    {
+        SafetyValidationResult result = Validator.Validate(
+            Message("Your SSN 123-45-6789 is on file, families only."),
+            Constraints());
+
+        Assert.Equal(
+            [SafetyCheck.OptOutInstructions, SafetyCheck.SocialSecurityNumber, SafetyCheck.FairHousing],
+            result.ViolationsByCheck().Select(violation => violation.Check));
+        Assert.Equal(result.Violations, result.ViolationsByCheck().Select(violation => violation.Detail));
+    }
+
+    [Fact]
+    public void ViolationsByCheck_NothingFailed_IsEmpty()
+    {
+        SafetyValidationResult result = Validator.Validate(Message("Hi Taylor! Reply STOP to opt out."), Constraints());
+
+        Assert.Empty(result.ViolationsByCheck());
+    }
+
     // The flat list is what the compose-validate loop feeds back and what the agent
     // counts, so it is the failed checks' details in check order and nothing else.
     [Fact]

@@ -25,6 +25,16 @@ public sealed record SafetyValidationResult(
     // O(1): Checks always holds exactly the four members above.
     public SafetyCheckVerdict VerdictOf(SafetyCheck check) => Checks.First(result => result.Check == check).Verdict;
 
+    // The same lines as Violations, each still attached to the check that produced it, for the
+    // review queue of D43. Built on call rather than in an initializer: every record pays for
+    // Violations, only a suppressed one pays for this.
+    // O(d) in the total number of detail lines the four checks carry.
+    public IReadOnlyList<SafetyViolation> ViolationsByCheck() =>
+        Checks
+            .Where(result => result.Verdict == SafetyCheckVerdict.Failed)
+            .SelectMany(result => result.Details.Select(detail => new SafetyViolation(result.Check, detail)))
+            .ToList();
+
     // O(d) in the total number of detail lines the four checks carry.
     private static IReadOnlyList<string> Flatten(params SafetyCheckResult[] checks) =>
         checks

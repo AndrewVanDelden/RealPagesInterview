@@ -29,6 +29,16 @@ public class CliRunnerTests
             expectedSuffix + "}";
     }
 
+    // A record the template composer cannot compose safely for, using nothing but the
+    // record's own data: city_interest is written into the body verbatim ("We heard you're
+    // looking in families only."), and "families only" is a steering term the fair-housing
+    // check of D38 fails on. The record asserts fair_housing_check_passed so the states map
+    // has to answer for it.
+    private static string SteeringRecordJson(string taskId) =>
+        RecordJson(taskId, "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"city_interest\":\"families only\"", StringComparison.Ordinal)
+            .Replace("\"required_states\":[]", "\"required_states\":[\"fair_housing_check_passed\"]", StringComparison.Ordinal);
+
     private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
 
     private static string TempFilePath(string extension = ".jsonl")
@@ -1048,6 +1058,153 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             File.Delete(reportPath);
+        }
+    }
+
+    // A record whose own city_interest is "families only" has that text written into its
+    // body by the template composer ("We heard you're looking in families only."), so every
+    // compose attempt and the fallback are refused by the safety gate. Before D43's seam
+    // change the refusal destroyed the draft: this run reported composition_failed, recorded
+    // fair_housing_check_passed as not_evaluated, and could queue nothing. All three are
+    // asserted here, through the real CLI wiring, because that wiring is what made
+    // SuppressionReason.SafetyViolation unreachable.
+    [Fact]
+    public async Task RunAsync_SafetyGateRefusesEveryDraft_RecordsASafetyViolationAndQueuesTheDraft()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string line = SteeringRecordJson("t1");
+        await File.WriteAllTextAsync(inputPath, line);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement row = diagnostics.RootElement[0].GetProperty("diagnostics");
+            Assert.Equal("safety_violation", row.GetProperty("suppression_reason").GetString());
+            Assert.Equal("not_earned", row.GetProperty("required_states").GetProperty("fair_housing_check_passed").GetString());
+
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(1, queue.RootElement.GetArrayLength());
+            JsonElement entry = queue.RootElement[0];
+            Assert.Equal("t1", entry.GetProperty("task_id").GetString());
+            Assert.Equal("sms", entry.GetProperty("draft").GetProperty("channel").GetString());
+            Assert.Contains("families only", entry.GetProperty("draft").GetProperty("body").GetString()!, StringComparison.Ordinal);
+            Assert.Equal("fair_housing", entry.GetProperty("violations")[0].GetProperty("check").GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(reviewQueuePath);
+        }
+    }
+
+    // D43: the file is written even when nothing was queued, because a missing file cannot
+    // be told apart from a flag nobody passed, and an empty queue is the number step 71 asks
+    // for. A consent-suppressed record is in the same run to prove the second half of the
+    // rule: not contactable is the correct decision, so it is never a queue row.
+    [Fact]
+    public async Task RunAsync_NothingSuppressedBySafety_WritesAnEmptyQueueFile()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string noConsent = RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"email_opt_in\":true", "\"email_opt_in\":false", StringComparison.Ordinal)
+            .Replace("\"sms_opt_in\":true", "\"sms_opt_in\":false", StringComparison.Ordinal);
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            noConsent);
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(0, queue.RootElement.GetArrayLength());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reviewQueuePath);
+        }
+    }
+
+    // D43: a queued record leaves the run at exit 0. Suppression is a correct pipeline
+    // outcome, not a processing failure, and exit 2 would tell an operator the batch broke.
+    [Fact]
+    public async Task RunAsync_QueuedRecordAndACleanRecord_StillReturnsSuccess()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            SteeringRecordJson("t1"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(2, output.RootElement.GetArrayLength());
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(1, queue.RootElement.GetArrayLength());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reviewQueuePath);
+        }
+    }
+
+    // D43 and D14: --replay runs no validator at all, so it has nothing to queue. Asking for
+    // a queue from a replay is a usage error rather than a silently empty file that reads as
+    // a clean run.
+    [Fact]
+    public async Task RunAsync_ReviewQueueWithReplay_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--review-queue", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(reviewQueuePath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(reviewQueuePath);
         }
     }
 }

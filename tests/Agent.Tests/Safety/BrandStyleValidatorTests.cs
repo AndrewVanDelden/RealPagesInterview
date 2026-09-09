@@ -53,10 +53,11 @@ public class BrandStyleValidatorTests
     [InlineData(CommunicationChannel.Email, "es")]
     public async Task Validate_TemplateComposerOutput_AppliesEveryBrandRule(CommunicationChannel channel, string language)
     {
-        Result<ComposedMessage> composed = await new TemplateMessageComposer()
+        ComposeOutcome outcome = await new TemplateMessageComposer()
             .ComposeAsync(SampleProspectCases.Minimal(language: language), channel);
 
-        BrandStyleValidationResult result = BrandStyleValidator.Validate(composed.Value.Message);
+        ComposedMessage composed = Assert.IsType<ComposeOutcome.Composed>(outcome).Message;
+        BrandStyleValidationResult result = BrandStyleValidator.Validate(composed.Message);
 
         Assert.Empty(result.FailedRules);
     }

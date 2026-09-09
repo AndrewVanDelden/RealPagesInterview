@@ -1,11 +1,10 @@
-using Agent.Common;
 using Agent.Domain;
 
 namespace Agent.Composition;
 
 public interface IMessageComposer
 {
-    Task<Result<ComposedMessage>> ComposeAsync(
+    Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,

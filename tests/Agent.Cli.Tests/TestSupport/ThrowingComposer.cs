@@ -1,4 +1,3 @@
-using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 
@@ -10,7 +9,7 @@ namespace Agent.Cli.Tests.TestSupport;
 // remaining way a record fails, and this stands in for that bug.
 internal sealed class ThrowingComposer(string taskIdToFail) : IMessageComposer
 {
-    public Task<Result<ComposedMessage>> ComposeAsync(
+    public Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
@@ -24,6 +23,6 @@ internal sealed class ThrowingComposer(string taskIdToFail) : IMessageComposer
         var message = new NextMessage(channel, null, null, "Hi. Reply STOP to opt out.", new Cta("reply", null, null));
         var composed = new ComposedMessage(message, CompositionNotes.ForComposer(ComposerNames.Template, localeApplied: true));
 
-        return Task.FromResult(Result<ComposedMessage>.Success(composed));
+        return Task.FromResult<ComposeOutcome>(new ComposeOutcome.Composed(composed));
     }
 }

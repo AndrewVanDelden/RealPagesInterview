@@ -547,4 +547,97 @@ public class LeasingMessageAgentTests
 
         Assert.Null(result.Diagnostics.Composition);
     }
+
+    // D43 through the same wiring the CLI builds: the record's own city_interest is written
+    // into the body by the template composer, so every attempt and the fallback are refused.
+    // The refusal carries the draft out instead of destroying it, and step 5's own validation
+    // is what names the violations, so this record reports a safety violation rather than the
+    // composition failure it used to report.
+    [Fact]
+    public async Task RunAsync_ComposeLoopRefusesEveryDraft_SuppressesAsASafetyViolationAndKeepsTheDraft()
+    {
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase steeringCase = SampleProspectCases.Minimal(cityInterest: "families only") with
+        {
+            Assertions = new CaseAssertions(
+                ["fair_housing_check_passed"],
+                SampleProspectCases.Minimal().ConstraintsOrEmpty),
+        };
+
+        AgentRunResult result = await agent.RunAsync(steeringCase, ReferenceTime);
+
+        Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
+        Assert.Equal(RequiredStateVerdict.NotEarned, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.NotNull(result.RejectedDraft);
+        Assert.Contains("families only", result.RejectedDraft!.Message.Body!, StringComparison.Ordinal);
+        Assert.Equal(SafetyCheck.FairHousing, Assert.Single(result.RejectedDraft.Violations).Check);
+    }
+
+    // The regression guard for the behavior that must not change: a composer that produced no
+    // draft at all is still a composition failure, still queues nothing, and still records the
+    // fair-housing state as not evaluated, because nothing was ever checked.
+    [Fact]
+    public async Task RunAsync_ComposerProducedNoDraft_StaysACompositionFailureWithNothingToQueue()
+    {
+        IMessageAgent agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Failure("nothing composable")),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner());
+
+        AgentRunResult result = await agent.RunAsync(Asserting("fair_housing_check_passed"), ReferenceTime);
+
+        Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
+        Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
+        Assert.Null(result.RejectedDraft);
+    }
+
+    // The other producer of a rejected draft: a message that reached step 5 as a composed
+    // message and failed there. Every failed check contributes its own row, so the queue entry
+    // names both checks rather than one line the reviewer has to re-derive.
+    [Fact]
+    public async Task RunAsync_ComposedMessageFailsFinalValidation_KeepsTheDraftWithEveryFailedCheck()
+    {
+        var twoFailures = new SafetyValidationResult(
+            SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]),
+            SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
+            SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
+            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
+        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(twoFailures));
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
+        Assert.NotNull(result.RejectedDraft);
+        Assert.Equal(
+            [SafetyCheck.OptOutInstructions, SafetyCheck.FairHousing],
+            result.RejectedDraft!.Violations.Select(violation => violation.Check));
+    }
+
+    // The refusal's own reason reaches the log: the compose-validate loop and step 5 are two
+    // gates on one record, and a reader of the log should see the handoff rather than only the
+    // second gate's verdict.
+    [Fact]
+    public async Task RunAsync_ComposeLoopRefusesEveryDraft_LogsTheRefusalReason()
+    {
+        var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
+        var templateComposer = new TemplateMessageComposer();
+        var agent = new LeasingMessageAgent(
+            new ConsentGate(),
+            new ChannelSelector(),
+            new ValidatingMessageComposer(templateComposer, new SafetyValidator(), templateComposer),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner(),
+            capturingLogger);
+
+        await agent.RunAsync(SampleProspectCases.Minimal(cityInterest: "families only"), ReferenceTime);
+
+        Assert.Contains(
+            capturingLogger.Entries,
+            entry => entry.Level == LogLevel.Warning && entry.Message.Contains("refused", StringComparison.OrdinalIgnoreCase));
+    }
 }

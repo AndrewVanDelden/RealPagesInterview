@@ -97,7 +97,8 @@ public class RedactedLoggingTests
             new OpenAiCompletionClient(httpClient, "fake-key"),
             factory.CreateLogger<OpenAiMessageComposer>());
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(ParseRecord(RecordLine), CommunicationChannel.Sms);
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(
+            await composer.ComposeAsync(ParseRecord(RecordLine), CommunicationChannel.Sms));
 
         string rendered = writer.ToString();
         Assert.DoesNotContain(VendorBodyMarker, rendered);
@@ -105,8 +106,8 @@ public class RedactedLoggingTests
         Assert.Contains("ClientResultException", rendered);
         Assert.Contains("401", rendered);
 
-        // The same failure travels on as Result.Failure, which ValidatingMessageComposer and
-        // LeasingMessageAgent both log downstream; redacting only the composer's own line
+        // The same failure travels on as ComposeOutcome.Failed, which ValidatingMessageComposer
+        // and LeasingMessageAgent both log downstream; redacting only the composer's own line
         // would move the leak rather than close it.
         Assert.DoesNotContain(VendorBodyMarker, result.Error);
     }
@@ -144,7 +145,8 @@ public class RedactedLoggingTests
             new OpenAiCompletionClient(httpClient, "fake-key"),
             factory.CreateLogger<OpenAiMessageComposer>());
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(ParseRecord(RecordLine), CommunicationChannel.Sms);
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(
+            await composer.ComposeAsync(ParseRecord(RecordLine), CommunicationChannel.Sms));
 
         string rendered = writer.ToString();
         Assert.DoesNotContain(ModelAuthoredMarker, rendered);
