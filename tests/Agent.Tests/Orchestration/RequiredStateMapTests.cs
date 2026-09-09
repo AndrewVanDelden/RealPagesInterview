@@ -67,4 +67,29 @@ public class RequiredStateMapTests
         Assert.Equal(["consent_verified"], map.Keys);
         Assert.Equal(RequiredStateVerdict.NotEarned, map["consent_verified"]);
     }
+
+    // D47. JSON supplies a null list element whatever the element type says, and
+    // RespectNullableAnnotations does not reach inside a collection, so this list really can
+    // hold one. A null name asserts no state, so it is skipped rather than thrown on: it used
+    // to reach the dictionary indexer and take the whole record out with an
+    // ArgumentNullException, which A16 says an input shape must never do.
+    [Fact]
+    public void For_ANullName_IsSkippedAndTheRestAreStillAnswered()
+    {
+        IReadOnlyDictionary<string, RequiredStateVerdict> map = For(
+            ["consent_verified", null!],
+            RequiredStateVerdict.Earned);
+
+        Assert.Equal(["consent_verified"], map.Keys);
+    }
+
+    // A name that is blank or only whitespace names no state either, and Presence.IsAbsent is
+    // the one definition of absent this program already uses for a stated-but-empty value.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void For_ABlankName_IsSkipped(string blank)
+    {
+        Assert.Empty(For([blank]));
+    }
 }

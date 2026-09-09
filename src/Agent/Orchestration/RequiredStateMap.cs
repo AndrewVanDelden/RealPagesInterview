@@ -1,3 +1,5 @@
+using Agent.Common;
+
 namespace Agent.Orchestration;
 
 // D42's first part: the answer to assertions.required_states, which until now was parsed and
@@ -25,7 +27,7 @@ public static class RequiredStateMap
     // rather than null: null would be indistinguishable from a run that never built one.
     // O(s) in the number of names the record asserts.
     public static IReadOnlyDictionary<string, RequiredStateVerdict> For(
-        IReadOnlyList<string>? requiredStates,
+        IReadOnlyList<string?>? requiredStates,
         RequiredStateVerdict consentVerified,
         RequiredStateVerdict fairHousingCheckPassed,
         RequiredStateVerdict brandStyleApplied)
@@ -34,9 +36,18 @@ public static class RequiredStateMap
 
         // A name asserted twice collapses to one entry: the verdict is a function of the name
         // and the run, so the second entry would repeat the first.
-        foreach (string state in requiredStates ?? [])
+        foreach (string? state in requiredStates ?? [])
         {
-            verdicts[state] = state switch
+            // D47: JSON supplies a null element whatever the element type says, and
+            // RespectNullableAnnotations does not reach inside a collection. A null or blank
+            // name asserts no state, so it is skipped; it used to reach the indexer below and
+            // take the whole record out with an ArgumentNullException (A16).
+            if (Presence.IsAbsent(state))
+            {
+                continue;
+            }
+
+            verdicts[state!] = state switch
             {
                 ConsentVerifiedState => consentVerified,
                 FairHousingCheckPassedState => fairHousingCheckPassed,

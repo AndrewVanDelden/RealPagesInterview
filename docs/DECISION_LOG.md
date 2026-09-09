@@ -955,3 +955,24 @@ already-interpolated string as a message template is not the format-injection bu
 like: with no arguments, `FormattedLogValues` never builds a formatter and returns the string
 verbatim, proved by probing five brace shapes through the console provider, so it was left
 alone rather than fixed for a case that cannot occur.
+
+**D47. A null inside a list the element type says cannot hold one (2026-09-09).** Question: D42
+gave `assertions.required_states` its first reader, and a record spelling
+`["consent_verified", null]` took the whole record out with an `ArgumentNullException` from the
+dictionary indexer. The list is typed `IReadOnlyList<string>`, but
+`RespectNullableAnnotations` does not reach inside a collection, so the deserializer honours
+the element's non-nullability nowhere and the type is a claim the wire does not keep. This is
+the same class of defect as the retrospective's silent year-0001 dates, one level deeper: D1
+made every member nullable and stopped at the members. Options: guard at the map only; make the
+element type tell the truth and skip an absent name; or reject the record. Recommendation: the
+second. A16 says an input shape is never an error, and a null name asserts no state, so there
+is nothing to reject and nothing to report: it is skipped, and the names beside it are still
+answered. A blank or whitespace name is the same nothing and goes the same way, through
+`Presence.IsAbsent`, which is already this program's one definition of a stated-but-empty
+value. Scopes: `CaseAssertions.RequiredStates`, `RequiredStateMap.For`. Evidence: the record
+above run through the CLI, which exited 2 with a bare `ArgumentNullException` and no output row
+for that record before the change and exits 0 with its message after. What this does not do,
+recorded so the gap is visible rather than assumed closed: it fixes the one list D42 gave a
+reader, not every collection in the record types. The general rule, that a value-type or
+non-nullable element inside a collection defaults or nulls silently, is now a known shape and
+the next collection to gain a reader inherits it. Assumptions: A16, A17.
