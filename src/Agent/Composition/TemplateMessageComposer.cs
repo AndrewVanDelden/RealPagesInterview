@@ -50,7 +50,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
             : null;
 
         var message = new NextMessage(channel, null, subject, body, new Cta(callToAction.Type, isEmail ? null : optionTexts, link));
-        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.Template, Attempts: 1, localeApplied));
+        var composed = new ComposedMessage(message, CompositionNotes.ForComposer(ComposerNames.Template, localeApplied));
 
         return Task.FromResult(Result<ComposedMessage>.Success(composed));
     }

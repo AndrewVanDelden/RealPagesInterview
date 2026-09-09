@@ -114,10 +114,14 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         // S2 and A21: the link is a fact, so code builds it from the property slug and the
         // catalog's path for this call to action. The options are prose in the record's own
-        // language, which is the model's half of the payload (A10).
+        // language, which is the model's half of the payload (A10). The path follows
+        // payload.CtaType, the type actually going out, not primaryCta: when primary_cta is
+        // absent the model is free to choose any type (see the schema above), and a path
+        // derived from the absent constraint instead of the chosen type would send a link
+        // for a different call to action than the one the message states.
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail
-            ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, CallToActionCatalog.Resolve(primaryCta).LinkPath)
+            ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, CallToActionCatalog.LinkPathForType(payload.CtaType))
             : null;
 
         // A10: the payload shape is the channel's rule, not the model's choice. The schema
@@ -132,7 +136,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         var cta = new Cta(payload.CtaType, options, link);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
-        var composed = new ComposedMessage(message, new CompositionNotes(ComposerNames.OpenAi, Attempts: 1, LocaleApplied: true, completion.NetworkRetries));
+        var composed = new ComposedMessage(message, CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true, completion.NetworkRetries));
 
         return Result<ComposedMessage>.Success(composed);
     }

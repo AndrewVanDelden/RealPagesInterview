@@ -208,6 +208,12 @@ public class LeasingMessageAgentTests
         Assert.True(result.Diagnostics.BrandStyleApplied);
         Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
         Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
+
+        // AgentDiagnostics.cs: Composition is null on a record that has no message. A
+        // record the final safety check suppresses has no message either, the same as the
+        // other two suppression cases below (RunAsync_ComposerCannotProduceAnyValidMessage_...
+        // and RunAsync_NoConsentedChannel_RecordsNoComposition).
+        Assert.Null(result.Diagnostics.Composition);
     }
 
     [Fact]

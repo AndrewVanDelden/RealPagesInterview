@@ -26,7 +26,15 @@ public static class CliExitCodes
 // of its own - every decision stays inside Agent library components.
 // composerOverride is the fault-injection seam for the batch loop's per-record isolation:
 // no input can make a record throw any more, so a test supplies a composer that does.
-public sealed class CliRunner(IConfiguration configuration, TextWriter output, TextWriter error, IMessageComposer? composerOverride = null)
+// judgeOverride is the same seam for --judge: BuildJudge always reaches for a real
+// OpenAiCompletionClient, so a test driving --judge through a non-empty batch supplies its
+// own judge rather than spending a real network call.
+public sealed class CliRunner(
+    IConfiguration configuration,
+    TextWriter output,
+    TextWriter error,
+    IMessageComposer? composerOverride = null,
+    SemanticJudge? judgeOverride = null)
 {
     private static readonly HttpClient SharedHttpClient = new();
 
@@ -105,7 +113,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         SemanticJudge? judge;
         try
         {
-            judge = judgeRequested ? BuildJudge(configuration, loggerFactory) : null;
+            judge = judgeRequested ? judgeOverride ?? BuildJudge(configuration, loggerFactory) : null;
         }
         catch (InvalidOperationException ex)
         {

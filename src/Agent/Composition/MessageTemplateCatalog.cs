@@ -29,7 +29,7 @@ internal static class MessageTemplateCatalog
             return (EnglishMessageTemplates.Set, true);
         }
 
-        string primarySubtag = languageTag!.Split('-', '_')[0];
+        string primarySubtag = Bcp47.PrimarySubtag(languageTag);
 
         return ByPrimarySubtag.TryGetValue(primarySubtag, out MessageTemplates? templates)
             ? (templates, true)

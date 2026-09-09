@@ -15,6 +15,11 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
 
     public IReadOnlyList<string>? LastPriorViolations { get; private set; }
 
+    // One retry count per call, index-clamped like results itself; empty means every call
+    // reports no network retries at all (the default a fake with nothing to say about
+    // retries should have).
+    public IReadOnlyList<int?> NetworkRetries { get; init; } = [];
+
     public Task<Result<ComposedMessage>> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
@@ -23,10 +28,11 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
     {
         LastPriorViolations = priorViolations;
         Result<NextMessage> result = results[Math.Min(CallCount, results.Length - 1)];
+        int? networkRetries = NetworkRetries.Count == 0 ? null : NetworkRetries[Math.Min(CallCount, NetworkRetries.Count - 1)];
         CallCount++;
 
         return Task.FromResult(result.IsSuccess
-            ? Result<ComposedMessage>.Success(new ComposedMessage(result.Value, new CompositionNotes(Name, Attempts: 1, LocaleApplied: true)))
+            ? Result<ComposedMessage>.Success(new ComposedMessage(result.Value, CompositionNotes.ForComposer(Name, localeApplied: true, networkRetries)))
             : Result<ComposedMessage>.Failure(result.Error));
     }
 }

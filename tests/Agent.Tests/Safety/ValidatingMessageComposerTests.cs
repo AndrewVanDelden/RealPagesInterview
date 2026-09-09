@@ -249,4 +249,44 @@ public class ValidatingMessageComposerTests
 
         Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2, LocaleApplied: true), result.Value!.Notes);
     }
+
+    // D28 addendum: a retry the first (rejected) attempt spent is still a retry this record
+    // spent, so the winning second attempt's own count is not the whole story on its own.
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptHasRetriesThenFailsValidation_SecondAttemptSucceeds_SumsNetworkRetries()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Success(BadMessage()),
+            Result<NextMessage>.Success(CleanMessage()))
+        {
+            NetworkRetries = [2, 0],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Notes.NetworkRetries);
+    }
+
+    // The fallback composer makes no network call of its own (NetworkRetries stays null),
+    // but retries spent on the two rejected attempts before it are still real: they carry
+    // through onto the fallback's notes rather than disappearing because the composer that
+    // finally answered has nothing of its own to add.
+    [Fact]
+    public async Task ComposeAsync_BothAttemptsHadRetriesThenFail_FallsBackAndReportsTheAccumulatedRetries()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()))
+        {
+            NetworkRetries = [1],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.Notes.NetworkRetries);
+    }
 }

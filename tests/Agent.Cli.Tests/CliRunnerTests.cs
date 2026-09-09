@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Agent.Cli;
 using Agent.Cli.Tests.TestSupport;
+using Agent.Evaluation;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -1010,6 +1011,43 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+        }
+    }
+
+    // Both prior judge tests process an empty batch, so SemanticJudge.JudgeAsync's
+    // per-record grading loop never actually ran through CliRunner - only in isolation
+    // (SemanticJudgeTests). judgeOverride closes that gap the way composerOverride already
+    // does for the composer path: a real record, scored by a real Evaluator, graded by a
+    // judge this test controls, so a regression in how CliRunner wires the two together
+    // (wrong list, dropped record, broken ordering) would show up here.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithRecords_GradesThemUsingTheProvidedJudge()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var fakeJudgeClient = new FixedJudgeCompletionClient("""{"action_matches":true,"body_matches":true,"reason":"matches"}""");
+        var judge = new SemanticJudge(fakeJudgeClient);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, judgeOverride: judge);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(1, fakeJudgeClient.CallCount);
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("ActionSem 1/1", report);
+            Assert.Contains("BodySem 1/1", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
         }
     }
 }

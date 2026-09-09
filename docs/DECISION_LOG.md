@@ -510,3 +510,81 @@ completed server-side were billed with their output tokens. That is worth knowin
 choosing among this decision's three ways out, because the option that raises the budget to get
 a real comparison would pay for every call in full rather than for a third of them.
 
+**D24 addendum, PR #21 review (2026-09-08).** A recall-biased review of PR #21's diff found
+three defects under D24's own subject, the composer's identity and its notes. (a) The email
+link for a call to action was built from `CallToActionCatalog.Resolve(primaryCta)`, the
+record's stated constraint, rather than from `payload.CtaType`, the type actually placed on
+the outgoing message; the two are only guaranteed equal when `primary_cta` is present, so an
+absent constraint (the schema leaves `cta_type` unconstrained in that case, see D5) let the
+model choose a specific type while the link still pointed at the generic path. Fixed by
+`CallToActionCatalog.LinkPathForType(ctaType)`, a reverse lookup from the type actually on the
+wire, called with `payload.CtaType` rather than the input constraint. (b) The same site
+resolved the catalog twice on one unmodified input, once for the required type and again for
+the link path; `TemplateMessageComposer` already resolved once and reused both fields.
+`OpenAiMessageComposer` now does too, since the type it enforces (`requiredCtaType`, from the
+constraint) and the type it links (`payload.CtaType`, from the model) are different resolves
+by design after (a), not the same call repeated. (c) Both composers hardcoded `Attempts: 1` on
+the `CompositionNotes` they built, a value `ValidatingMessageComposer.WithAttempts`
+unconditionally overwrites on every production path; `CompositionNotes.ForComposer` states the
+placeholder once instead of once per composer. Each fix carries a test that fails against the
+prior code, confirmed by reverting the fix and re-running it. Tallies on all three sets: no
+tally moved, since `--composer openai` still falls back to the template composer under D31's
+timeout math on these sets, so the OpenAI composer's own output has never been measured
+against a label.
+
+**D3 addendum, PR #21 review (2026-09-08).** D3's rule that a suppressed record's diagnostics
+carry no composer identity had a third case unhandled: `AgentDiagnostics` is built from the
+compose step's notes before the final safety check runs, and the final-safety-suppression
+branch returned that same object unchanged, so a record with no message on the wire could
+still carry a non-null `composition`, naming a composer as if its draft had shipped. The other
+two suppression cases (consent, composition failure) already null the field. Fixed by nulling
+`Composition` on that branch too. A test asserting the null now sits beside the existing
+assertions on `RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage`, confirmed to
+fail against the prior code.
+
+**D28 addendum, PR #21 review, part two (2026-09-08).** `CompositionNotes.NetworkRetries` read
+only the winning compose attempt's own count; a retry spent on an attempt
+`ValidatingMessageComposer` rejected for a safety violation and discarded was lost, so a
+record whose first attempt retried once and second attempt succeeded cleanly reported zero
+retries despite three HTTP requests. Fixed by summing a discarded attempt's
+`NetworkRetries` (when the attempt built a `ComposedMessage` at all; a `Result.Failure`
+attempt carries none, since the failing composer never built one, and that gap is stated
+rather than closed here) into the winning attempt's own count in `WithAttempts`, preserving
+null when neither the winner nor any discarded attempt made a network call. Two tests cover
+the sum (a discarded attempt then a clean winner) and the null-to-real transition (every
+attempt discarded, the fallback answers with retries carried in from before it).
+
+**D26 addendum, PR #21 review (2026-09-08).** `MessageTemplateCatalog.Resolve`, D26's own
+mechanism, restated the BCP-47 primary-subtag split `LanguageDetector.TryParseTag` (D13 c)
+already implements, independently, in a different namespace. Fixed by extracting the split
+into `Agent.Common.Bcp47.PrimarySubtag`, called from both; no behavior changed, since both
+sites matched the same two tags the same way, only the split itself moved to one place.
+
+**D30 addendum, PR #21 review (2026-09-08).** Two findings under D30's subject, the judge.
+(a) `SemanticJudge.BodyOf` restated `Evaluator.AsPresent`'s "null message and a channel-none
+message are one value" rule (D3) inline instead of calling it; fixed by making `AsPresent` and
+`EffectiveChannel` internal rather than private, so `BodyOf` shares the one definition.
+(b) `CliRunner.BuildJudge` had no override seam of its own, unlike the composer path's
+`composerOverride`, so `--judge` against a non-empty batch was never exercised at the
+`CliRunner` level, only through `SemanticJudgeTests` in isolation with hand-built fixtures.
+Fixed by adding `judgeOverride`, mirroring `composerOverride`'s existing shape, and a
+`CliRunnerTests` case that drives a real record through `--judge` with a controlled completion
+client and asserts the eval report's `ActionSem`/`BodySem` tallies reflect the grade.
+
+**D31 addendum, scoped out of the PR #21 review (2026-09-08).** The review's remaining finding
+was that `CliRunner`'s per-record batch loop processes independent records sequentially, and
+D31's own numbers (92 HTTP requests, batch p95 ~5700 ms against an 18 ms offline baseline) are
+the measured cost of a real network call sitting behind that loop. Not fixed: `CountingRetryPolicy`
+attributes one call's retries by diffing a single shared counter before and after that call, and
+its own comment already states the limit this implies ("a concurrent caller would see another
+call's retries mixed in"). Parallelizing the loop before that attribution is made safe under
+concurrency would corrupt `CompositionNotes.NetworkRetries` rather than only speed up the
+batch, so this is a design change ahead of a review-fix round, not a matter of confidence in
+the finding. Scopes: any future concurrency work on the batch loop, which opens by replacing
+the shared-counter retry attribution.
+
+**Evidence, PR #21 review round (2026-09-08).** `.\test.ps1`: 443 tests in `Agent.Tests`, 49 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method on both modules. Four of
+the nine fixes above were additionally verified by reverting each one in isolation and
+confirming its new test goes red before reapplying it.
+

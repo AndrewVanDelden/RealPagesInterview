@@ -472,6 +472,57 @@ public class OpenAiMessageComposerTests
         Assert.Null(result.Value.Message.Cta.Options);
     }
 
+    // With no primary_cta the schema leaves cta_type unconstrained (see
+    // ComposeAsync_NoPrimaryCtaConstraint_DoesNotEnforceAnyCtaType), so the model is free to
+    // choose any type. The link must follow whatever type it actually chose, not the absent
+    // constraint: a link built from primaryCta instead of payload.CtaType would always point
+    // at the generic path regardless of what the message's own cta_type says.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCtaOnEmail_LinkMatchesTheModelsChosenCtaType()
+    {
+        const string json = """{"subject":"Tour Oak Ridge","body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("schedule_tour", result.Value!.Message.Cta!.Type);
+        Assert.Equal(new Uri("https://oakridge.example/tour"), result.Value.Message.Cta.Link);
+    }
+
+    // A cta_type the catalog does not name (the model's own invention, since nothing
+    // constrained it) takes the generic link path rather than failing or inventing one.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCtaOnEmailWithUnrecognizedCtaType_FallsBackToTheGenericLink()
+    {
+        const string json = """{"subject":"Tour Oak Ridge","body":"hi","cta_type":"anything_reasonable","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("anything_reasonable", result.Value!.Message.Cta!.Type);
+        Assert.Equal(new Uri("https://oakridge.example/reply"), result.Value.Message.Cta.Link);
+    }
+
+    // TemplateMessageComposerTests pins the same input for the offline composer
+    // (ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent); this pins it on the model path,
+    // where whitespace reaching Presence.IsAbsent is what leaves cta_type unconstrained.
+    [Fact]
+    public async Task ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"anything_reasonable","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
+
+        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("anything_reasonable", result.Value!.Message.Cta!.Type);
+    }
+
     // A10: an sms carries the options the model wrote as prose and never a link.
     [Fact]
     public async Task ComposeAsync_Sms_CarriesTheModelsOptionsAndNoLink()

@@ -12,4 +12,12 @@ namespace Agent.Composition;
 // check is what measures the text either way.
 // NetworkRetries is how many transport retries the call underneath spent (D28, playbook
 // step 49), and is null for a composer that makes no network call at all.
-public sealed record CompositionNotes(string Composer, int Attempts, bool LocaleApplied, int? NetworkRetries = null);
+public sealed record CompositionNotes(string Composer, int Attempts, bool LocaleApplied, int? NetworkRetries = null)
+{
+    // A composer building its own notes never knows the real attempt count: that is the
+    // compose-validate loop's fact, stamped on afterward by ValidatingMessageComposer.WithAttempts,
+    // and unconditionally overwrites whatever is passed here. Attempts: 1 is a placeholder no
+    // caller ever observes, spelled once instead of once per composer.
+    public static CompositionNotes ForComposer(string composer, bool localeApplied, int? networkRetries = null) =>
+        new(composer, Attempts: 1, localeApplied, networkRetries);
+}

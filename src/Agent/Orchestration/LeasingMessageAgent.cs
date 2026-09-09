@@ -125,7 +125,11 @@ public sealed class LeasingMessageAgent(
         if (hasViolations)
         {
             log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
-            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
+
+            // Composition is null on a record that has no message (AgentDiagnostics.cs):
+            // this record joins the other two suppression cases in having none, so it
+            // joins them in nulling the field the compose step already wrote.
+            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics with { Composition = null });
         }
 
         // Step 6: emit.

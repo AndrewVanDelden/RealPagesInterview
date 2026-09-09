@@ -28,6 +28,12 @@ public sealed class ValidatingMessageComposer(
     {
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
+        // D28 addendum: a retry a discarded attempt spent is still a retry this record
+        // spent. A Result.Failure attempt carries no ComposedMessage at all (the composer
+        // never built one), so only a validation-rejected attempt's retries are capturable
+        // here; that is the discard case D28's own visibility goal is about.
+        int discardedNetworkRetries = 0;
+
         for (int attempt = 1; attempt <= MaxComposeAttempts; attempt++)
         {
             Result<ComposedMessage> attemptResult = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken);
@@ -38,7 +44,7 @@ public sealed class ValidatingMessageComposer(
 
                 if (validation.Violations.Count == 0)
                 {
-                    return WithAttempts(attemptResult.Value, attempt);
+                    return WithAttempts(attemptResult.Value, attempt, discardedNetworkRetries);
                 }
 
                 log.LogWarning(
@@ -46,6 +52,7 @@ public sealed class ValidatingMessageComposer(
                     attempt,
                     string.Join("; ", validation.Violations));
                 violationsForNextAttempt = validation.Violations;
+                discardedNetworkRetries += attemptResult.Value.Notes.NetworkRetries ?? 0;
             }
             else
             {
@@ -64,7 +71,7 @@ public sealed class ValidatingMessageComposer(
         if (fallbackResult.IsSuccess &&
             validator.Validate(fallbackResult.Value.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
         {
-            return WithAttempts(fallbackResult.Value, MaxComposeAttempts + 1);
+            return WithAttempts(fallbackResult.Value, MaxComposeAttempts + 1, discardedNetworkRetries);
         }
 
         log.LogError("Fallback composer output also failed composition or safety validation; suppressing.");
@@ -73,6 +80,17 @@ public sealed class ValidatingMessageComposer(
 
     // D24: the composer that answered keeps its own name, and this loop supplies the count,
     // because the number of calls it took is the loop's fact and not the composer's.
-    private static Result<ComposedMessage> WithAttempts(ComposedMessage composed, int attempts) =>
-        Result<ComposedMessage>.Success(composed with { Notes = composed.Notes with { Attempts = attempts } });
+    // discardedNetworkRetries carries retries spent on attempts this loop rejected: added
+    // into the winning attempt's own count rather than lost with the attempt that made them.
+    private static Result<ComposedMessage> WithAttempts(ComposedMessage composed, int attempts, int discardedNetworkRetries)
+    {
+        int? networkRetries = composed.Notes.NetworkRetries switch
+        {
+            null when discardedNetworkRetries == 0 => null,
+            null => discardedNetworkRetries,
+            int current => current + discardedNetworkRetries,
+        };
+
+        return Result<ComposedMessage>.Success(composed with { Notes = composed.Notes with { Attempts = attempts, NetworkRetries = networkRetries } });
+    }
 }

@@ -126,9 +126,7 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
     private static CheckResult Verdict(bool matches) => matches ? CheckResult.Passed : CheckResult.Failed;
 
     private static string? BodyOf(NextMessage? message) =>
-        message is null || message.Channel == CommunicationChannel.None || Presence.IsAbsent(message.Body)
-            ? null
-            : message.Body;
+        Evaluator.AsPresent(message) is { } present && !Presence.IsAbsent(present.Body) ? present.Body : null;
 
     private static string BuildUserPrompt(ExpectedOutcome expected, AgentOutput output, string? referenceBody, string? candidateBody)
     {
