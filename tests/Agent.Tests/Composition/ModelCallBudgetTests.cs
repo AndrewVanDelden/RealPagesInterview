@@ -1,0 +1,65 @@
+using Agent.Composition;
+using Agent.Domain;
+using Agent.Tests.TestSupport;
+using Xunit;
+
+namespace Agent.Tests.Composition;
+
+// D28 and playbook step 49: the per-call timeout is the strictest latency budget the batch
+// states, so the bound on a model call is a number the input asked for rather than a default
+// nobody chose. The same "strictest stated budget" rule the evaluator scores the p95 against
+// (A15), so the call is bounded by the number the run is judged by.
+public class ModelCallBudgetTests
+{
+    private static ProspectCase WithBudget(int? p95LatencyMs) =>
+        SampleProspectCases.Minimal() with { Thresholds = new CaseThresholds(p95LatencyMs, null, null, null) };
+
+    [Fact]
+    public void PerCallBudget_RecordsStateDifferentBudgets_TakesTheStrictest()
+    {
+        TimeSpan? timeout = ModelCallBudget.PerCallBudget([WithBudget(2000), WithBudget(800), WithBudget(5000)]);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(800), timeout);
+    }
+
+    // A15: a record with no stated budget is not a budget of zero, and a batch where nobody
+    // states one leaves the client on its own default.
+    [Fact]
+    public void PerCallBudget_SomeRecordsStateNoBudget_IgnoresThoseRecords()
+    {
+        TimeSpan? timeout = ModelCallBudget.PerCallBudget([WithBudget(null), WithBudget(1500)]);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(1500), timeout);
+    }
+
+    [Fact]
+    public void PerCallBudget_NoRecordStatesABudget_ReturnsNull()
+    {
+        Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(null)]));
+    }
+
+    [Fact]
+    public void PerCallBudget_EmptyBatch_ReturnsNull()
+    {
+        Assert.Null(ModelCallBudget.PerCallBudget([]));
+    }
+
+    // A budget of zero or less bounds nothing a call could satisfy, so it is not a timeout
+    // this program can honor: the client keeps its own default and the p95 check reports the
+    // miss.
+    [Fact]
+    public void PerCallBudget_BudgetIsNotPositive_ReturnsNull()
+    {
+        Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(0)]));
+    }
+
+    // D28 as corrected: the budget bounds one client call including its retry, so the client
+    // divides it by the number of attempts it may make. A budget that bounded a single
+    // attempt would be exceeded by the retry beside it, which is a bound that is documented
+    // and not enforced.
+    [Fact]
+    public void PerAttemptTimeout_WholeCallBudget_IsDividedByTheAttemptsTheClientMayMake()
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(1000), OpenAiCompletionClient.PerAttemptTimeout(TimeSpan.FromMilliseconds(2000)));
+    }
+}

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Agent.Cli;
 using Agent.Cli.Tests.TestSupport;
+using Agent.Evaluation;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -953,6 +954,100 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    // D30: the judge is off unless --judge is passed, and it needs the same key the model
+    // composer does. An empty input file builds it and scores nothing, so no call is made.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithApiKeyAndNoRecords_ScoresWithoutCallingTheModel()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, string.Empty);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage")])
+            .Build();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(configuration, outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("ActionSem", await File.ReadAllTextAsync(reportPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
+    // Playbook step 77: bad configuration fails before any work, and a judge with no key is
+    // bad configuration, not a run that quietly scores nothing.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithoutApiKey_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--judge needs OpenAI:ApiKey", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // Both prior judge tests process an empty batch, so SemanticJudge.JudgeAsync's
+    // per-record grading loop never actually ran through CliRunner - only in isolation
+    // (SemanticJudgeTests). judgeOverride closes that gap the way composerOverride already
+    // does for the composer path: a real record, scored by a real Evaluator, graded by a
+    // judge this test controls, so a regression in how CliRunner wires the two together
+    // (wrong list, dropped record, broken ordering) would show up here.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithRecords_GradesThemUsingTheProvidedJudge()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var fakeJudgeClient = new FixedJudgeCompletionClient("""{"action_matches":true,"body_matches":true,"reason":"matches"}""");
+        var judge = new SemanticJudge(fakeJudgeClient);
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, judgeOverride: judge);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(1, fakeJudgeClient.CallCount);
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("ActionSem 1/1", report);
+            Assert.Contains("BodySem 1/1", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
         }
     }
 }

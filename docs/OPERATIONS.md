@@ -15,6 +15,7 @@ dotnet run --project src/Agent.Cli -- --input <file> --output <file> [--now <ISO
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json --now 2025-12-09T00:00:00-06:00 --eval-report eval.txt --diagnostics diag.json
 dotnet run --project src/Agent.Cli -- --input synthetic_12.jsonl --output out.json --now 2026-03-07T12:00:00Z --eval-report eval.txt
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt
+dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt --judge
 ```
 
 | Flag | Required | Purpose |
@@ -24,8 +25,9 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 | `--replay <file.json>` | no | Re-score an existing `--output` file against `--input` without running the agent (D14). Rows pair with the parsed records by position; a file that is not a JSON array, or whose row count differs from the parsed input, is refused with exit code 1. Safety and latency read `n/a` in replay: they exist only in the run that wrote the file. |
 | `--now <ISO-8601 date-time>` | no (default: the current UTC time) | The run's reference time (D10): the day send times are floored to and horizons are counted from. The documented run against `holdout_12.jsonl` passes `2025-12-09T00:00:00-06:00`, the oracle's date. Logged once per run. |
 | `--composer template\|openai` | no (default `template`) | `template` is deterministic and free; `openai` calls a real completion model and needs `OpenAI:ApiKey` set via `dotnet user-secrets` (never hardcoded, never handled by an agent). |
-| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`, `schedule`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
-| `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score). Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
+| `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`, `schedule`, `composition`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
+| `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score), and the judge's `ActionSem` and `BodySem`, which read `n/a` unless the run passed `--judge`. Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
+| `--judge` | no (default: off) | Adds the two semantic checks `ActionSem` and `BodySem` to `--eval-report`'s scorecard (D30). A pinned model, `gpt-4o`, grades under a pinned rubric whether the produced message conveys the label's own action and body; it is reference-based, so it grades against the label the customer wrote, never against its own taste. A presence flag, not an option with a value: there is one judge, and its model is pinned in code rather than configured, because a grade only means something next to yesterday's grade if the same model and the same rubric produced both (playbook step 31). It needs `OpenAI:ApiKey` set via `dotnet user-secrets` and makes one model call per scoreable record, so it costs one call per record every time it is asked for. Its two verdicts are their own checks and are excluded from a record's pass or fail, so the judge can never overturn a deterministic check, and a run with the network down reports both as `n/a`. Applies to a normal run and to `--replay` alike. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
@@ -40,7 +42,7 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
 | Exit code | Meaning | Next step |
 |---|---|---|
 | `0` (Success) | Every record in `--input` was processed without an unhandled exception. | Nothing to debug: a suppressed message (a `next_message` with channel `none`) is a valid *decision*, not a failure. `--diagnostics` names the `suppression_reason`. |
-| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, a missing `OpenAI:ApiKey`, or a `--replay` file that is not a JSON array or whose row count differs from the parsed input. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, the `dotnet user-secrets set` command to run, or both counts). Nothing else ran; no records were processed. |
+| `1` (UsageError) | Bad CLI arguments, an unknown `--composer` value, a missing `OpenAI:ApiKey` for `--composer openai` or for `--judge` (D30), or a `--replay` file that is not a JSON array or whose row count differs from the parsed input. | Read the plain-text line on stderr, it names exactly what was wrong (composer name, the `dotnet user-secrets set` command to run, or both counts). Nothing else ran; no records were processed. |
 | `2` (PartialFailure) | At least one record threw an unhandled exception during processing. | Every other record still completed and is in `--output`, this is deliberate per-record isolation, not a partial write. Find which record via the stderr line (`Record '<TaskId>' failed: <ExceptionType>: <message>`), or the log (see below) for the full stack trace. |
 
 **Where to look, in order:**
@@ -77,6 +79,21 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    sprang forward across the slot, and `earlier_of_two` when it fell back
    across it. A whole `schedule` of `null` means the scheduler never ran:
    the consent gate suppressed the record, or composition failed before it.
+   `composition` says how the message was written (D24): `composer`, the
+   implementation whose text was returned, `template` or `openai`, the same
+   two spellings `--composer` takes, so a record reading `template` on an
+   `openai` run is one the fallback answered, which is where a model call
+   that ran past the batch's stated budget shows up (D28); `attempts`, how
+   many compose calls the compose-validate loop made to get that text;
+   `locale_applied`, whether the composer could serve the record's stated
+   language, which is a check that can fail on the template composer, since
+   it holds one template set per language it serves, English and Spanish
+   today, and is true on the model composer, which passes the tag through
+   with no allowlist anywhere (D26, A13); and `network_retries`, how many
+   transport retries the call underneath spent, `null` for a composer that
+   makes no network call at all (D28). A whole `composition` of `null`
+   means the record carries no message, which is consent suppression or a
+   composition failure, and `suppression_reason` separates those two.
 
 ## 3. How logging actually works
 

@@ -26,24 +26,43 @@ public static class CliExitCodes
 // of its own - every decision stays inside Agent library components.
 // composerOverride is the fault-injection seam for the batch loop's per-record isolation:
 // no input can make a record throw any more, so a test supplies a composer that does.
-public sealed class CliRunner(IConfiguration configuration, TextWriter output, TextWriter error, IMessageComposer? composerOverride = null)
+// judgeOverride is the same seam for --judge: BuildJudge always reaches for a real
+// OpenAiCompletionClient, so a test driving --judge through a non-empty batch supplies its
+// own judge rather than spending a real network call.
+public sealed class CliRunner(
+    IConfiguration configuration,
+    TextWriter output,
+    TextWriter error,
+    IMessageComposer? composerOverride = null,
+    SemanticJudge? judgeOverride = null)
 {
     private static readonly HttpClient SharedHttpClient = new();
+
+    // Playbook step 31: the judge model is pinned, not configured. A grade only means
+    // something next to yesterday's grade if the same model gave both, and no second known
+    // value has earned a setting here (step 41). The composer's model stays configurable
+    // because a run may legitimately want to compare models; the instrument may not.
+    private const string JudgeModel = "gpt-4o";
 
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         string? inputPath = GetOption(args, "--input");
         string? outputPath = GetOption(args, "--output");
-        string composerName = GetOption(args, "--composer") ?? "template";
+        string composerName = GetOption(args, "--composer") ?? ComposerNames.Template;
         string? diagnosticsPath = GetOption(args, "--diagnostics");
         string? evalReportPath = GetOption(args, "--eval-report");
         string? logFilePath = GetOption(args, "--log-file");
         string? nowOption = GetOption(args, "--now");
         string? replayPath = GetOption(args, "--replay");
 
+        // D30: the judge is off unless it is asked for. It is a presence flag, not an
+        // option with a value: there is one judge, and its model is pinned rather than
+        // chosen per run (playbook step 31).
+        bool judgeRequested = args.Contains("--judge", StringComparer.Ordinal);
+
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -88,20 +107,42 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         using IDisposable agentLogScope = AgentLog.Configure(loggerFactory);
         ILogger<CliRunner> log = loggerFactory.CreateLogger<CliRunner>();
 
-        if (replayPath is not null)
+        // D30: the judge is configuration, not a per-record decision, so it is built before
+        // either path runs and a missing key is a usage error before any work happens
+        // (playbook step 77).
+        SemanticJudge? judge;
+        try
         {
-            return await ReplayAsync(inputPath, replayPath, evalReportPath, loggerFactory, log, cancellationToken);
+            judge = judgeRequested ? judgeOverride ?? BuildJudge(configuration, loggerFactory) : null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            log.LogError(ex, "Judge selection failed.");
+            error.WriteLine(ex.ToDiagnosticString());
+            return CliExitCodes.UsageError;
         }
 
+        if (replayPath is not null)
+        {
+            return await ReplayAsync(inputPath, replayPath, evalReportPath, judge, loggerFactory, log, cancellationToken);
+        }
+
+        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
+
+        // D28: the model call is bounded by the strictest latency budget the batch states, so
+        // the composer is built after the records are read. Nothing that costs time or money
+        // has happened yet (playbook step 77): reading the file is local, and a bad composer
+        // name or a missing key still returns a usage error before the first call.
         var templateFallback = new TemplateMessageComposer();
         IMessageComposer baseComposer;
         try
         {
             baseComposer = composerOverride ?? composerName switch
             {
-                "template" => templateFallback,
-                "openai" => BuildOpenAiComposer(configuration, loggerFactory),
-                _ => throw new ArgumentException($"Unknown composer '{composerName}'. Expected 'template' or 'openai'."),
+                ComposerNames.Template => templateFallback,
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases)),
+                _ => throw new ArgumentException(
+                    $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -126,8 +167,6 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             new SendScheduler(),
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
-
-        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
 
         // Fixed before the loop below can add processing failures onto the same
         // failureCount: a record that throws stays in `cases` (per-record isolation), so
@@ -207,8 +246,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
             // Scores the results already captured above - never re-runs the agent, so the
             // report describes exactly what was persisted to --output, not a second,
             // possibly different sample (this matters for non-deterministic composers).
-            IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
-            await WriteScorecardAsync(evaluator.Evaluate(scoredRuns), evalReportPath, log, cancellationToken);
+            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, cancellationToken);
+            await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken);
         }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
@@ -221,6 +260,7 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         string inputPath,
         string replayPath,
         string? evalReportPath,
+        SemanticJudge? judge,
         ILoggerFactory loggerFactory,
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
@@ -244,8 +284,8 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         }
 
         log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
-        IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
-        await WriteScorecardAsync(evaluator.Evaluate(aligned.Value), evalReportPath, log, cancellationToken);
+        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, cancellationToken);
+        await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken);
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
@@ -316,14 +356,42 @@ public sealed class CliRunner(IConfiguration configuration, TextWriter output, T
         return index >= 0 && index + 1 < cliArgs.Length ? cliArgs[index + 1] : null;
     }
 
-    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory)
+    // D30: the judge model is pinned separately from the composer's, so the two are not the
+    // same model even though one vendor key makes them the same family. Its calls are
+    // evaluation, not the product's per-record work, so they are not bounded by the batch's
+    // latency budget the way a compose call is (D28).
+    private static SemanticJudge BuildJudge(IConfiguration configuration, ILoggerFactory loggerFactory)
+    {
+        string apiKey = configuration["OpenAI:ApiKey"]
+            ?? throw new InvalidOperationException(
+                "--judge needs OpenAI:ApiKey. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, JudgeModel);
+        return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
+    }
+
+    // The scorecard, and the judge's two verdicts on top of it when the run asked for them.
+    // Both paths score the same way; the judge is one signal beside the deterministic checks
+    // and never replaces one (D30).
+    private static async Task<Scorecard> ScoreAsync(
+        IReadOnlyList<ScoredRun> runs,
+        SemanticJudge? judge,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
+        Scorecard scorecard = evaluator.Evaluate(runs);
+
+        return judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
+    }
+
+    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
             ?? throw new InvalidOperationException(
                 "OpenAI:ApiKey is not configured. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
     }
 

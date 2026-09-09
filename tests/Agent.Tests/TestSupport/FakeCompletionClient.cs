@@ -2,7 +2,7 @@ using Agent.Composition;
 
 namespace Agent.Tests.TestSupport;
 
-internal sealed class FakeCompletionClient(string? response = null, Exception? throwException = null) : ICompletionClient
+internal sealed class FakeCompletionClient(string? response = null, Exception? throwException = null, int networkRetries = 0) : ICompletionClient
 {
     public string? LastSystemPrompt { get; private set; }
 
@@ -10,7 +10,7 @@ internal sealed class FakeCompletionClient(string? response = null, Exception? t
 
     public string? LastResponseJsonSchema { get; private set; }
 
-    public Task<string> CompleteAsync(
+    public Task<ModelCompletion> CompleteAsync(
         string systemPrompt,
         string userPrompt,
         string? responseJsonSchema = null,
@@ -25,6 +25,6 @@ internal sealed class FakeCompletionClient(string? response = null, Exception? t
             throw throwException;
         }
 
-        return Task.FromResult(response!);
+        return Task.FromResult(new ModelCompletion(response!, networkRetries));
     }
 }

@@ -15,14 +15,14 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: "Richardson, TX", amenityInterest: null);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        NextMessage message = result.Value!;
+        NextMessage message = result.Value!.Message;
         Assert.Contains("Taylor", message.Body);
         Assert.Contains("Oak Ridge Apartments", message.Body);
         Assert.Contains("Richardson, TX", message.Body);
-        Assert.Contains("book tour", message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("book a tour", message.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("STOP", message.Body);
         Assert.Equal("schedule_tour", message.Cta!.Type);
         Assert.Null(message.Subject);
@@ -34,14 +34,14 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: ["pool", "fitness"]);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         Assert.True(result.IsSuccess);
-        NextMessage message = result.Value!;
+        NextMessage message = result.Value!.Message;
         Assert.Contains("Taylor", message.Body);
         Assert.Contains("pool", message.Body);
         Assert.Contains("fitness", message.Body);
-        Assert.Contains("book tour", message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("book a tour", message.Body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("STOP", message.Body);
         Assert.NotNull(message.Subject);
         Assert.Contains("Oak Ridge Apartments", message.Subject);
@@ -52,10 +52,10 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: "Richardson, TX", amenityInterest: ["pool"]);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        NextMessage message = result.Value!;
+        NextMessage message = result.Value!.Message;
         Assert.Contains("pool", message.Body);
         Assert.Contains("Richardson, TX", message.Body);
     }
@@ -65,11 +65,11 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: null);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.DoesNotContain("interested in", result.Value!.Body);
-        Assert.DoesNotContain("looking in", result.Value.Body);
+        Assert.DoesNotContain("interested in", result.Value!.Message.Body);
+        Assert.DoesNotContain("looking in", result.Value.Message.Body);
     }
 
     [Fact]
@@ -77,10 +77,10 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "call_now");
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("call_now", result.Value!.Cta!.Type);
+        Assert.Equal("call_now", result.Value!.Message.Cta!.Type);
     }
 
     // A12: an absent first name means no name in the greeting, not a failed record.
@@ -89,12 +89,12 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: null);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.DoesNotContain("Taylor", result.Value.Body);
-        Assert.StartsWith("Hi!", result.Value.Body);
-        Assert.Contains("STOP", result.Value.Body);
+        Assert.DoesNotContain("Taylor", result.Value.Message.Body);
+        Assert.StartsWith("Hi!", result.Value.Message.Body);
+        Assert.Contains("STOP", result.Value.Message.Body);
     }
 
     [Fact]
@@ -102,11 +102,11 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: null);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         Assert.True(result.IsSuccess);
-        Assert.DoesNotContain("Oak Ridge", result.Value.Body);
-        Assert.Equal("Your next step", result.Value.Subject);
+        Assert.DoesNotContain("Oak Ridge", result.Value.Message.Body);
+        Assert.Equal("Your next step", result.Value.Message.Subject);
     }
 
     // A9: no primary_cta means the generic reply call to action.
@@ -115,11 +115,11 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("reply", result.Value.Cta!.Type);
-        Assert.Contains("Reply to learn more", result.Value.Body);
+        Assert.Equal("reply", result.Value.Message.Cta!.Type);
+        Assert.Contains("Reply to learn more", result.Value.Message.Body);
     }
 
     [Fact]
@@ -127,10 +127,10 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("reply", result.Value.Cta!.Type);
+        Assert.Equal("reply", result.Value.Message.Cta!.Type);
     }
 
     [Fact]
@@ -138,10 +138,194 @@ public class TemplateMessageComposerTests
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal() with { Input = null, Assertions = null };
 
-        Result<NextMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.True(result.IsSuccess);
-        Assert.Contains("STOP", result.Value.Body);
-        Assert.Equal("reply", result.Value.Cta!.Type);
+        Assert.Contains("STOP", result.Value.Message.Body);
+        Assert.Equal("reply", result.Value.Message.Cta!.Type);
+    }
+
+    // D24 and playbook step 57: the result names the implementation that produced it, so a
+    // fallback on an openai run shows up in the diagnostics instead of passing for a clean run.
+    [Fact]
+    public async Task ComposeAsync_AnyRecord_NamesItselfAsTheComposerOfOneAttempt()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ComposerNames.Template, result.Value!.Notes.Composer);
+        Assert.Equal(1, result.Value.Notes.Attempts);
+    }
+
+    // A10 and D25: sms carries the numbered reply options in the body and in cta.options,
+    // the way sample 1's label does; the content comes from the catalog, since no input
+    // field states it.
+    [Fact]
+    public async Task ComposeAsync_SmsWithKnownCta_CarriesNumberedOptionsInBodyAndCta()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        NextMessage message = result.Value!.Message;
+        Assert.Equal(["Thu", "Fri"], message.Cta!.Options);
+        Assert.Contains("Reply 1 for Thu, 2 for Fri.", message.Body);
+        Assert.Null(message.Cta.Link);
+    }
+
+    // A10 and A21: email carries the link, built from the property slug and the catalog's
+    // path for this call to action, and the body carries the same link.
+    [Fact]
+    public async Task ComposeAsync_EmailWithKnownCta_CarriesTheLinkBuiltFromThePropertySlug()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        NextMessage message = result.Value!.Message;
+        Assert.Equal(new Uri("https://oakridge.example/tour"), message.Cta!.Link);
+        Assert.Contains("https://oakridge.example/tour", message.Body);
+        Assert.Null(message.Cta.Options);
+    }
+
+    // A21: no property name, no host, so no link is invented and the payload check fails
+    // honestly on that record.
+    [Fact]
+    public async Task ComposeAsync_EmailWithoutPropertyName_CarriesNoLink()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: null);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Null(result.Value!.Message.Cta!.Link);
+    }
+
+    // A21: the slug is the property name lowercased, with a trailing property-type word
+    // dropped and every non-alphanumeric character removed.
+    [Theory]
+    [InlineData("Oak Ridge Apartments", "https://oakridge.example/tour")]
+    [InlineData("Oak Ridge", "https://oakridge.example/tour")]
+    [InlineData("St. James Lofts", "https://stjames.example/tour")]
+    [InlineData("Lofts", "https://lofts.example/tour")]
+    public async Task ComposeAsync_EmailWithAnyPropertyName_BuildsTheSlugFromIt(string propertyName, string expectedLink)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: propertyName);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Equal(new Uri(expectedLink), result.Value!.Message.Cta!.Link);
+    }
+
+    // A9 and D25: an unknown primary_cta passes through as the type, and the payload comes
+    // from the generic row, since the shape is the channel's rule (A10) and only the content
+    // is the catalog's.
+    [Fact]
+    public async Task ComposeAsync_UnknownPrimaryCtaOnSms_PassesTheTypeThroughWithTheGenericPayload()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "call_now");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Cta cta = result.Value!.Message.Cta!;
+        Assert.Equal("call_now", cta.Type);
+        Assert.Equal(["a question", "a tour"], cta.Options);
+    }
+
+    // A9: no primary_cta means the generic reply call to action, and its own payload.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCtaOnEmail_UsesTheGenericLinkPath()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Equal(new Uri("https://oakridge.example/reply"), result.Value!.Message.Cta!.Link);
+    }
+
+    // A21: a property name with no letters or digits in it leaves no host, so the record
+    // gets no link rather than "https://.example/tour".
+    [Fact]
+    public async Task ComposeAsync_EmailWithPunctuationOnlyPropertyName_CarriesNoLink()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: "!!!");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Null(result.Value!.Message.Cta!.Link);
+    }
+
+    // A13 and D26: a record that states Spanish gets a Spanish message, its options
+    // included, and the notes record that the locale was applied.
+    [Fact]
+    public async Task ComposeAsync_SpanishSms_ComposesInSpanishWithSpanishOptions()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        NextMessage message = result.Value!.Message;
+        Assert.StartsWith("Hola Taylor", message.Body);
+        Assert.Equal(["jueves", "viernes"], message.Cta!.Options);
+        Assert.Contains("Responde 1 para jueves, 2 para viernes.", message.Body);
+        Assert.Contains("STOP", message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_SpanishEmail_UsesTheSpanishSubjectAndLinkLine()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        NextMessage message = result.Value!.Message;
+        Assert.Equal("Visita Oak Ridge Apartments", message.Subject);
+        Assert.Contains("Empieza aquí: https://oakridge.example/tour", message.Body);
+        Assert.Contains("STOP", message.Body);
+    }
+
+    // A13: the set is chosen on the primary subtag, so a regional or upper-case tag lands
+    // on the same set.
+    [Theory]
+    [InlineData("es-MX")]
+    [InlineData("ES")]
+    [InlineData("es_419")]
+    public async Task ComposeAsync_RegionalSpanishTag_ResolvesToTheSpanishSet(string languageTag)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: languageTag);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hola Taylor", result.Value!.Message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
+    }
+
+    // D26: no component gates on a language allowlist. A language this composer holds no
+    // template set for is served in English and says so, which is a limit of the template
+    // file, not a rule about which languages a prospect may use.
+    [Fact]
+    public async Task ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr");
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hi Taylor", result.Value!.Message.Body);
+        Assert.False(result.Value.Notes.LocaleApplied);
+    }
+
+    // A13: an absent language is the en default the record inherits, so nothing failed to
+    // be applied.
+    [Fact]
+    public async Task ComposeAsync_AbsentLanguage_ComposesInEnglishWithTheLocaleApplied()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: null);
+
+        Result<ComposedMessage> result = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hi Taylor", result.Value!.Message.Body);
+        Assert.True(result.Value.Notes.LocaleApplied);
     }
 }

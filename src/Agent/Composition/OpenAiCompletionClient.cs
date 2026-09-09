@@ -1,67 +1,139 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text.Json;
-using Agent.Common;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using OpenAI;
+using OpenAI.Chat;
 
 namespace Agent.Composition;
 
-public sealed class OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini") : ICompletionClient
+// D27: the real client goes through the official OpenAI package, pinned in
+// Directory.Packages.props, rather than a hand-rolled call against the HTTP endpoint. Every
+// type and parameter below was confirmed against that restored assembly, not against
+// documentation (playbook step 50): ChatClient(model, ApiKeyCredential, OpenAIClientOptions),
+// ChatClient.CompleteChatAsync(IEnumerable<ChatMessage>, ChatCompletionOptions,
+// CancellationToken), ChatCompletionOptions.Temperature and .ResponseFormat,
+// ChatResponseFormat.CreateJsonSchemaFormat(name, BinaryData, description, jsonSchemaIsStrict),
+// OpenAIClientOptions.Transport, .NetworkTimeout and .RetryPolicy,
+// HttpClientPipelineTransport(HttpClient) and ClientRetryPolicy(maxRetries).
+//
+// D28 bounds the call: one retry with the SDK's exponential backoff on the transient
+// statuses it knows (408, 429, 5xx), a per-call timeout the caller states, and a low
+// temperature that is never called determinism (step 52).
+public sealed class OpenAiCompletionClient : ICompletionClient
 {
-    private const string CompletionsEndpoint = "https://api.openai.com/v1/chat/completions";
+    // One retry, not the SDK's default of three: a record states a latency budget, and a
+    // pipeline that retries three times with backoff spends the whole of it on one call.
+    private const int MaxRetries = 1;
+
+    // Low, not zero: step 52. No provider promises reproducibility from temperature or a
+    // seed, so variance is measured (Phase 7 step 83) rather than assumed away.
+    private const float Temperature = 0.2f;
+
+    // Only reached when no record in the batch states p95_latency_ms. It exists to stop a
+    // hung call, not to express a budget.
+    private static readonly TimeSpan DefaultCallBudget = TimeSpan.FromSeconds(30);
 
     private const string StructuredOutputSchemaName = "composed_message";
 
-    public async Task<string> CompleteAsync(
+    private readonly ChatClient chatClient;
+    private readonly CountingRetryPolicy retryPolicy;
+    private readonly TimeSpan callBudget;
+
+    // callBudget bounds one call including its retry, not one attempt: see PerAttemptTimeout.
+    public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
+    {
+        retryPolicy = new CountingRetryPolicy(MaxRetries);
+        this.callBudget = callBudget ?? DefaultCallBudget;
+
+        var options = new OpenAIClientOptions
+        {
+            Transport = new HttpClientPipelineTransport(httpClient),
+            NetworkTimeout = PerAttemptTimeout(this.callBudget),
+            RetryPolicy = retryPolicy,
+        };
+
+        chatClient = new ChatClient(model, new ApiKeyCredential(apiKey), options);
+    }
+
+    // O(1) network calls, at most two: the call and its one retry.
+    public async Task<ModelCompletion> CompleteAsync(
         string systemPrompt,
         string userPrompt,
         string? responseJsonSchema = null,
         CancellationToken cancellationToken = default)
     {
-        var requestBody = new OpenAiChatRequest(
-            model,
-            [
-                new OpenAiChatRequestMessage("system", systemPrompt),
-                new OpenAiChatRequestMessage("user", userPrompt),
-            ],
-            BuildResponseFormat(responseJsonSchema));
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, CompletionsEndpoint)
+        var options = new ChatCompletionOptions
         {
-            Content = JsonContent.Create(requestBody, options: AgentJsonOptions.Default),
+            Temperature = Temperature,
+            ResponseFormat = BuildResponseFormat(responseJsonSchema),
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        int attemptsBefore = retryPolicy.Attempts;
 
-        if (!response.IsSuccessStatusCode)
+        ClientResult<ChatCompletion> result;
+        try
         {
-            string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpRequestException(
-                $"OpenAI request failed with status {(int)response.StatusCode} ({response.StatusCode}): {errorBody}",
-                inner: null,
-                response.StatusCode);
+            result = await chatClient.CompleteChatAsync(
+                [new SystemChatMessage(systemPrompt), new UserChatMessage(userPrompt)],
+                options,
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsTimeout(ex) && !cancellationToken.IsCancellationRequested)
+        {
+            // The pipeline treats a timeout as transient and retries it, so an exhausted
+            // call arrives as an AggregateException of TaskCanceledException rather than as
+            // one cancellation. Named here so the composer above catches a timeout by its
+            // own type instead of unwrapping the SDK's, and so a caller's cancellation,
+            // which arrives in the same shapes, still propagates untouched.
+            throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
-        OpenAiChatResponse? chatResponse = await response.Content.ReadFromJsonAsync<OpenAiChatResponse>(AgentJsonOptions.Default, cancellationToken);
+        int retries = Math.Max(retryPolicy.Attempts - attemptsBefore - 1, 0);
 
-        return chatResponse?.Choices?.FirstOrDefault()?.Message?.Content
-            ?? throw new InvalidOperationException("OpenAI response contained no completion content.");
+        string content;
+        try
+        {
+            content = result.Value.Content.Count > 0 ? result.Value.Content[0].Text : string.Empty;
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            // A 200 whose body carries no choice at all. ClientResult deserializes on the
+            // first read of Value, not on the await, so the SDK reaches for a choice that is
+            // not there and throws from inside itself, after the call has already returned.
+            // Named here as the same failure an empty message body is, because the composer
+            // catches that one into a Result and the compose-validate loop turns it into a
+            // fallback; an ArgumentOutOfRangeException escapes all of that and costs the
+            // record its output row. This is the guarantee the hand-rolled client gave with
+            // "Choices?.FirstOrDefault()?.Message?.Content ?? throw" before D27 replaced it.
+            throw new InvalidOperationException("OpenAI response contained no completion choice.", ex);
+        }
+
+        return content.Length > 0
+            ? new ModelCompletion(content, retries)
+            : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
+
+    private static bool IsTimeout(Exception exception) =>
+        exception is OperationCanceledException ||
+        (exception is AggregateException aggregate && aggregate.Flatten().InnerExceptions.Any(inner => inner is OperationCanceledException));
+
+    // NetworkTimeout bounds one attempt, and the policy above may make MaxRetries more of
+    // them, so a budget handed straight to it would be exceeded by the retry beside it: a
+    // bound that is documented and not enforced. Dividing makes the whole call, its retry
+    // included, fit inside the budget the record stated. What this does not bound is the
+    // compose-validate loop above: after a failed call it composes once more before falling
+    // back, so a record that fails composition can spend up to twice its budget before the
+    // template composer answers, which the p95 check then measures and reports.
+    public static TimeSpan PerAttemptTimeout(TimeSpan callBudget) => callBudget / (1 + MaxRetries);
 
     // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.
-    // When the caller supplies a schema, Structured Outputs (strict: true) makes the API
-    // itself enforce that shape via constrained decoding, rather than trusting prose
-    // instructions in the prompt to be honored.
-    private static OpenAiResponseFormat BuildResponseFormat(string? responseJsonSchema)
-    {
-        if (responseJsonSchema is null)
-        {
-            return new OpenAiResponseFormat("json_object");
-        }
-
-        using JsonDocument schemaDocument = JsonDocument.Parse(responseJsonSchema);
-        OpenAiJsonSchemaSpec schemaSpec = new(StructuredOutputSchemaName, Strict: true, schemaDocument.RootElement.Clone());
-
-        return new OpenAiResponseFormat("json_schema", schemaSpec);
-    }
+    // When the caller supplies a schema, Structured Outputs (strict) makes the API itself
+    // enforce that shape via constrained decoding, rather than trusting prose instructions
+    // in the prompt to be honored.
+    private static ChatResponseFormat BuildResponseFormat(string? responseJsonSchema) =>
+        responseJsonSchema is null
+            ? ChatResponseFormat.CreateJsonObjectFormat()
+            : ChatResponseFormat.CreateJsonSchemaFormat(
+                StructuredOutputSchemaName,
+                BinaryData.FromString(responseJsonSchema),
+                jsonSchemaIsStrict: true);
 }

@@ -115,11 +115,13 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
 
     // Three spellings of "no message" score as the same channel: a null next_message, the
     // oracle's object with channel "none" (D3), and DESIGN.md section 2's null channel.
-    private static CommunicationChannel EffectiveChannel(NextMessage? message) =>
+    // Internal rather than private: SemanticJudge shares this exact rule (BodyOf) rather
+    // than restating it, so the two agree on what "no message" means without a second copy.
+    internal static CommunicationChannel EffectiveChannel(NextMessage? message) =>
         message?.Channel ?? CommunicationChannel.None;
 
     // A suppressed message has no body, send time, or call to action to check.
-    private static NextMessage? AsPresent(NextMessage? message) =>
+    internal static NextMessage? AsPresent(NextMessage? message) =>
         EffectiveChannel(message) == CommunicationChannel.None ? null : message;
 
     // Subject plus body, the same text the validator checks: the labels put the property

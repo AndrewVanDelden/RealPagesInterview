@@ -334,3 +334,257 @@ only diagnostics member that tells a reader nothing the two files in front of th
 Scopes: the Phase 3 check in AGENTS.md, Sprint 5, any later sprint tempted to add the object.
 Evidence: A1 and A3, which state the rule entirely in input fields; DESIGN.md section 3's
 channel row; LC. Assumptions: A1, A3. Confirmed by the requester on 2026-09-08.
+
+**D24. The composer's identity in the diagnostics (2026-09-08).** Question: playbook step 57
+says the diagnostics record which implementation produced each result, and the Phase 4 check
+says the diagnostics say so on every record; nothing in the output or the diagnostics names the
+composer today. Options: log the composer once per record and leave the diagnostics alone; add a
+string member to `AgentDiagnostics`; or have the composer return its working beside the message,
+the way `SendScheduler` returns `ScheduledSend` (D22), and carry it as a `CompositionNotes`
+object. Recommendation: the third. A log line only reaches a reader who kept the log, and the
+composer's identity is exactly the kind of working D23 says earns an object: it cannot be read
+off the input and the output. `IMessageComposer` returns `Result<ComposedMessage>`, where
+`ComposedMessage` is the `NextMessage` plus `CompositionNotes(Composer, Attempts,
+NetworkRetries)`: which implementation produced the text, how many compose calls the
+compose-validate loop made, and how many transport retries the call underneath spent (null for a
+composer that makes no network call). `ValidatingMessageComposer` returns the notes of the
+attempt that answered, with its own total attempt count. Silent degradation is visible without a
+boolean: the run states the composer it asked for (`--composer`), and a record whose notes say
+`template` on an `openai` run is one the fallback answered. Scopes: Sprint 6, `IMessageComposer`,
+both composers, `ValidatingMessageComposer`, `AgentDiagnostics`, the Phase 4 check. Evidence:
+playbook steps 49 and 57; D22's precedent; D23's rule for what earns an object. Assumption: A18.
+
+**D25. The call-to-action payload and the link host (2026-09-08).** Question: A10 says sms
+carries numbered reply options and email carries a link, and the payload check has been 0 of 10
+on every set since Sprint 3 because the template composer emits neither. Where do the options and
+the link come from, given no input field states either. Options: hard-code one pair of options
+and one link in the template composer; or put both on the catalog row D19 deferred, keyed on the
+call-to-action type, so the vocabulary lives in the one table playbook step 42 asks for.
+Recommendation: the second. `ActionCatalog` gains the call-to-action column D2 named and D19
+deferred: per call-to-action type, the sms reply options and the email link path. The link is
+`https://{slug}.example/{path}` (A10), and the slug rule is A21. A record with no property name
+has no host, so it gets no link and the payload check fails honestly rather than being fed an
+invented host. `PrimaryCtaVocabulary.GenericCtaType` moves onto that column, which is what D19
+said Sprint 6 would do. Scopes: Sprint 6, `ActionCatalog`, both composers, A9, A10, A21.
+Evidence: sample 1's `options` ["Thu","Fri"] and sample 2's `link`
+`https://oakridge.example/tour`; playbook step 42; D19. Assumptions: A9, A10, A21.
+
+**D26. Language is passed through, never gated (2026-09-08).** Question: A13 says the template
+set ships English and any other language goes to the model composer, which leaves every
+non-English record failing the language check on the offline path the Phase 4 check runs.
+Options: keep A13 as written; add a language allowlist and refuse anything outside it; or state
+that no component gates on a language allowlist, ship the offline template sets for the languages
+there is evidence for, and name the fallback when a record's language has no set. Recommendation:
+the third, on the requester's answer of 2026-09-08: nothing in the problem statement makes
+English a rule, `input.language` is a free tag, and a model composer is not English-only either.
+The model path passes the record's language to the model with no allowlist and no list of
+supported tags anywhere in the code. The template composer holds one template set per language it
+can serve, English and Spanish today, keyed on the parsed tag; a tag with no set is served in
+English with the `locale_not_applied` diagnostic A13 names, which is a stated limit of a template
+file, not a rule about which languages a prospect may use. Spanish is earned by the synthetic
+set, which section 4 item 4 put there before any decision code existed, so D9 is not touched.
+Scopes: Sprint 6, `TemplateMessageComposer`, `OpenAiMessageComposer`, A13. Evidence: the
+requester, 2026-09-08; playbook step 59; DESIGN.md section 4 item 4. Assumption: A13, revised.
+
+**D27. The real client goes through the official SDK (2026-09-08).** Question: playbook step 49
+and the SCS pillar both say the real client is written against the official SDK when one exists,
+and `OpenAiCompletionClient` is a hand-rolled `HttpClient` call against
+`/v1/chat/completions`. Options, and when each wins: (a) raw HTTP, which wins only when no
+official SDK exists or the deployment forbids the dependency, and costs you the request and
+response shapes, the retry policy, and the structured-output plumbing by hand; (b) the official
+`OpenAI` package, which wins when the product calls OpenAI itself and wants the vendor's own
+model of the API surface, its structured-output types and its retry policy, at the price of one
+vendor dependency; (c) `Microsoft.Extensions.AI` `IChatClient`, which is Microsoft's recommended
+abstraction and wins when the application wants provider portability plus middleware for
+telemetry, caching and function calling, and which sits on top of (b) rather than replacing it;
+(d) an agent framework such as Semantic Kernel or Azure.AI.OpenAI, which wins when you want
+planners, memory and connectors, or an Azure-hosted deployment and its auth. Recommendation: (b),
+on the requester's answer of 2026-09-08. This product already owns the portability seam that (c)
+would sell it: `ICompletionClient` is one method with a real and a fake implementation (S3), so
+`IChatClient` would be a second abstraction over the first, which EA refuses. (d) brings an
+orchestration layer for a program whose whole point is that code owns every decision (S2). The
+`OpenAI` package is pinned at an exact version in `Directory.Packages.props`, and every type,
+parameter and flag used is confirmed against that restored assembly, not against documentation
+or memory (step 50). Scopes: Sprint 6, `OpenAiCompletionClient`, its tests, D28. Evidence: SCS;
+playbook steps 49 and 50; S3. Assumption: none.
+
+**D28. What a model call is bounded by (2026-09-08).** Question: playbook step 49 asks for a
+per-call timeout below the latency budget, bounded retry with backoff on transient failures, and
+the retry count in the diagnostics; the hand-rolled client had none of the three. Options: rely
+on the SDK's defaults, which are three retries with exponential backoff and its own network
+timeout; or state each bound in the composition root and count the retries. Recommendation: the
+second. The strictest `p95_latency_ms` any record states is the budget the run is measured
+against, so the timeout is a stated value rather than a default, and a retry count nobody can
+see is the silent degradation step 57 exists to expose. The temperature is set low and
+reproducibility is never claimed from it (step 52); variance is measured in Phase 7 step 83.
+Scopes: Sprint 6, `OpenAiCompletionClient`, `CompositionNotes.NetworkRetries`, D24. Evidence:
+playbook steps 49 and 52. Assumption: A15.
+
+**D29. What the model is told, and what it is told to ignore (2026-09-08).** Question: step 55
+says every field that changes what the message should say reaches the model, and the prompt
+carries four; D5 names persona, stage, language, every date the record has, the stated interests
+and the catalog's call to action. Options: add the fields to the existing block; or add them and
+pin the result. Recommendation: the second. Every record-derived value goes inside
+`<prospect_data>`, every instruction stays outside it, and both are pinned by golden tests over
+the built prompt and the serialized request (step 58) so a wording change is a reviewed diff
+rather than a silent one. The boundary is tested with records carrying an instruction in a name
+field and in a free-text field, and the assertion is that the produced message does not follow
+it (step 54). Scopes: Sprint 6, `OpenAiMessageComposer`, its tests. Evidence: playbook steps 53
+to 55 and 58; D5. Assumptions: A9, A12, A13.
+
+**D30. The judge (2026-09-08).** Question: D15 deferred the semantic judge for
+`next_action.type` to Sprint 6, where D5 also puts body semantics; a judge is a network call and
+the Phase 4 check runs offline. Options: defer it again; drop it and let exact match be the whole
+contract; or build it behind a flag, reference-based, pinned. Recommendation: the third, taken
+after reading the current guidance on judges. Three properties follow from what makes judges
+unreliable. It is reference-based: the rubric asks whether the produced message conveys the
+label's own offer, call to action and facts, never whether the message is good, because a judge
+scoring quality with no reference is the setting where position, verbosity and self-preference
+bias have been measured. It is one signal beside the deterministic checks and can never overturn
+one, which is step 31. It is off unless `--judge` is passed, and its two checks read as not
+measured on every offline run, so the Phase 4 check and every pinned baseline are untouched by
+it. The judge model is pinned separately from the composer model and named in the report. The
+known limitation, recorded rather than papered over: with one vendor key the judge and the
+composer can be the same family, which is the self-preference setting; on the template path the
+text being judged is not model-written at all, and on the model path the label is the reference,
+which is the mitigation the literature gives. No new interface: the judge is a class over the
+existing `ICompletionClient` seam, whose fake already exists (EA). Scopes: Sprint 6,
+`Agent.Evaluation`, the CLI, DESIGN.md section 6, D5, D6, D15. Evidence: playbook step 31; the
+judge-bias guidance summarized above; S4. Assumptions: A8, A15.
+
+**D25 addendum, PR review (2026-09-08).** The catalog shipped with an sms option list on
+every row, and after D26 moved the prose into the language sets nothing read it: the option
+text a message carries comes from `MessageTemplates.SmsOptions`, keyed on the call-to-action
+type, while the catalog's copy was keyed on `primary_cta` and could drift from it with nothing
+to catch the drift. Flagged in a cold-context review of the sprint diff. The column is removed;
+`CallToAction` is now the type and the link path, and the header comment no longer claims to
+own an option list it does not. The rule that survives: the catalog owns what a call to action
+is and where its link points, and the language sets own every word a person reads (LC, HSC).
+
+**D28 addendum, PR review (2026-09-08).** The paragraph above says the per-call timeout comes
+from the strictest stated `p95_latency_ms`, and the first implementation handed that number
+straight to `NetworkTimeout`, which bounds one attempt. With `MaxRetries = 1` beside it, a
+2000 ms budget was measured taking 4828 ms over two attempts, and the compose-validate loop's
+second call can double that again, so the bound the code and the docs stated was not the bound
+the code enforced. Flagged in a cold-context review of the sprint diff, measured against a hung
+transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the budget over
+`1 + MaxRetries`, so one call and its retry fit inside the number the record stated. What is
+still not bounded is stated rather than hidden: after a failed call the compose-validate loop
+composes once more before falling back, so a record that fails composition can spend up to
+twice its budget before the template composer answers, and the p95 check measures that.
+
+**D31. Which implementation the product uses on these sets (2026-09-08).** Question: playbook
+step 60 says to run the real implementation against the examples, compare its score to the
+offline one, record both per case type, and choose with a stated reason. Options: the model
+composer, the template composer, or a mix per case type. Recommendation: the template
+composer, on the measurement rather than on preference. The run was made on 2026-09-08 with
+`--composer openai` against all three sets, and the model answered no record at all: every
+record's `composition` reads `template` with `attempts` 3, which is two model attempts and the
+fallback. The cause is stated in D28 and was predicted before the run: the strictest stated
+`p95_latency_ms` on these sets is 2000 ms, the client divides that into two 1000 ms attempts,
+and a `gpt-4o-mini` completion of this size does not return in 1000 ms. So the comparison step
+60 asks for is degenerate on this data: both paths score identically because the same composer
+wrote every message. What the run does measure is the degradation path end to end, on real
+network calls: 23 records, 46 model calls, 92 HTTP requests, every one abandoned at its
+timeout, no record lost, no output row missing, and the diagnostics naming the fallback on
+every record. The p95 check, which passes at 18 ms offline, fails at about 5700 ms here, which
+is the honest cost of trying. Scopes: DESIGN.md section 9, the Phase 4 close, any future
+comparison run. Evidence: the run recorded in DESIGN.md section 9 under "Numbers after the step
+60 run". Assumptions: A15, A18.
+
+**D31 open question, for the requester.** A real model-versus-template comparison needs the
+model to answer at least once, and on these sets it cannot while the timeout is derived from
+the records' own stated budget. Three ways out, none taken without a decision: state that the
+stated budget and a live model are incompatible and leave the offline path as the answer, which
+is what this paragraph does today; add a documented override flag so a comparison run can raise
+the budget without editing the evaluation data, which is a product change earned only by this
+need; or treat `p95_latency_ms` as a reporting threshold rather than a call timeout, which
+contradicts playbook step 49 and D28. The first is free and honest, the second costs a flag and
+another live run, the third reopens a decision.
+
+**D31 addendum, the measured cost (2026-09-08).** The run cost about $0.004, read from the
+vendor's usage page: `gpt-4o-mini` input $0.002 and output $0.002 over roughly 12,100 tokens.
+The client made 92 HTTP attempts and the vendor recorded about 30 requests, so a call abandoned
+at its timeout usually never becomes a billable request, and sometimes does: the third that
+completed server-side were billed with their output tokens. That is worth knowing before
+choosing among this decision's three ways out, because the option that raises the budget to get
+a real comparison would pay for every call in full rather than for a third of them.
+
+**D24 addendum, PR #21 review (2026-09-08).** A recall-biased review of PR #21's diff found
+three defects under D24's own subject, the composer's identity and its notes. (a) The email
+link for a call to action was built from `CallToActionCatalog.Resolve(primaryCta)`, the
+record's stated constraint, rather than from `payload.CtaType`, the type actually placed on
+the outgoing message; the two are only guaranteed equal when `primary_cta` is present, so an
+absent constraint (the schema leaves `cta_type` unconstrained in that case, see D5) let the
+model choose a specific type while the link still pointed at the generic path. Fixed by
+`CallToActionCatalog.LinkPathForType(ctaType)`, a reverse lookup from the type actually on the
+wire, called with `payload.CtaType` rather than the input constraint. (b) The same site
+resolved the catalog twice on one unmodified input, once for the required type and again for
+the link path; `TemplateMessageComposer` already resolved once and reused both fields.
+`OpenAiMessageComposer` now does too, since the type it enforces (`requiredCtaType`, from the
+constraint) and the type it links (`payload.CtaType`, from the model) are different resolves
+by design after (a), not the same call repeated. (c) Both composers hardcoded `Attempts: 1` on
+the `CompositionNotes` they built, a value `ValidatingMessageComposer.WithAttempts`
+unconditionally overwrites on every production path; `CompositionNotes.ForComposer` states the
+placeholder once instead of once per composer. Each fix carries a test that fails against the
+prior code, confirmed by reverting the fix and re-running it. Tallies on all three sets: no
+tally moved, since `--composer openai` still falls back to the template composer under D31's
+timeout math on these sets, so the OpenAI composer's own output has never been measured
+against a label.
+
+**D3 addendum, PR #21 review (2026-09-08).** D3's rule that a suppressed record's diagnostics
+carry no composer identity had a third case unhandled: `AgentDiagnostics` is built from the
+compose step's notes before the final safety check runs, and the final-safety-suppression
+branch returned that same object unchanged, so a record with no message on the wire could
+still carry a non-null `composition`, naming a composer as if its draft had shipped. The other
+two suppression cases (consent, composition failure) already null the field. Fixed by nulling
+`Composition` on that branch too. A test asserting the null now sits beside the existing
+assertions on `RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage`, confirmed to
+fail against the prior code.
+
+**D28 addendum, PR #21 review, part two (2026-09-08).** `CompositionNotes.NetworkRetries` read
+only the winning compose attempt's own count; a retry spent on an attempt
+`ValidatingMessageComposer` rejected for a safety violation and discarded was lost, so a
+record whose first attempt retried once and second attempt succeeded cleanly reported zero
+retries despite three HTTP requests. Fixed by summing a discarded attempt's
+`NetworkRetries` (when the attempt built a `ComposedMessage` at all; a `Result.Failure`
+attempt carries none, since the failing composer never built one, and that gap is stated
+rather than closed here) into the winning attempt's own count in `WithAttempts`, preserving
+null when neither the winner nor any discarded attempt made a network call. Two tests cover
+the sum (a discarded attempt then a clean winner) and the null-to-real transition (every
+attempt discarded, the fallback answers with retries carried in from before it).
+
+**D26 addendum, PR #21 review (2026-09-08).** `MessageTemplateCatalog.Resolve`, D26's own
+mechanism, restated the BCP-47 primary-subtag split `LanguageDetector.TryParseTag` (D13 c)
+already implements, independently, in a different namespace. Fixed by extracting the split
+into `Agent.Common.Bcp47.PrimarySubtag`, called from both; no behavior changed, since both
+sites matched the same two tags the same way, only the split itself moved to one place.
+
+**D30 addendum, PR #21 review (2026-09-08).** Two findings under D30's subject, the judge.
+(a) `SemanticJudge.BodyOf` restated `Evaluator.AsPresent`'s "null message and a channel-none
+message are one value" rule (D3) inline instead of calling it; fixed by making `AsPresent` and
+`EffectiveChannel` internal rather than private, so `BodyOf` shares the one definition.
+(b) `CliRunner.BuildJudge` had no override seam of its own, unlike the composer path's
+`composerOverride`, so `--judge` against a non-empty batch was never exercised at the
+`CliRunner` level, only through `SemanticJudgeTests` in isolation with hand-built fixtures.
+Fixed by adding `judgeOverride`, mirroring `composerOverride`'s existing shape, and a
+`CliRunnerTests` case that drives a real record through `--judge` with a controlled completion
+client and asserts the eval report's `ActionSem`/`BodySem` tallies reflect the grade.
+
+**D31 addendum, scoped out of the PR #21 review (2026-09-08).** The review's remaining finding
+was that `CliRunner`'s per-record batch loop processes independent records sequentially, and
+D31's own numbers (92 HTTP requests, batch p95 ~5700 ms against an 18 ms offline baseline) are
+the measured cost of a real network call sitting behind that loop. Not fixed: `CountingRetryPolicy`
+attributes one call's retries by diffing a single shared counter before and after that call, and
+its own comment already states the limit this implies ("a concurrent caller would see another
+call's retries mixed in"). Parallelizing the loop before that attribution is made safe under
+concurrency would corrupt `CompositionNotes.NetworkRetries` rather than only speed up the
+batch, so this is a design change ahead of a review-fix round, not a matter of confidence in
+the finding. Scopes: any future concurrency work on the batch loop, which opens by replacing
+the shared-counter retry attribution.
+
+**Evidence, PR #21 review round (2026-09-08).** `.\test.ps1`: 443 tests in `Agent.Tests`, 49 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method on both modules. Four of
+the nine fixes above were additionally verified by reverting each one in isolation and
+confirming its new test goes red before reapplying it.
+

@@ -17,12 +17,16 @@ public sealed record RecordScore(
     double? PersonalizationScore,
     CheckResult Personalization,
     double? LatencyMs,
-    string? ScoringError = null)
+    string? ScoringError = null,
+    CheckResult ActionSemantic = CheckResult.NotMeasured,
+    CheckResult BodySemantic = CheckResult.NotMeasured)
 {
-    // A record passes when it was scored and no check failed; a check that was not
-    // measured neither passes nor fails it.
+    // A record passes when it was scored and no deterministic check failed; a check that
+    // was not measured neither passes nor fails it. The judge's two checks are deliberately
+    // not here (D30, playbook step 31): a model's opinion is one signal beside the
+    // deterministic checks and never turns a passing record into a failing one.
     public bool Passed =>
-        ScoringError is null && Enum.GetValues<EvaluationCheck>().All(check => ResultOf(check) != CheckResult.Failed);
+        ScoringError is null && EvaluationChecks.Deterministic.All(check => ResultOf(check) != CheckResult.Failed);
 
     public CheckResult ResultOf(EvaluationCheck check) => check switch
     {
@@ -36,6 +40,8 @@ public sealed record RecordScore(
         EvaluationCheck.BodyLanguage => BodyLanguage,
         EvaluationCheck.Safety => Safety,
         EvaluationCheck.Personalization => Personalization,
+        EvaluationCheck.ActionSemantic => ActionSemantic,
+        EvaluationCheck.BodySemantic => BodySemantic,
         _ => throw new ArgumentOutOfRangeException(nameof(check), check, "Unknown evaluation check."),
     };
 

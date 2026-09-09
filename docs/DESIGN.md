@@ -100,10 +100,10 @@ values (the confound). Ids and names are labels, not evidence.
 | Subject | email only | null | present | A11 |
 | Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel | all present | all present | A12 |
 | Call to action type | `constraints.primary_cta` through a vocabulary table | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9) |
-| Call to action payload | sms carries numbered options in the body and `cta.options`; email carries `cta.link` | options | link | link value unseen beyond one host; A10 |
+| Call to action payload | sms carries numbered options in the body and `cta.options`; email carries `cta.link`, built from the property slug and the catalog's path | options | link | link value unseen beyond one host; A10, A21, D25 |
 | Next action | horizon = `move_date_target` minus reference date picks the branch (short or long); the branch reads the catalog row for `persona` and `lifecycle_stage` | prospect/new, 32 days: start_cadence | prospect/open, 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7 |
 | Unknown persona or stage, or a branch no row states | the generic row, and `action_plan.source` in the diagnostics names which of the two fallbacks fired | prospect/new states no long branch | prospect/open states no short branch | A8 |
-| Language | body in `input.language`; a language with no template goes to the model composer, or English with a diagnostic in template mode | en | en | A13 |
+| Language | body in `input.language`, with no allowlist anywhere; the offline composer holds a template set per language it can serve, English and Spanish, and any other tag is served in English with `locale_applied` false; the model path passes the tag through | en | en | A13, D26 |
 | Required states | earned by the step that proves them, recorded in diagnostics; unknown names are reported as not earned | 3 named | 3 named | A14 |
 
 ## 4. What the examples cannot tell (step 7) and what was asked (step 8)
@@ -169,8 +169,11 @@ flowchart TD
 | `JsonlRecordReader` | one `Result<ProspectCase>` per line; unknown members retained | none |
 | `ChannelSelector` | contactable channel or none, from consent and preferences | none |
 | `PolicyCatalog` | one data file: action templates and call-to-action vocabulary keyed on persona and stage, with the generic row | none |
-| `TemplateMessageComposer`, `OpenAiMessageComposer` | subject, body, call to action | `IMessageComposer` (real plus offline) |
-| `OpenAiCompletionClient` | the only network call, structured output | `ICompletionClient` (real plus fake) |
+| `TemplateMessageComposer`, `OpenAiMessageComposer` | subject, body, call to action, plus the notes saying which of them wrote it (D24) | `IMessageComposer` (real plus offline) |
+| `CallToActionCatalog`, `PropertyLink` | the call-to-action vocabulary and the email link (A9, A10, A21) | none |
+| `MessageTemplates`, `MessageTemplateCatalog` | one prose set per language the offline composer can serve (A13, D26) | none |
+| `OpenAiCompletionClient` | the only network call, on the official SDK, bounded and counted (D27, D28) | `ICompletionClient` (real plus fake) |
+| `SemanticJudge` | the two semantic checks, off unless `--judge` (D30) | none; it takes the completion client |
 | `SafetyValidator` | opt-out presence, PII, fair-housing terms; violations by category | `ISafetyValidator` (real plus fixed) |
 | `SendScheduler` | `send_at` from the reference time, `last_interaction`, timezone, channel | none; time is a parameter |
 | `NextActionPlanner` | `next_action` from the policy row and the horizon; `Result` when no rule applies | none |
@@ -187,9 +190,10 @@ scores a failure on that check (playbook step 33; both proofs run in the suite,
 measured; a record passes when nothing failed, and not measured never counts as a pass in
 the per-check numbers (A15). Scored per record, against the label: channel exact, with the
 agent's null message, the oracle's channel `none`, and a null channel as one value; `send_at`
-to the day and to the hour in the label's offset; `next_action.type` exact (the semantic
-judge, a pinned model with a fixed rubric and one signal beside the deterministic checks, is
-Sprint 6, D15); call-to-action type exact against the label's `cta.type` (D13 d);
+to the day and to the hour in the label's offset; `next_action.type` exact, and beside it the judge's own
+verdict on the same field (the semantic judge landed in Sprint 6 under D30: a pinned model,
+a pinned rubric, reference-based against the label, off unless `--judge` is passed, and
+excluded from a record's pass or fail so it can never overturn a deterministic check); call-to-action type exact against the label's `cta.type` (D13 d);
 call-to-action payload presence by channel, options on sms and a link on email; the opt-out
 instruction by the one definition the validator enforces (D13 b); body language by a
 stop-word detector for English and Spanish, not measured for any other stated language
@@ -223,7 +227,7 @@ constant until a second known value earns a setting.
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
 | A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored | no |
-| A13 | Body language is `input.language`; the template set ships English; another language goes to the model composer, or English with diagnostic `locale_not_applied` in template mode | both samples en; the field exists, so other values must not fail | no |
+| A13 | Body language is `input.language` and nothing gates on a language allowlist: the model path passes the tag through unchanged, and the template composer holds one set per language it can serve, English and Spanish, with any other tag served in English and the diagnostic `locale_not_applied` | both samples en; the synthetic set's item 4 record is es; the field is a free tag, so other values must not fail (D26) | the template sets |
 | A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text | no |
 | A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope | no |
 | A16 | Unknown members at any depth are kept, listed in diagnostics, logged per record, never an error | none seen; the statement promises more cases than the samples show | no |
@@ -231,6 +235,7 @@ constant until a second known value earns a setting.
 | A18 | The model writes prose only and picks the call-to-action type from the catalog under constrained decoding; the template composer is the offline path and the fallback | the statement asks for an autonomous agent, not a model; decision S2 | no |
 | A19 | The twelve-record file is an evaluation set; no rule or constant is fitted to it | requester's answer, D9 | no |
 | A20 | The channel's slot on a day the zone springs forward across it resolves to the first instant that exists at or after the slot; a slot the zone falls back across, and so reaches twice, resolves to the earlier instant; the diagnostics name which happened | none: both samples are `America/Chicago` at 09:00 and 10:00, and no transition in the current zone database covers those hours, so the branch is unreachable from any observed record; stated over a zone's adjustment rules, proved against custom zones and a sweep of every system zone's transitions (D21) | no |
+| A21 | The email link is `https://{slug}.example/{path}`: the slug is the property name lowercased with non-alphanumeric characters removed and a trailing property-type word dropped, and the path comes from the catalog's call-to-action column | sample 2's `https://oakridge.example/tour` from "Oak Ridge Apartments" and `book_tour`; one pair, so "the first two words concatenated" fits it equally and this picks the type-word rule because the other breaks on a one-word or four-word name (D25) | the catalog file |
 
 ## 8. Non-goals, quality bar, security
 
@@ -252,7 +257,7 @@ Each sprint cites decisions in the log; one PR per sprint against `dev`.
 | 3 Harness (landed 2026-09-08) | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6, D13 to D16) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for all three sets recorded and pinned in the suite |
 | 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling (landed 2026-09-08) | reference time, floor, the slot on a transition day, and the schedule in the diagnostics (D4, D21, D22) | property tests green over every system zone at both send hours across every 2026 transition; unknown timezone is a row, not an exit |
-| 6 Composition | facts, language handling, catalog-driven call to action, model prompt inputs, judge (D5) | both sets compose on the offline path with the network disabled |
+| 6 Composition (landed 2026-09-08) | the composer named in the diagnostics, the call-to-action payload and its catalog, language sets, the official SDK bounded and counted, the model prompt inputs and its boundary, the judge (D5, D19, D24 to D30) | all three sets complete on the offline path with outbound HTTPS blocked, and the diagnostics name the composer on every record that has a message |
 | 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
 | 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
 
@@ -318,3 +323,66 @@ transition; and the 2 suppressed records read null. The day and hour checks are 
 on both sets, 7 of 11 and 5 of 11 on the hold-out and 10 of 10 and 10 of 10 on the synthetic
 set, so no send moved. Measurements, not targets (D6, D9);
 `BaselineNumbersTests` still pins every tally.
+
+**Numbers after Sprint 6**, the template composer, every set run with outbound HTTPS blocked
+so the offline path is the only one that could have answered. `sample.jsonl` with `--now
+2025-12-09T00:00:00-06:00`: every check 2 of 2 and 2 of 2 records pass, where Sprint 5 read
+payload 0 of 2 and 0 of 2 passing. `holdout_12.jsonl` with the same reference time: channel
+12 of 12, day 7 of 11, hour 5 of 11, action 7 of 12, opt-out 11 of 11, call-to-action type
+7 of 11, payload 11 of 11 (was 0 of 11), language 11 of 11 (was 10 of 11), safety 12 of 12,
+personalization 8 of 8, p95 18 ms under a 2000 ms budget; 4 of 12 records pass every check,
+where Sprint 5 read 1 of 12. `synthetic_12.jsonl` with `--now 2026-03-07T12:00:00Z`: every
+check perfect, payload 10 of 10 (was 0 of 10) and language 10 of 10 (was 9 of 10), and 12 of
+12 records pass, where Sprint 5 read 2 of 12; exit code 2 for the malformed line, by design.
+The judge's two checks read 0 of 0 on every one of these runs, which is what off means (D30).
+
+What moved and why. Payload was the one check no message could pass before this sprint,
+because the template composer emitted neither options nor a link; D25 gives it both from one
+catalog, and A21's slug rule turns the record's own property name into the host. Language
+moved on both evaluation sets from one rule earned on the synthetic set's Spanish record
+(D26), and the hold-out's Spanish record passing is that rule generalizing rather than a rule
+fitted to it (D9). Nothing else moved: day, hour, action and call-to-action type are the same
+tallies as Sprint 3, and their misses are the same ones, the oracle's per-stage send days and
+hours (A5) and vocabulary the two samples never showed (A8, A9).
+
+What the numbers still do not say. The body has no check with teeth on these runs: the
+personalization proxy reads 1.00 on every message because the template inserts both scored
+facts by construction, and the judge, which is the check with teeth, is off. A run with
+`--judge` measures it, and the honest comparison of the offline and the model paths (playbook
+step 60) is a live run, recorded here when it is made. Measurements, not targets (D6, D9);
+`BaselineNumbersTests` pins every tally in this paragraph.
+
+**Numbers after the step 60 run**, `--composer openai` against all three sets on 2026-09-08,
+the first live model run this project has made. The model wrote nothing: on all 23 records that
+have a message, `diagnostics.composition` reads `composer: template` with `attempts: 3`, which
+is the compose-validate loop's two model attempts and then the fallback. Every model call was
+abandoned at its timeout, 46 calls and 92 HTTP requests in total, because the strictest stated
+`p95_latency_ms` is 2000 ms, the client splits that into two 1000 ms attempts (D28), and a
+completion of this size does not come back in 1000 ms. Every per-check tally is therefore
+identical to the offline run above, since the same composer wrote every message: 2 of 2, 4 of
+12 and 12 of 12 records passing, with exit codes 0, 0 and 2. The one number that moved is
+latency: the batch p95 is 5704 ms, 5698 ms and 5699 ms against a 2000 ms budget, so the p95
+check fails on all three sets where it passes at 18 ms offline. That is the cost of trying, and
+it is what the fallback path is for: no record was lost, no output row is missing, and the
+diagnostics name the fallback on every one.
+
+What this settles and what it does not. It settles step 60's choice, which is D31: the offline
+path is what this product uses on these sets, on the measurement rather than on preference. It
+does not settle whether the model writes better messages than the template, because on this
+data it never got to write one; that comparison needs the open question in D31 answered first.
+It does settle that the degradation path works on real network failures rather than only on
+fabricated ones: the timeout, the retry, the bounded compose loop, the fallback and the
+diagnostics all behaved as the tests said they would, against the live API.
+
+**What the step 60 run cost**, read from the vendor's own usage page rather than estimated.
+About $0.004 for the batch: `gpt-4o-mini` input $0.002 and output $0.002, at the published
+$0.15 and $0.60 per million tokens, against roughly 12,100 tokens. The interesting number is
+the request count. The client made 92 HTTP attempts, 46 model calls each retried once, and the
+vendor recorded about 30 requests: abandoning a call at its 1000 ms timeout stops roughly two
+thirds of them from ever becoming billable requests, while the remaining third complete on the
+server after the client has walked away and are billed in full, output tokens included. So a
+timeout is a partial refund, not a free abort, and a run that times out on every record still
+pays for about a third of what it asked for. The estimate made before the run assumed every
+attempt would bill its input, which was high on both counts. Per record, this is about
+$0.00017 for a record that produced no model text at all.
+

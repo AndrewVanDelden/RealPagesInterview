@@ -1,3 +1,5 @@
+using Agent.Common;
+
 namespace Agent.Evaluation;
 
 // D13 c: the strongest checkable proxy for "body language equals input.language" without
@@ -58,9 +60,7 @@ public static class LanguageDetector
     // the detector does not know, so the caller reports it as not measured.
     public static bool TryParseTag(string? tag, out MessageLanguage language)
     {
-        string primary = tag?.Split('-', '_')[0] ?? string.Empty;
-
-        switch (primary.ToLowerInvariant())
+        switch (Bcp47.PrimarySubtag(tag))
         {
             case "en":
                 language = MessageLanguage.English;

@@ -90,7 +90,7 @@ public sealed class LeasingMessageAgent(
         }
 
         // Step 3: compose.
-        Result<NextMessage> composeResult = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
+        Result<ComposedMessage> composeResult = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         if (!composeResult.IsSuccess)
         {
@@ -102,7 +102,7 @@ public sealed class LeasingMessageAgent(
         // diagnostics can name the floor, the zone and the slot the way they name the plan
         // (D22); the slot is never a wall time the zone did not reach (A20).
         ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
-        NextMessage finalMessage = composeResult.Value with { SendAt = scheduled.SendAt };
+        NextMessage finalMessage = composeResult.Value.Message with { SendAt = scheduled.SendAt };
         var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot);
 
         // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
@@ -119,12 +119,17 @@ public sealed class LeasingMessageAgent(
             validation.Violations.Count,
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
             actionPlan,
-            scheduleNotes);
+            scheduleNotes,
+            composeResult.Value.Notes);
 
         if (hasViolations)
         {
             log.LogWarning("Suppressing message: final safety validation found {ViolationCount} violation(s).", validation.Violations.Count);
-            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
+
+            // Composition is null on a record that has no message (AgentDiagnostics.cs):
+            // this record joins the other two suppression cases in having none, so it
+            // joins them in nulling the field the compose step already wrote.
+            return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics with { Composition = null });
         }
 
         // Step 6: emit.

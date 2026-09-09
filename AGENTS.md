@@ -47,44 +47,50 @@ sets it. Never read, print, or write the value.
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components.
+Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance.
 Phase 0 was restarted at step 1 on 2026-09-07 (D12) and passed the same day; Phase 1 passed on
 2026-09-07 (CI green on PR #16, `dev` requires the `test` check). Phase 2 passed on 2026-09-08
-in Sprint 3: the labels of `sample.jsonl`, `holdout_12.jsonl`, and `synthetic_12.jsonl` passed
-as actuals score 100 percent and one corrupted field per check scores a failure on that check;
-both proofs run in the suite (`ScorerProofTests`). Steps 28 to 36 landed in Sprint 3; step 31,
-the model judge, is deferred to Sprint 6 (D15); step 37, a sidecar, is not needed. Steps 38 to
-43 landed in Sprint 4: the catalog keyed on persona and lifecycle stage with its generic row,
-the whole action vocabulary in `ActionTypes`, the `Result` on `ActionCatalog.Create` rather
-than on `Plan` (D18), and `diagnostics.action_plan`.
-Phase 3 passed on 2026-09-08 in Sprint 5, steps 44 to 46. Every check the deterministic core
-owns is perfect on the synthetic set run with the template composer, which is the fuzzy part
-stubbed: channel 12 of 12, day 10 of 10, hour 10 of 10, action 12 of 12, opt-out 10 of 10,
-call-to-action type 10 of 10, safety 12 of 12, personalization 9 of 9, and exit code 2 for the
-malformed line by design. The two checks that fail, payload 0 of 10 and language 9 of 10, are
-composition, which Sprint 6 owns and D5 scopes; no decision-core output is unexpected. On the
-diagnostics half of the check, every decision whose working is not readable from the input and
-the output has an account: consent (`consent_verified`, `suppression_reason`), the action
-(`action_plan`, D18), and the send (`schedule`, D22). The channel has none, and D23 is why:
-its working is the record's own ordered `channel_preferences` intersected with its `consent`,
-which the input states and the output's channel answers, so it is not internal to a component
-the way the other three are. D23 is closed, confirmed by the requester; do not re-open it by
-adding a channel notes object.
-Steps 44 to 46 landed in Sprint 5: the send slot resolved against the zone's rules rather than
-stamped with an offset the zone never had (D21, A20), `diagnostics.schedule` naming the floor,
-the zone and the slot (D22), and the property tests of step 45, which sweep every system zone
-at both send hours across every 2026 transition and assert that the offset stamped is the one
-the zone was on and that the send never lands before the slot it was asked for. Both transition
-branches are unreachable from the current zone database at 09:00 and 10:00, so they are proved
-against custom zones built in `tests/Agent.Tests/TestSupport/SlotResolutionTestZones.cs`. Every
-tally on all three sets is unchanged, which is what a rule no record reaches should do.
-Check for Phase 4: with the network disabled, the product completes the full example set using
-the offline path and the diagnostics say so on every record. Status: not passed; nothing in the
-diagnostics yet records which composer produced a message (playbook step 57).
-Next step: 47 to 60, Sprint 6, Composition (the Sprint 6 row of `docs/DESIGN.md` section 9, D5,
-D19): facts, language handling, the catalog's default call-to-action column, the model prompt
-inputs and its untrusted-data boundary, and the body judge deferred from Sprint 3 (D15).
-Open decisions: none; S1 to S4 and D1 to D23 are in `docs/DECISION_LOG.md`.
+in Sprint 3: the labels of all three sets passed as actuals score 100 percent and one corrupted
+field per check scores a failure on that check, both proofs in the suite (`ScorerProofTests`).
+Phase 3 passed on 2026-09-08 in Sprint 5: every check the deterministic core owns is perfect on
+the synthetic set with the composer stubbed, and every decision whose working is not readable
+from the input and the output has a diagnostics object (D18, D22, D23).
+Phase 4 passed on 2026-09-08 in Sprint 6, steps 47 to 60. Its check was run, not argued: all
+three sets complete with outbound HTTPS blocked at the process level, exit 0, 0 and 2 (the
+synthetic malformed line, by design), and `diagnostics.composition` names `template` as the
+composer on every record that has a message. The three records reading null are the ones the
+consent gate suppressed, which have no message and so no composer, the same rule
+`action_plan` and `schedule` follow.
+Steps 47 to 60 landed in Sprint 6: the composer's own working in the diagnostics (D24), the
+call-to-action catalog and the link built from the property slug (D25, A21), language sets with
+no allowlist anywhere (D26), the real client on the official OpenAI package pinned at 2.13.0
+with one retry, a per-attempt timeout that divides the batch's strictest stated budget, and a
+counted retry (D27,
+D28), the model prompt's full field list and its untrusted-data boundary pinned by golden tests
+(D29), and the reference-based judge behind `--judge` (D30, closing D15). Numbers moved on both
+evaluation sets, and only from rules earned on the fitting evidence and the synthetic set:
+payload 0 to 11 of 11 and language 10 to 11 of 11 on the hold-out, payload 0 to 10 of 10 and
+language 9 to 10 of 10 on the synthetic set, and records passing every check 1 to 4 of 12 and
+2 to 12 of 12. Every tally is in `docs/DESIGN.md` section 9 and pinned in `BaselineNumbersTests`.
+Step 60 closed on 2026-09-08 with a live run against all three sets, so Phase 4 is complete.
+The model answered no record: every record reads `composer: template` with `attempts` 3, because
+the strictest stated `p95_latency_ms` is 2000 ms and the client splits that into two 1000 ms
+attempts (D28), which no completion of this size meets. 46 model calls, 92 HTTP requests, all
+abandoned at their timeout, no record lost. Every tally is unchanged from the offline run and
+the p95 check fails at about 5700 ms where it passes at 18 ms offline. D31 records the choice
+step 60 asks for, the offline path, and the open question a real comparison would need answered
+first.
+Check for Phase 5: every validator has a passing test, a failing test, and a false-positive
+test. Status: not passed; the safety validator has passing and failing tests and no
+false-positive tests, the required states of D3 are still claimed rather than earned, and
+`brand_style_applied` is still hardcoded true (playbook step 66).
+Next step: 61 to 71, Sprint 7, Safety and states (the Sprint 7 row of `docs/DESIGN.md` section 9,
+D3): one validator per stated constraint with its own result, the hard-gate or soft-flag decision
+written down per validator, an allow-list for legitimate uses a keyword proxy would catch, the
+earned states in the diagnostics, and a review-queue record on a final validation failure.
+Open decisions: one, the D31 open question on how a real model-versus-template comparison
+could be run at all, which needs the requester. S1 to S4 and D1 to D31 are in
+`docs/DECISION_LOG.md`.
 No edits under `src/` or `tests/` while the phase is 0 or 1. Exception on record: the PR #1
 review fixes (on PR #14's branch, 2026-09-07) edited both on an explicit user
 override, a deliberate PF violation; what landed and what stayed deferred is under D1, D3, and
@@ -175,6 +181,14 @@ Update this section at the end of every sprint. It is the first thing an agent r
   gamed: `TimeZones.ResolveSlot` is proved against the custom zones in
   `tests/Agent.Tests/TestSupport/SlotResolutionTestZones.cs`, whose transitions do cover the
   slot, plus a sweep of every system zone across every 2026 transition (D21, A20).
+- `Scorecard` computes its per-check tallies and its p95 once, in field initializers, so a
+  `with` copy that replaces `RecordScores` carries the old numbers into a report whose rows say
+  otherwise. Build a new `Scorecard`; `SemanticJudge.JudgeAsync` does, and a test pins the
+  tally after judging. A PR review caught this one, not the suite.
+- A golden test normalizes line endings on both sides. A raw string literal carries whatever
+  endings git checked the file out with, so a golden compared raw passes on a CRLF checkout
+  and fails on an LF one. CI caught exactly that on PR #21; the local suite structurally
+  could not.
 - Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
   `docs/CODE_REVIEW.md` before flagging either.
 

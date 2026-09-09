@@ -20,6 +20,8 @@ public static class ScorecardFormatter
         (EvaluationCheck.BodyLanguage, "Lang"),
         (EvaluationCheck.Safety, "Safety"),
         (EvaluationCheck.Personalization, "Personalization"),
+        (EvaluationCheck.ActionSemantic, "ActionSem"),
+        (EvaluationCheck.BodySemantic, "BodySem"),
     ];
 
     private static readonly string[] Headers =

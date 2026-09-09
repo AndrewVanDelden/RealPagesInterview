@@ -69,11 +69,22 @@ file is an evaluation set, never fitted to: the two records in `sample.jsonl` ar
 evidence any rule is fitted to (decision D9 in
 [docs/DECISION_LOG.md](docs/DECISION_LOG.md)). A third set, `synthetic_12.jsonl`
 (`--now 2026-03-07T12:00:00Z`), holds one record per case the samples cannot decide, plus one
-malformed line. After Sprint 3 the scorer covers every field of the label. The hold-out
-passes channel on 12 of 12, action type on 7 of 12, send day on 7 of 11, and call-to-action
-payload on 0 of 11 (the template composer emits no reply options or link yet); 1 of 12
-records passes every check. The synthetic set passes 2 of 12. Every tally is in
-[docs/DESIGN.md](docs/DESIGN.md) section 9 and pinned in the suite. Measurements, not targets.
+malformed line. After Sprint 3 the scorer covers every field of the label.
+
+The tallies below are from runs with the template composer and outbound HTTPS blocked. The
+hold-out passes channel on 12 of 12, send day on 7 of 11, send hour on 5 of 11, action type
+on 7 of 12, opt-out on 11 of 11, call-to-action type on 7 of 11, call-to-action payload on
+11 of 11, language on 11 of 11, safety on 12 of 12, and personalization on 8 of 8, at a batch
+p95 latency of 18 ms; 4 of 12 records pass every check. The synthetic set passes 12 of 12 and
+exits 2 for its one malformed line by design; `sample.jsonl`, the fitted set, passes 2 of 2.
+What moved since the last published numbers: call-to-action payload from 0 of 2, 0 of 11 and
+0 of 10, because the composers now take the reply options and the email link path from the
+catalog's call-to-action column (D25); language on the hold-out from 10 of 11 and on the
+synthetic set from 9 of 10, because the offline composer ships an English and a Spanish
+template set keyed on the language tag (D26); and the overall count from 0 of 2, 1 of 12 and
+2 of 12. `ActionSem` and `BodySem` read 0 of 0 on all three: the judge is off unless `--judge`
+is passed (D30). Every tally is in [docs/DESIGN.md](docs/DESIGN.md) section 9 and pinned in
+the suite. Measurements, not targets.
 
 Add `--eval-report <file>` against a labeled file (one with `expected` populated) to get
 the scorecard: one row per record with a verdict per check (channel, send day and hour,
@@ -81,6 +92,12 @@ action type, opt-out, call-to-action type and payload, language, safety, persona
 a per-check tally line, the batch p95 latency, and the overall count, printed to the console
 and written to that file. `n/a` means not measured. Add `--replay <output.json>` in place of
 `--output` to re-score an existing output file without running the agent.
+
+Add `--judge` to put two more checks on that scorecard, `ActionSem` and `BodySem`: a pinned
+model grades the produced message against the label's own action and body, under a pinned
+rubric (D30). It is off by default, needs `OpenAI:ApiKey` in `dotnet user-secrets`, and makes
+one model call per scoreable record. Its verdicts are their own checks and never decide
+whether a record passes, and an offline run reports both as `n/a`.
 
 Add `--log-file <file>` for a real, structured log of what the process did
 while producing that output - full flag reference, log format, and how to

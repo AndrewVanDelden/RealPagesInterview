@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Agent.Common;
+using Agent.Composition;
 using Agent.Decisions;
 using Agent.Orchestration;
 using Xunit;
@@ -91,5 +92,37 @@ public class AgentDiagnosticsTests
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
         Assert.Contains("\"schedule\":null", json);
+    }
+
+    // D24 and playbook step 57: the diagnostics name the implementation that wrote the
+    // message and how many compose calls it took, so a run that quietly fell back to the
+    // offline composer reads differently from one the model answered first time.
+    [Fact]
+    public void Serializes_Composition_WithComposerAndAttempts()
+    {
+        var diagnostics = new AgentDiagnostics(
+            true,
+            true,
+            true,
+            0,
+            SuppressionReason.None,
+            new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
+            new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact),
+            new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true,\"network_retries\":null}", json);
+    }
+
+    // A record the consent gate suppressed has no message, so no implementation wrote one.
+    [Fact]
+    public void Serializes_AbsentComposition_AsNull()
+    {
+        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"composition\":null", json);
     }
 }
