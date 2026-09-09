@@ -99,17 +99,33 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Passed, Verdict("Your SSN 123.45.6789 is on file.", SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
-    // A false positive the D41 widening introduces and this sprint does not fix: a ZIP+4
-    // is three digits, two digits and four digits with a separator, which is the shape the
-    // pattern now accepts. D41's row says only that the spaced and bare forms must match,
-    // and an allow-list row D41 did not decide is not one to invent here (LC, DBT). Pinned
-    // so the behavior is a recorded fact and the next decision has its evidence.
+    // D45, and the inversion of the test that recorded the defect. The D41 widening first
+    // shipped as \b\d{3}[- ]?\d{2}[- ]?\d{4}\b, which reads a ZIP+4 as three digits, two
+    // digits and four digits by taking the first separator as absent and the second as
+    // present. The grouping is consistent now, so a five-and-four pair is not a shape the
+    // pattern describes and a property address stops being suppressed by a gate no record
+    // can switch off (D40).
     [Theory]
     [InlineData("Send mail to Oak Ridge, TX 75201-1234.")]
     [InlineData("Our office is at 12345-6789.")]
-    public void Ssn_ZipPlusFour_IsAKnownFalsePositive(string body)
+    public void Ssn_ZipPlusFour_IsNotAViolation(string body)
     {
-        Assert.Equal(SafetyCheckVerdict.Failed, Verdict(body, SafetyCheck.SocialSecurityNumber, NothingStated));
+        Assert.Equal(SafetyCheckVerdict.Passed, Verdict(body, SafetyCheck.SocialSecurityNumber, NothingStated));
+    }
+
+    // D45's second half: a bare nine-digit confirmation number is the same false positive
+    // as the fourteen-digit one D41 exempted on the long-digit run, so the same span
+    // exempts it here. The introducer still does not reach across a sentence terminator.
+    [Fact]
+    public void Ssn_IntroducedConfirmationNumber_IsNotAViolation()
+    {
+        Assert.Equal(SafetyCheckVerdict.Passed, Verdict("Your confirmation number 123456789 is ready.", SafetyCheck.SocialSecurityNumber, NothingStated));
+    }
+
+    [Fact]
+    public void Ssn_ConfirmationInAnEarlierSentence_DoesNotExemptTheNextSentencesNumber()
+    {
+        Assert.Equal(SafetyCheckVerdict.Failed, Verdict("Your confirmation is ready. Your SSN 123-45-6789 is on file.", SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
     // --- SafetyCheck.LongDigitRun ---

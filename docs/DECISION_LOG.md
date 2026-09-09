@@ -888,3 +888,28 @@ in: what happens to a request the client abandons at its timeout while the serve
 which is the case D31 measured at roughly a third of attempts. Nothing published narrows or
 extends the 30-day window for a dropped connection. Scopes: DESIGN.md section 8. Evidence:
 developers.openai.com/api/docs/guides/your-data, read 2026-09-09; the step 60 run and D31.
+
+**D45. What the widened Social Security pattern is allowed to match (2026-09-09).** Question:
+D41 widened the Social Security pattern so `123 45 6789` and a bare `123456789` match, and the
+implementation of that row, `\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`, also matches a ZIP+4. It matches
+`75201-1234` by reading the separator as optional in the first position and present in the
+second, so a message carrying a property address is suppressed by an unconditional gate that
+D40 made impossible for a record to switch off. The sprint that widened the pattern introduced
+the false positive, and step 71 asks for zero false-positive suppressions, so it does not ship
+as a pinned defect. Options: revert the widening, so the two forms the probe proved missing go
+back to missing; add a ZIP+4 exemption span; or require the pattern's grouping to be
+consistent. Recommendation: consistent grouping, as three explicit alternatives, hyphens
+throughout, spaces throughout, or nine bare digits. A ZIP+4 is a five-digit group and a
+four-digit group, which none of the three describes, so it stops matching by construction
+rather than by an exemption that has to be maintained. Reverting was rejected because the
+missing forms are a real leak of the exact identifier the check exists to catch, which is what
+D41 recorded; an exemption span was rejected because it answers one spelling of the wrong shape
+while `12345-6789` and every other mis-grouped pair stay matched. Second half: the
+confirmation-and-reference exempt span D41 gave the long-digit run is applied to this check
+too, because a bare nine-digit confirmation number is the same false positive as the fourteen
+digit one and the span already exists; leaving it on one check and not the other would be the
+inconsistency, not the fix. Scopes: `SafetyValidator.SocialSecurityNumberPattern` and
+`SocialSecurityNumberCheck`. Evidence: both spellings executed against the pattern on
+2026-09-09; `Ssn_ZipPlusFour_IsAKnownFalsePositive`, the test that recorded the defect, is
+inverted to assert it is not a violation, so the fix is visible in the diff the way D40's
+inversion is. Assumption: A17 is not involved; this check is unconditional under D40.

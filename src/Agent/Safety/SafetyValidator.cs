@@ -63,9 +63,14 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // a leak. This check owns any nine-digit span: the pattern needs a word boundary after
     // exactly nine digits, and LongDigitRunPattern needs at least thirteen, so the two can
     // never claim the same text and one leak is never counted twice.
-    // O(n) in the text length.
+    //
+    // D45: the confirmation-and-reference span that exempts a long identifier exempts one
+    // here too. A bare nine-digit confirmation number is the same false positive as the
+    // fourteen-digit one, and leaving the span on one identifier check and not the other
+    // would be the inconsistency rather than the fix.
+    // O(n) in the text length: one exempt-span pass, one pattern pass.
     private static SafetyCheckResult SocialSecurityNumberCheck(string text) =>
-        SocialSecurityNumberPattern().IsMatch(text)
+        SocialSecurityNumberPattern().IsMatch(IntroducedIdentifierSpan().Replace(text, " "))
             ? SafetyCheckResult.Failed(SafetyCheck.SocialSecurityNumber, [SocialSecurityNumberDetail])
             : SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber);
 
@@ -151,7 +156,14 @@ public sealed partial class SafetyValidator : ISafetyValidator
 
     // D41: hyphens, spaces, or bare. The pattern was hyphens only, so "123 45 6789" and
     // "123456789" both missed.
-    [GeneratedRegex(@"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b")]
+    //
+    // D45: the grouping is consistent, written as three alternatives rather than one shape
+    // with two optional separators. The optional form, \b\d{3}[- ]?\d{2}[- ]?\d{4}\b, read a
+    // ZIP+4 as a Social Security number by taking the first separator as absent and the
+    // second as present, so "75201-1234" matched and a property address was suppressed by a
+    // gate no record can switch off (D40). A five-and-four pair is not one of the three
+    // shapes below, so it stops matching by construction rather than by an exemption.
+    [GeneratedRegex(@"\b(?:\d{3}-\d{2}-\d{4}|\d{3} \d{2} \d{4}|\d{9})\b")]
     private static partial Regex SocialSecurityNumberPattern();
 
     // Same 13-19 total digit threshold as a bare unbroken run, but tolerant of the
