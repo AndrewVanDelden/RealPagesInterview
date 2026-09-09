@@ -162,6 +162,11 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
+        // One validator, deliberately shared by the compose-validate loop and the agent's own
+        // step 5 gate. D48 has the loop hand a refused draft out for the agent to validate
+        // again, and the agent's verdict is the one that decides whether it ships, so two
+        // different validators here would be two answers to one question and a draft the loop
+        // refused could go out. Sharing the instance is what makes that impossible.
         var safetyValidator = new SafetyValidator();
         IMessageComposer composer = new ValidatingMessageComposer(
             baseComposer,

@@ -298,7 +298,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 2 Scaffold and verification harness | the evaluator scores the golden expected outputs at 100 percent and a deliberately wrong output at less | 2026-09-08 in Sprint 3, both proofs in the suite (`ScorerProofTests`, D13) |
 | 3 Deterministic core | the deterministic core passes the synthetic set with every fuzzy component stubbed, and the diagnostics explain every decision | 2026-09-08 in Sprint 5, with the rule for what earns a diagnostics object stated (D18, D22, D23) |
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
-| 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | not passed |
+| 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -308,7 +308,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling (landed 2026-09-08) | reference time, floor, the slot on a transition day, and the schedule in the diagnostics (D4, D21, D22) | property tests green over every system zone at both send hours across every 2026 transition; unknown timezone is a row, not an exit |
 | 6 Composition (landed 2026-09-08) | the composer named in the diagnostics, the call-to-action payload and its catalog, language sets, the official SDK bounded and counted, the model prompt inputs and its boundary, the judge (D5, D19, D24 to D30) | all three sets complete on the offline path with outbound HTTPS blocked, and the diagnostics name the composer on every record that has a message |
-| 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
+| 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
@@ -435,4 +435,36 @@ timeout is a partial refund, not a free abort, and a run that times out on every
 pays for about a third of what it asked for. The estimate made before the run assumed every
 attempt would bill its input, which was high on both counts. Per record, this is about
 $0.00017 for a record that produced no model text at all.
+
+**Numbers after Sprint 7**, the template composer, the same reference times. Every per-check
+tally on all three sets is identical to Sprint 6: `sample.jsonl` 2 of 2 on every check and 2 of
+2 records passing; `holdout_12.jsonl` channel 12 of 12, day 7 of 11, hour 5 of 11, action 7 of
+12, opt-out 11 of 11, call-to-action type 7 of 11, payload 11 of 11, language 11 of 11, safety
+12 of 12, personalization 8 of 8, 4 of 12 records passing; `synthetic_12.jsonl` every check
+perfect, 12 of 12 passing, exit code 2 for the malformed line by design. Nothing moved, and
+nothing was meant to: this sprint changed how a violation is found, categorised and surfaced,
+not which messages pass. `BaselineNumbersTests` is byte-for-byte unchanged and still pins every
+tally.
+
+**Step 71's two numbers, which are the point of the phase.** Zero safety violations and zero
+false-positive suppressions, on all three sets. The review queue of D43 is written on every run
+and is empty on every one of them: 0 rows on `sample.jsonl`, 0 on `holdout_12.jsonl`, 0 on
+`synthetic_12.jsonl`. Every suppression on any set is `no_contact_consent`, 1 on the hold-out
+and 2 on the synthetic set, which is the correct decision rather than a validator misfire. The
+emptiness is now worth something: before D48 the queue could not have held a row on any input,
+because the compose-validate loop destroyed the draft and every safety refusal arrived as a
+composition failure. A constructed record whose own `city_interest` reads `families only` puts
+a row in it, reads `suppression_reason: safety_violation` and `fair_housing_check_passed:
+not_earned`, and is the test that proves the number zero means something.
+
+**What the states map says.** On `sample.jsonl`, all three states earned on both records. On
+`holdout_12.jsonl`, `consent_verified` earned on 12, `fair_housing_check_passed` earned on the
+11 that assert it, `brand_style_applied` earned on the 7 that assert it, and
+`renewal_offer_loaded` recorded as `no_check_defined` on the 3 records that assert it, by name,
+never claimed (D42, D9, A19). On `synthetic_12.jsonl`, `consent_verified` 12, fair housing 10,
+brand style 8, and no unrecognized name. `brand_style_applied` reads earned on every record of
+every run, which is the disclosure D42 makes rather than a result it hides: all three rules pass
+the template composer by construction, a test makes each one fail alone, and the composer it has
+teeth against is the model path.
+
 
