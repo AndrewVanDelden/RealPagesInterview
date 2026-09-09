@@ -1,5 +1,12 @@
 # Decision log
 
+One paragraph per decision, in the recording form of `~/.agent-rules/ARCHITECTURE.md`: the
+question, the options, the recommendation, what it scopes, the evidence, the numbered assumption
+it depends on (assumptions are the table in [DESIGN.md](DESIGN.md) section 7). A task that
+cannot cite a paragraph here is not scheduled. Dates are when the decision was taken; D1 to D8
+were first written in the retrospective of 2026-09-06 and are restated here under the frame D9
+sets.
+
 ## Current phase
 
 Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance.
@@ -15,13 +22,6 @@ be run at all, which needs the requester.
 Replace these four lines at the end of every sprint. Never append to them. A phase that passed,
 the proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
 below and in DESIGN.md section 9, which is where the phase record lives.
-
-One paragraph per decision, in the recording form of `~/.agent-rules/ARCHITECTURE.md`: the
-question, the options, the recommendation, what it scopes, the evidence, the numbered assumption
-it depends on (assumptions are the table in [DESIGN.md](DESIGN.md) section 7). A task that
-cannot cite a paragraph here is not scheduled. Dates are when the decision was taken; D1 to D8
-were first written in the retrospective of 2026-09-06 and are restated here under the frame D9
-sets.
 
 ## Starting decisions (2026-09-07)
 
