@@ -153,14 +153,16 @@ evaluation is part of the deliverable and is built and proven before the product
 flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
-    B -- channel --> C[2 Policy: catalog row by persona and stage, generic fallback]
-    C --> D[3 Compose: template or model, in the record's language]
-    D --> E[4 Validate: opt-out, PII, fair housing; bounded retry then template]
-    E -- still failing --> S2[Suppress: reason composition_failed]
-    E -- clean --> F[5 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
-    F --> G[6 Plan: next_action from the policy row and the horizon]
-    S --> H[Emit output plus diagnostics: every decision input, every defaulted field, every fallback]
+    B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
+    C --> D[3 Compose: template or model, in the record's language; bounded retry then template]
+    D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
+    D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
+    E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
+    F -- violations --> S3[Suppress: reason safety_violation, plus a review queue row carrying the draft]
+    F -- clean --> G[6 Emit]
+    S --> H[Output plus diagnostics: every decision input, every defaulted field, every fallback]
     S2 --> H
+    S3 --> H
     G --> H
 ```
 
@@ -168,18 +170,18 @@ flowchart TD
 |---|---|---|
 | `JsonlRecordReader` | one `Result<ProspectCase>` per line; unknown members retained | none |
 | `ChannelSelector` | contactable channel or none, from consent and preferences | none |
-| `PolicyCatalog` | one data file: action templates and call-to-action vocabulary keyed on persona and stage, with the generic row | none |
+| `ActionCatalog` | the action for a persona and lifecycle stage, one branch per horizon, compiled into one file with the generic row; `Create` is the gate every catalog goes through (D17, D18) | none |
 | `TemplateMessageComposer`, `OpenAiMessageComposer` | subject, body, call to action, plus the notes saying which of them wrote it (D24) | `IMessageComposer` (real plus offline) |
 | `CallToActionCatalog`, `PropertyLink` | the call-to-action vocabulary and the email link (A9, A10, A21) | none |
 | `MessageTemplates`, `MessageTemplateCatalog` | one prose set per language the offline composer can serve (A13, D26) | none |
 | `OpenAiCompletionClient` | the only network call, on the official SDK, bounded and counted (D27, D28) | `ICompletionClient` (real plus fake) |
 | `SemanticJudge` | the two semantic checks, off unless `--judge` (D30) | none; it takes the completion client |
-| `SafetyValidator` | opt-out presence, PII, fair-housing terms; violations by category | `ISafetyValidator` (real plus fixed) |
+| `SafetyValidator` | four checks answering for themselves: opt-out instructions, Social Security number, long digit run, fair-housing terms; violations by check (D38, D39) | `ISafetyValidator` (real plus fixed) |
 | `SendScheduler` | `send_at` from the reference time, `last_interaction`, timezone, channel | none; time is a parameter |
-| `NextActionPlanner` | `next_action` from the policy row and the horizon; `Result` when no rule applies | none |
+| `NextActionPlanner` | `next_action` from the catalog row and the horizon, plus the branch, the horizon in days and which row answered; no `Result`, because the generic row makes every record classifiable (D18) | none |
 | `LeasingMessageAgent` | the six numbered steps above, one comment each | none |
 | `Evaluator` | the scorecard of section 6 | none |
-| `CliRunner` | `--input`, `--output`, `--now`, `--composer`, `--diagnostics`, `--eval-report`, `--log-file`; exit 0, 1, 2 | none |
+| `CliRunner` | `--input`, `--output`, `--replay`, `--now`, `--composer`, `--diagnostics`, `--eval-report`, `--judge`, `--review-queue`, `--log-file`; the one owner of the `TaskId` log scope (D16); exit 0, 1, 2 | none |
 
 ## 6. Evaluation
 
@@ -228,7 +230,7 @@ constant until a second known value earns a setting.
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
 | A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored | no |
 | A13 | Body language is `input.language` and nothing gates on a language allowlist: the model path passes the tag through unchanged, and the template composer holds one set per language it can serve, English and Spanish, with any other tag served in English and the diagnostic `locale_not_applied` | both samples en; the synthetic set's item 4 record is es; the field is a free tag, so other values must not fail (D26) | the template sets |
-| A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text; the states map of D42 gives every name in a record's own `required_states` its verdict, `consent_verified` from the consent gate, `fair_housing_check_passed` from the `FairHousing` check alone (D38), `brand_style_applied` from the brand-style validator, and every other name not earned by name; the hold-out's `renewal_offer_loaded` is such a name and stays not earned, because a rule for it would be fitted to the hold-out (D9, A19) | no |
+| A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text; the states map of D42 gives every name in a record's own `required_states` its verdict, `consent_verified` from step 1, the consent-driven channel selection, which owns the state and earns it for every record that reaches it, whatever it answers and whatever the record's `channel_preferences` list holds (D57), `fair_housing_check_passed` from the `FairHousing` check alone (D38), `brand_style_applied` from the brand-style validator, and every other name not earned by name; the hold-out's `renewal_offer_loaded` is such a name and stays not earned, because a rule for it would be fitted to the hold-out (D9, A19) | no |
 | A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope | no |
 | A16 | Unknown members at any depth are kept, listed in diagnostics, logged per record, never an error | none seen; the statement promises more cases than the samples show | no |
 | A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics | section 2; no decision can be made without these three | no |
@@ -299,6 +301,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 3 Deterministic core | the deterministic core passes the synthetic set with every fuzzy component stubbed, and the diagnostics explain every decision | 2026-09-08 in Sprint 5, with the rule for what earns a diagnostics object stated (D18, D22, D23) |
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
 | 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
+| 6 Structure and narration | the narration is delivered without notes and the orchestrator reads as its steps in order | not passed. The second half landed 2026-09-09 in Sprint 8: three interfaces remain, all with substitutes, and the six steps read in execution order (D57 to D59). The first half is the user's own step |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -309,7 +312,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 5 Scheduling (landed 2026-09-08) | reference time, floor, the slot on a transition day, and the schedule in the diagnostics (D4, D21, D22) | property tests green over every system zone at both send hours across every 2026 transition; unknown timezone is a row, not an exit |
 | 6 Composition (landed 2026-09-08) | the composer named in the diagnostics, the call-to-action payload and its catalog, language sets, the official SDK bounded and counted, the model prompt inputs and its boundary, the judge (D5, D19, D24 to D30) | all three sets complete on the offline path with outbound HTTPS blocked, and the diagnostics name the composer on every record that has a message |
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
-| 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
+| 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
 file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
@@ -467,4 +470,39 @@ every run, which is the disclosure D42 makes rather than a result it hides: all 
 the template composer by construction, a test makes each one fail alone, and the composer it has
 teeth against is the model path.
 
+**Numbers after Sprint 8**, the template composer, the documented reference times, run
+2026-09-09 from the repo root with `--eval-report`, `--diagnostics` and `--review-queue` on all
+three sets. Every per-check tally is identical to Sprint 7, which is identical to Sprint 6.
+`sample.jsonl` at `--now 2025-12-09T00:00:00-06:00`: every check 2 of 2, 2 of 2 records passing,
+exit code 0. `holdout_12.jsonl` at the same reference time: channel 12 of 12, day 7 of 11, hour
+5 of 11, action 7 of 12, opt-out 11 of 11, call-to-action type 7 of 11, payload 11 of 11,
+language 11 of 11, safety 12 of 12, personalization 8 of 8, 4 of 12 records passing, exit code 0.
+`synthetic_12.jsonl` at `--now 2026-03-07T12:00:00Z`: channel 12 of 12, day 10 of 10, hour 10 of
+10, action 12 of 12, opt-out 10 of 10, call-to-action type 10 of 10, payload 10 of 10, language
+10 of 10, safety 12 of 12, personalization 9 of 9, 12 of 12 records passing, exit code 2 for the
+malformed line by design. `ActionSem` and `BodySem` read 0 of 0 on all three, which is what off
+means. Nothing moved, and nothing was meant to: this sprint deleted seams and renumbered
+comments, and D57 is the only one that touched a decision path at all, where it replaced two
+computations of one predicate with one.
 
+The safety numbers are unchanged too. The review queue is written on every run and holds 0 rows
+on all three. Every suppression is `no_contact_consent`, 1 on the hold-out and 2 on the synthetic
+set, and no run recorded a `safety_violation`. The states map is the same map: `sample.jsonl` all
+three states earned on both records; `holdout_12.jsonl` `consent_verified` 12,
+`fair_housing_check_passed` 11 of the 11 that assert it, `brand_style_applied` 7 of the 7 that
+assert it, `renewal_offer_loaded` recorded as `no_check_defined` on 3; `synthetic_12.jsonl`
+`consent_verified` 12, fair housing 10, brand style 8. D57 is why `consent_verified` reads earned
+on the suppressed records as well: step 1, the consent-driven channel selection, owns the state,
+and reaching step 1 at all is what earns it, whichever way the selector answered.
+
+The one number that is not a tally is latency, and it is wall clock, so it is not pinned in the
+suite and moves between runs on the same code. On these three runs the batch p95 is 22 ms, 20 ms
+and 19 ms against the 2000 ms budget, all three OK, where the Sprint 6 run of the same sets read
+18 ms. On every set the p95 is the batch's first composed message paying the one-time
+just-in-time compilation cost: the per-row latencies after it read 0 ms or 1 ms, and on
+`synthetic_12.jsonl` the 19 ms sits on record 2, because record 1 is suppressed for consent and
+composes nothing. Measurements, not targets (D6, D9); `BaselineNumbersTests` pins every tally in
+the first paragraph above and scores with `LatencyMs: null`, so it pins no latency.
+
+The suite behind these numbers: 551 tests in `Agent.Tests` and 61 in `Agent.Cli.Tests`, all
+passing, 100 percent line, branch and method coverage on both modules, `.\test.ps1` exit code 0.

@@ -105,7 +105,7 @@ later section is one level deeper. Full evidence lives in `docs/RETROSPECTIVE_20
 - D4 Scheduling: the channel's slot on or after the later of reference time and last interaction, in the record's timezone, scored to day and hour; minutes not modeled.
 - D5 Composition: templates keyed on persona and channel from the facts the record carries, English shipped, other languages to the model composer, options on SMS, link on email, missing CTA means the generic reply.
 - D6 Evaluation (landed Sprint 3): every output field scored, scorer proven able to fail, the samples, the twelve, and a frozen synthetic set all reported as labeled sets.
-- D7 Structure: keep the three interfaces with substitutes, remove the eight without, six named steps in the orchestrator.
+- D7 Structure (landed Sprint 8): the three interfaces with a real and an offline implementation stay, `IMessageComposer`, `ICompletionClient` and `ISafetyValidator`; the ones with neither are gone, `IConsentGate` along with the consent gate it fronted, which the channel selector had been duplicating (D57), and `IChannelSelector`, `ISendScheduler`, `INextActionPlanner`, `IMessageAgent`, `IEvaluator` and `IRecordWriter` (D58); and the orchestrator's six steps are numbered in the order it executes them, which is the order the diagram was renumbered to rather than the other way round (D59).
 - D8 Gates (landed Sprint 1): CI on every push, branch protection on `dev`.
 - D10 (landed Sprint 2): `--now` is the run's reference time, a value passed in; nothing in the library reads a clock.
 - D11 and D12: the twelve live in the repo beside the samples; Phase 0 restarted at step 1.

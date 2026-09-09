@@ -23,21 +23,29 @@ between it and the outside world.
 
 ```mermaid
 flowchart TD
-    A[Ingest JSONL record] --> B{Consent gate}
-    B -- no consented channel --> S[Suppress: channel none, next_message fields null]
-    B -- contactable --> C[Select channel: first preferred with opt-in]
-    C --> D[Compose message: LLM node or template]
-    D --> E{Validate: opt-out, no PII, no steering}
-    E -- violations --> D
-    E -- clean, or retry exhausted --> F[Schedule send_at: timezone-aware]
-    F --> G[Plan next_action: horizon-based]
-    S --> G
-    G --> H[Emit AgentOutput JSON]
+    A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
+    B -- none --> S[Suppress: channel none, next_action no_op with reason]
+    B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
+    C --> D[3 Compose: template or model, in the record's language; bounded retry then template]
+    D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
+    D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
+    E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
+    F -- violations --> S3[Suppress: reason safety_violation, plus a review queue row carrying the draft]
+    F -- clean --> G[6 Emit]
+    S --> H[Output plus diagnostics: every decision input, every defaulted field, every fallback]
+    S2 --> H
+    S3 --> H
+    G --> H
 ```
 
-Every box above is one small, single-responsibility class behind its own
-interface — swappable and independently unit-tested. Full sequence diagram,
-interface table, and the SOLID mapping: [docs/DESIGN.md](docs/DESIGN.md).
+Three components sit behind an interface, and only those three: the message composer
+and the safety validator, which are the Compose and Validate boxes above, and the
+completion client the model composer calls, which has no box of its own because it sits
+inside Compose. Each of the three has a real implementation and an offline one, which is
+what earns the interface; every other component above is a concrete class its caller
+names by type. All of them are independently unit-tested either way. The component
+table, the seam column, and the two decisions that removed the other seven interfaces
+(D57 for the consent gate, D58 for the remaining six): [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Layout
 
@@ -71,20 +79,33 @@ evidence any rule is fitted to (decision D9 in
 (`--now 2026-03-07T12:00:00Z`), holds one record per case the samples cannot decide, plus one
 malformed line. After Sprint 3 the scorer covers every field of the label.
 
-The tallies below are from runs with the template composer and outbound HTTPS blocked. The
-hold-out passes channel on 12 of 12, send day on 7 of 11, send hour on 5 of 11, action type
-on 7 of 12, opt-out on 11 of 11, call-to-action type on 7 of 11, call-to-action payload on
-11 of 11, language on 11 of 11, safety on 12 of 12, and personalization on 8 of 8, at a batch
-p95 latency of 18 ms; 4 of 12 records pass every check. The synthetic set passes 12 of 12 and
-exits 2 for its one malformed line by design; `sample.jsonl`, the fitted set, passes 2 of 2.
-What moved since the last published numbers: call-to-action payload from 0 of 2, 0 of 11 and
-0 of 10, because the composers now take the reply options and the email link path from the
-catalog's call-to-action column (D25); language on the hold-out from 10 of 11 and on the
-synthetic set from 9 of 10, because the offline composer ships an English and a Spanish
-template set keyed on the language tag (D26); and the overall count from 0 of 2, 1 of 12 and
-2 of 12. `ActionSem` and `BodySem` read 0 of 0 on all three: the judge is off unless `--judge`
-is passed (D30). Every tally is in [docs/DESIGN.md](docs/DESIGN.md) section 9 and pinned in
-the suite. Measurements, not targets.
+The tallies below are from runs made on 2026-09-09 at the documented reference times with the
+template composer, which makes no network call at all. The hold-out passes channel on 12 of 12,
+send day on 7 of 11, send hour on 5 of 11, action type on 7 of 12, opt-out on 11 of 11,
+call-to-action type on 7 of 11, call-to-action payload on 11 of 11, language on 11 of 11, safety
+on 12 of 12, and personalization on 8 of 8; 4 of 12 records pass every check and the run exits 0.
+The synthetic set passes every check and 12 of 12 records, and exits 2 for its one malformed line
+by design; `sample.jsonl`, the fitted set, passes 2 of 2 on every check. Zero safety violations on
+all three, and the review queue is empty on all three. `ActionSem` and `BodySem` read 0 of 0
+everywhere: the judge is off unless `--judge` is passed (D30). Nothing has moved since Sprint 6,
+which is when call-to-action payload went from 0 of 2, 0 of 11 and 0 of 10 (D25) and language from
+10 of 11 and 9 of 10 (D26); Sprint 7 changed how a violation is found and surfaced and Sprint 8
+changed the shape of the code, and neither changed which messages pass. Every tally is in
+[docs/DESIGN.md](docs/DESIGN.md) section 9 and pinned in the suite. Measurements, not targets.
+
+Two numbers for what a batch costs. **Latency:** the batch p95 is around 20 ms on each of the
+three sets, against the 2000 ms budget the records themselves state. Unlike every tally above it,
+this figure is wall clock: it is not pinned in the suite and it moves between runs on the same
+code, so read it as a magnitude rather than a number your own run will match to the millisecond.
+Runs of the three documented commands on unchanged code have read p95s anywhere from 19 ms to
+23 ms. What does reproduce is the shape: on each set exactly one record pays the one-time
+just-in-time compilation cost and reads around 20 ms, which is what makes it that set's p95,
+and every other record reads single-digit milliseconds. **Money:** the default path costs
+nothing, because it makes no request and needs no key. The one live run this project has made,
+`--composer openai` across all three sets on 2026-09-08, cost about $0.004 read off the vendor's
+own usage page rather than estimated, roughly $0.00017 per record, and the model wrote none of the
+text: every call was abandoned at its 1000 ms timeout and the template answered, which is what the
+fallback is for (D31, and the arithmetic in [docs/DESIGN.md](docs/DESIGN.md) section 9).
 
 Add `--eval-report <file>` against a labeled file (one with `expected` populated) to get
 the scorecard: one row per record with a verdict per check (channel, send day and hour,
@@ -105,7 +126,8 @@ debug a bad run: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Documentation
 
-- [docs/DESIGN.md](docs/DESIGN.md) — architecture, interface table, inferred decision rules and their evidence, assumptions log, security/governance posture.
+- [docs/DESIGN.md](docs/DESIGN.md) - architecture, the component table and its seam column, inferred decision rules and their evidence, assumptions log, security/governance posture.
+- [docs/NARRATION.md](docs/NARRATION.md) - the seven-question script for explaining this system out loud, plus one record walked file by file through the six steps.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — how to run it, how to debug a bad run, how the logging actually works, and how to read one log line.
 - [TalkingPoints.md](TalkingPoints.md) - one sentence per decision, grouped from the 60-second answer down; the walkthrough script.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — what the two automated PR reviewers check for, and the scope decisions they should not re-flag.

@@ -28,7 +28,7 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 | `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`required_states`, `brand_style_failures`, `safety_violation_count`, `suppression_reason`, `action_plan`, `schedule`, `composition`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score), and the judge's `ActionSem` and `BodySem`, which read `n/a` unless the run passed `--judge`. Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
 | `--judge` | no (default: off) | Adds the two semantic checks `ActionSem` and `BodySem` to `--eval-report`'s scorecard (D30). A pinned model, `gpt-4o`, grades under a pinned rubric whether the produced message conveys the label's own action and body; it is reference-based, so it grades against the label the customer wrote, never against its own taste. A presence flag, not an option with a value: there is one judge, and its model is pinned in code rather than configured, because a grade only means something next to yesterday's grade if the same model and the same rubric produced both (playbook step 31). It needs `OpenAI:ApiKey` set via `dotnet user-secrets` and makes one model call per scoreable record, so it costs one call per record every time it is asked for. Its two verdicts are their own checks and are excluded from a record's pass or fail, so the judge can never overturn a deterministic check, and a run with the network down reports both as `n/a`. Applies to a normal run and to `--replay` alike. |
-| `--review-queue <path>` | no | The work list of what the safety gate rejected (D43): one row per record the safety validator suppressed, carrying the task id, every violation by check, and the rejected draft, which is where the channel is read from. Empty on a healthy run, which is the point of it; its length is the number to report. Consent suppression is not in it, because "not contactable" is the correct decision rather than a failure, and composition failure is not in it either, because there is no draft to review. This is the one place the program deliberately writes prospect text to a file: the queue carries the rejected draft by design, since it is a file a reviewer opens rather than a log line, and the redaction rule that governs logs does not govern it. |
+| `--review-queue <path>` | no | The work list of what the safety gate rejected (D43): one row per record the safety validator suppressed, carrying the task id, every violation by check, and the rejected draft, which is where the channel is read from. Empty on a healthy run, which is the point of it; its length is the number to report. A record the channel selector returned no value for is not in it, because no consented channel is the correct decision rather than a failure, and composition failure is not in it either, because there is no draft to review. This is the one place the program deliberately writes prospect text to a file: the queue carries the rejected draft by design, since it is a file a reviewer opens rather than a log line, and the redaction rule that governs logs does not govern it. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
@@ -74,8 +74,8 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    a row for that persona and lifecycle stage stated the action,
    `generic_row_no_branch` when a row matched but had no evidence for that
    horizon branch, and `generic_row_no_match` when no row exists for that
-   persona and stage. A whole `action_plan` of `null` means the consent gate
-   suppressed the record before the planner ran.
+   persona and stage. A whole `action_plan` of `null` means the channel
+   selector returned no value for the record, so the planner never ran.
    `schedule` says how `send_at` was reached: `floor`, which is
    `last_interaction` when the record's last interaction is after the run's
    reference time and `reference_time` otherwise, `time_zone_id`, the zone
@@ -84,7 +84,7 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    current zone database can produce, `shifted_past_gap` when the zone
    sprang forward across the slot, and `earlier_of_two` when it fell back
    across it. A whole `schedule` of `null` means the scheduler never ran:
-   the consent gate suppressed the record, or composition failed before it.
+   the channel selector returned no value, or composition failed before it.
    `composition` says how the message was written (D24): `composer`, the
    implementation whose text was returned, `template` or `openai`, the same
    two spellings `--composer` takes, so a record reading `template` on an
@@ -98,7 +98,7 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    with no allowlist anywhere (D26, A13); and `network_retries`, how many
    transport retries the call underneath spent, `null` for a composer that
    makes no network call at all (D28). A whole `composition` of `null`
-   means the record carries no message, which is consent suppression or a
+   means the record carries no message, which is no consented channel or a
    composition failure, and `suppression_reason` separates those two.
 4. **`--review-queue`**, when the question is not about the process or about
    one record's reasoning at all, but "what did the safety gate reject, and
