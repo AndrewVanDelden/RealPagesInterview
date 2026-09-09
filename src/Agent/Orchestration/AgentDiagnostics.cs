@@ -14,20 +14,21 @@ namespace Agent.Orchestration;
 //
 // BrandStyleFailures names the rules a message broke, because a diagnostic that says only
 // "not earned" tells a reader nothing (D42). Empty is a message that was checked and broke no
-// rule; null is a record with no message to check, which is consent suppression or a
+// rule; null is a record with no message to check, which is no consented channel or a
 // composition failure. Brand style never suppresses (D39), so a record can carry a failed
 // rule and a sent message at once.
 //
 // SafetyViolationCount is every failed safety check's detail lines, so a message matching six
 // protected-class terms counts six (D38). SuppressionReason says why a record carries no
 // message (D3); None means a message was sent. ActionPlan is how next_action was reached
-// (D18) and is null on a record the consent gate suppressed, where the planner never ran.
-// Schedule is how send_at was reached (D22) and is null on a record the scheduler never ran
-// for: consent suppression, or a composer that produced no message to schedule. A record
-// suppressed by the final safety check keeps its schedule, the way it keeps its action plan.
-// Composition is which implementation wrote the message and how many compose calls it took
-// (D24, playbook step 57); it is null on a record that has no message, which is consent
-// suppression or a composition failure, and suppression_reason already separates those two.
+// (D18) and is null on a record the channel selector returned no value for (D57), where the
+// planner never ran. Schedule is how send_at was reached (D22) and is null on a record the
+// scheduler never ran for: no consented channel, or a composer that produced no message to
+// schedule. A record suppressed by the final safety check keeps its schedule, the way it
+// keeps its action plan. Composition is which implementation wrote the message and how many
+// compose calls it took (D24, playbook step 57); it is null on a record that has no message,
+// which is no consented channel or a composition failure, and suppression_reason already
+// separates those two.
 public sealed record AgentDiagnostics(
     IReadOnlyDictionary<string, RequiredStateVerdict> RequiredStates,
     int SafetyViolationCount,

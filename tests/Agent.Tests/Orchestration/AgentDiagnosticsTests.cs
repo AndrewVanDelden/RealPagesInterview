@@ -117,7 +117,7 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"action_plan\":{\"branch\":\"long\",\"horizon_days\":68,\"source\":\"generic_row_no_branch\"}", json);
     }
 
-    // The planner never ran on a record the consent gate suppressed, so there is no plan to
+    // The planner never ran on a record with no consented channel, so there is no plan to
     // explain and the diagnostics say nothing rather than reporting a branch nobody took.
     [Fact]
     public void Serializes_AbsentActionPlan_AsNull()
@@ -147,7 +147,7 @@ public class AgentDiagnosticsTests
     }
 
     // A record with no message was never scheduled, so there is no send to explain. Same rule
-    // the action plan follows on a record the consent gate suppressed.
+    // the action plan follows on a record with no consented channel.
     [Fact]
     public void Serializes_AbsentSchedule_AsNull()
     {
@@ -176,7 +176,7 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true,\"network_retries\":null}", json);
     }
 
-    // A record the consent gate suppressed has no message, so no implementation wrote one.
+    // A record with no consented channel has no message, so no implementation wrote one.
     [Fact]
     public void Serializes_AbsentComposition_AsNull()
     {

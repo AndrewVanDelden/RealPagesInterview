@@ -11,7 +11,7 @@ namespace Agent.Evaluation;
 // never re-run here. Deterministic fields are exact; fuzzy fields use the strongest
 // checkable proxy: fact coverage for personalization, stop-word detection for language.
 // The semantic judge for next_action.type is Sprint 6 (D15).
-public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
+public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 {
     private readonly ILogger<Evaluator> log = logger.OrNullLogger();
 

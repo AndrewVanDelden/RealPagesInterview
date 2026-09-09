@@ -7,7 +7,7 @@ namespace Agent.Ingest;
 // requires the *input* to be JSONL, but says nothing about the output file's shape. A
 // single indented JSON array is a valid JSON document any editor or viewer renders
 // cleanly, unlike line-delimited JSONL where each record is an unreadable wall of text.
-public sealed class JsonArrayRecordWriter<T> : IRecordWriter<T>
+public sealed class JsonArrayRecordWriter<T>
 {
     private static readonly JsonSerializerOptions IndentedOptions = new(AgentJsonOptions.Default)
     {

@@ -13,13 +13,12 @@ internal static class RealAgentFactory
 {
     private static readonly string SampleFilePath = Path.Combine(AppContext.BaseDirectory, "TestData", "sample.jsonl");
 
-    public static IMessageAgent BuildRealAgent(ISafetyValidator? finalValidator = null)
+    public static LeasingMessageAgent BuildRealAgent(ISafetyValidator? finalValidator = null)
     {
         var templateComposer = new TemplateMessageComposer();
         IMessageComposer validatingComposer = new ValidatingMessageComposer(templateComposer, new SafetyValidator(), templateComposer);
 
         return new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             validatingComposer,
             finalValidator ?? new SafetyValidator(),

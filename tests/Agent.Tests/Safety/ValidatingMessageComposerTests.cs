@@ -92,7 +92,7 @@ public class ValidatingMessageComposerTests
         Assert.Equal(2, innerComposer.CallCount);
     }
 
-    // D43: nothing unsafe ships, and the draft is no longer destroyed on the way out. The
+    // D48: nothing unsafe ships, and the draft is no longer destroyed on the way out. The
     // refusal carries the fallback draft, which is the one the orchestrator validates and
     // the review queue holds.
     [Fact]

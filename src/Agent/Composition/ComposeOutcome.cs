@@ -2,7 +2,7 @@ using Agent.Domain;
 
 namespace Agent.Composition;
 
-// What the composition seam returns (D43). Result<ComposedMessage> could say "a message" or
+// What the composition seam returns (D48). Result<ComposedMessage> could say "a message" or
 // "an error string" and nothing else, so a draft the compose-validate loop refused on safety
 // was destroyed at the seam: no caller could queue it, and the record reached the
 // orchestrator as a composition failure, which is a different fact and produced a different

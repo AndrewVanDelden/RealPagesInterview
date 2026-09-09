@@ -3,7 +3,7 @@ using Agent.Domain;
 
 namespace Agent.Decisions;
 
-public sealed class ChannelSelector : IChannelSelector
+public sealed class ChannelSelector
 {
     public Option<CommunicationChannel> Select(IReadOnlyList<CommunicationChannel> channelPreferences, ConsentPreferences consent)
     {

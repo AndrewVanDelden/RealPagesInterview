@@ -14,8 +14,9 @@ public static class ActionTypes
     // Sample 2: a prospect 68 days out.
     public const string FollowUpInDays = "follow_up_in_days";
 
-    // D3: the action on a record that is not contactable. No catalog row emits it; the
-    // consent gate does, before the planner runs.
+    // D2: the action on a record that is not contactable. No catalog row emits it; the agent
+    // emits it at step 1, when the channel selector returns no value (D57), before the
+    // planner runs.
     public const string NoOp = "no_op";
 
     public static readonly FrozenSet<string> All =

@@ -11,7 +11,7 @@ namespace Agent.Tests.Decisions;
 // the floor, the zone it computed in, and how the slot resolved (A20).
 public class SendSchedulerTests
 {
-    private static readonly ISendScheduler Scheduler = new SendScheduler();
+    private static readonly SendScheduler Scheduler = new();
     private static readonly DateTimeOffset ReferenceTime = DateTimeOffset.Parse("2025-12-09T00:00:00-06:00");
 
     [Fact]

@@ -11,7 +11,7 @@ namespace Agent.Tests.Decisions;
 // on persona and lifecycle stage, and the planner returns the why beside the what.
 public class NextActionPlannerTests
 {
-    private static readonly INextActionPlanner Planner = new NextActionPlanner();
+    private static readonly NextActionPlanner Planner = new();
     private static readonly DateOnly ReferenceDate = new(2025, 12, 9);
 
     // Sample 1: prospect at new, move date 2026-01-10, 32 days out.

@@ -14,8 +14,9 @@ public class RequiredStateMapTests
         RequiredStateVerdict brandStyleApplied = RequiredStateVerdict.Earned) =>
         RequiredStateMap.For(requiredStates, consentVerified, fairHousingCheckPassed, brandStyleApplied);
 
-    // The three names both samples assert, each answered by its own source: the consent gate,
-    // the FairHousing check alone (D38), and the brand-style validator.
+    // The three names both samples assert, each answered by its own source: the channel
+    // selector's read of consent (D57), the FairHousing check alone (D38), and the
+    // brand-style validator.
     [Fact]
     public void For_TheThreeStatesWithChecks_AnswersEachFromItsOwnSource()
     {

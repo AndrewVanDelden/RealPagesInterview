@@ -11,7 +11,7 @@ namespace Agent.Safety;
 // not just the retried ones, so an unsafe fallback yields ComposeOutcome.Refused rather than
 // shipping unvalidated content.
 //
-// D43 changed what that refusal carries, not where the gate is. A refused draft used to
+// D48 changed what that refusal carries, not where the gate is. A refused draft used to
 // become a bare error string and the draft was destroyed here, so no human could ever see
 // what was rejected and the orchestrator read the record as a composition failure. It now
 // leaves as Refused, with the draft; the orchestrator's own step 5 gate validates it and is
