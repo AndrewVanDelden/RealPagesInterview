@@ -976,3 +976,48 @@ recorded so the gap is visible rather than assumed closed: it fixes the one list
 reader, not every collection in the record types. The general rule, that a value-type or
 non-nullable element inside a collection defaults or nulls silently, is now a known shape and
 the next collection to gain a reader inherits it. Assumptions: A16, A17.
+
+**D43 addendum (2026-09-09).** Two differences from the paragraph above, both found by building
+it. First, the entry carries no channel of its own: D43's sentence lists one, but the draft
+already carries it, and two spellings of one fact are what a `with` copy desynchronizes, so a
+reader takes it from `draft.channel`. Second, and not cosmetic, the queue as specified could
+never have had a row in it: see D48.
+
+**D48. The composer seam carries a refusal, not just a failure (2026-09-09).** Question: D43's
+queue was written, wired and empty, and the reason is a defect three layers deep that one run
+exposed. A record whose own `city_interest` reads `families only` has that text written into
+its body by the template composer, so the violation comes from the record's data and the
+fallback reproduces it exactly. `ValidatingMessageComposer` then refuses both attempts and the
+fallback, and returns `Result<ComposedMessage>.Failure(string)`, which has no payload. Three
+things follow, and all three were measured rather than reasoned about. The rejected draft is
+destroyed before anything can queue it. `SuppressionReason.SafetyViolation` is unreachable
+under production wiring, because `CliRunner` always wraps the composer, so the orchestrator's
+own step 5 gate never sees a violating message and the queue is structurally empty rather than
+empty on a healthy run. And the record reports `fair_housing_check_passed: not_evaluated`
+although its message did contain steering language, which is worse than the defect D38 fixed,
+because `not_evaluated` has to mean nothing was ever checked.
+
+Options: descope the queue and record the finding; widen the queue to composition failures,
+which are reachable but carry no draft and no violations, so most of the value is gone; have
+the compose loop stop being a gate and return its best attempt for the orchestrator to refuse,
+which makes a composer knowingly hand back unsafe content; or have the loop's refusal carry the
+draft out alongside the failure. Recommendation: the last, chosen by the requester on
+2026-09-09. Both gates stay where they are and nothing unsafe ships: the loop still refuses,
+it just stops destroying the evidence.
+
+The seam gains its own result, `ComposeOutcome`, with three cases rather than two:
+`Composed` is a message to send, `Failed` is no draft at all (a transport error, a malformed
+completion), and `Refused` is a draft that exists and was refused on safety. `Result<T>` is not
+changed to carry a payload: it is a general type in `Agent.Common` and the thing being carried
+is a composition concept, so it belongs on the composition seam and nowhere else.
+
+`Refused` carries the draft and not the violations, deliberately. The orchestrator re-derives
+them with its own validator, which is the step 5 gate it already has and which until now no
+production record could reach. That keeps one source for one fact, and it means the fix for the
+third defect falls out of the fix for the first: a refused draft flows down the existing
+`hasViolations` branch, so `suppression_reason` reads `safety_violation`,
+`fair_housing_check_passed` reads the FairHousing check's real verdict, and the queue gets its
+row, all from code that was already written and previously unreachable. Scopes:
+`IMessageComposer` and its three implementations, `LeasingMessageAgent`, `CliRunner`, the test
+fakes. Evidence: the steering record above run through the real CLI, whose diagnostics read
+`composition_failed` and `not_evaluated` before the change. Assumptions: A12, A18.
