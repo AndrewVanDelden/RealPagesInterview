@@ -31,8 +31,14 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null) : IEvaluator
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Scoring record '{TaskId}' failed.", run.ProspectCase.TaskId);
-                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, ex.ToDiagnosticString()));
+                // D46: Score reads the composed message and the record's own labeled
+                // content, so its exceptions go through the redacted formatter like every
+                // other boundary that handles vendor, model, or prospect text. The raw
+                // exception is never passed to the logger: ILogger's default formatter
+                // appends Exception.ToString() in full regardless of the message template.
+                string failure = ex.ToRedactedDiagnosticString();
+                log.LogError("Scoring record '{TaskId}' failed: {ScoringFailure}.", run.ProspectCase.TaskId, failure);
+                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, failure));
             }
         }
 

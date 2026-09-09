@@ -54,6 +54,7 @@ public sealed class CliRunner(
         string? logFilePath = GetOption(args, "--log-file");
         string? nowOption = GetOption(args, "--now");
         string? replayPath = GetOption(args, "--replay");
+        string? reviewQueuePath = GetOption(args, "--review-queue");
 
         // D30: the judge is off unless it is asked for. It is a presence flag, not an
         // option with a value: there is one judge, and its model is pinned rather than
@@ -62,13 +63,22 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
         if (outputPath is not null && replayPath is not null)
         {
             error.WriteLine("--output and --replay are mutually exclusive: pass exactly one.");
+            return CliExitCodes.UsageError;
+        }
+
+        // D43 and D14: a replay scores an output file that already exists and runs no
+        // validator, so it has nothing to queue. An empty file from a replay would read as a
+        // clean run rather than as a question that was never asked.
+        if (reviewQueuePath is not null && replayPath is not null)
+        {
+            error.WriteLine("--review-queue needs a run that validates: it cannot be combined with --replay.");
             return CliExitCodes.UsageError;
         }
 
@@ -152,6 +162,11 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
+        // One validator, deliberately shared by the compose-validate loop and the agent's own
+        // step 5 gate. D48 has the loop hand a refused draft out for the agent to validate
+        // again, and the agent's verdict is the one that decides whether it ships, so two
+        // different validators here would be two answers to one question and a draft the loop
+        // refused could go out. Sharing the instance is what makes that impossible.
         var safetyValidator = new SafetyValidator();
         IMessageComposer composer = new ValidatingMessageComposer(
             baseComposer,
@@ -180,11 +195,13 @@ public sealed class CliRunner(
         // --replay, and the replay path has already returned.
         await using var outputStream = new StreamWriter(outputPath!);
         await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
+        await using StreamWriter? reviewQueueStream = reviewQueuePath is not null ? new StreamWriter(reviewQueuePath) : null;
 
         log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
 
         var outputs = new List<AgentOutput>();
         var diagnosticsRecords = new List<TaskDiagnostics>();
+        var reviewQueue = new List<ReviewQueueEntry>();
         var scoredRuns = new List<ScoredRun>();
 
         foreach (ProspectCase prospectCase in cases)
@@ -198,13 +215,17 @@ public sealed class CliRunner(
 
             using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
-            // D1: one line per record naming every defaulted decision input and every
-            // unknown member, before any decision reads them.
+            // D1: one line per record naming every defaulted decision input and how many
+            // members the record types do not declare, before any decision reads them.
+            // The defaulted paths are this program's own schema names and are safe to log;
+            // an unknown member's name is not (step 68), because a record chose it. The
+            // count is the fact an operator reads this line for, and --diagnostics, which
+            // is a file a person opens rather than a log stream, still carries every name.
             IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
             log.LogInformation(
-                "Ingest: defaulted=[{DefaultedFields}] unknown=[{UnknownMembers}].",
+                "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
                 string.Join(", ", ingestNotes.DefaultedFields),
-                string.Join(", ", ingestNotes.UnknownMembers));
+                ingestNotes.UnknownMembers.Count);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;
@@ -227,6 +248,16 @@ public sealed class CliRunner(
             log.LogInformation("Record processed in {ElapsedMs}ms.", stopwatch.Elapsed.TotalMilliseconds);
             outputs.Add(result.Output);
             diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes));
+
+            // D43: one row per record the safety gate suppressed, and nothing else. A record
+            // with no consented channel is not here (not contactable is the correct decision,
+            // not a failure) and neither is a composition that produced no draft (there is
+            // nothing to review), which is exactly what a null RejectedDraft says.
+            if (result.RejectedDraft is { } rejectedDraft)
+            {
+                reviewQueue.Add(new ReviewQueueEntry(prospectCase.TaskId, rejectedDraft.Violations, rejectedDraft.Message));
+            }
+
             scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, stopwatch.Elapsed.TotalMilliseconds));
         }
 
@@ -241,6 +272,14 @@ public sealed class CliRunner(
             await diagnosticsWriter.WriteAllAsync(diagnosticsStream, diagnosticsRecords, cancellationToken);
         }
 
+        // Written even when the queue is empty (D43): a missing file cannot be told apart
+        // from a flag nobody passed, and an empty queue is the number step 71 asks for.
+        if (reviewQueueStream is not null)
+        {
+            var reviewQueueWriter = new JsonArrayRecordWriter<ReviewQueueEntry>();
+            await reviewQueueWriter.WriteAllAsync(reviewQueueStream, reviewQueue, cancellationToken);
+        }
+
         if (evalReportPath is not null)
         {
             // Scores the results already captured above - never re-runs the agent, so the
@@ -250,6 +289,8 @@ public sealed class CliRunner(
             await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken);
         }
 
+        // A queued record leaves at exit 0 (D43): suppression is a correct pipeline outcome
+        // and failureCount counts records the pipeline could not process at all.
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
 

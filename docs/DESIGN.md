@@ -228,7 +228,7 @@ constant until a second known value earns a setting.
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
 | A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored | no |
 | A13 | Body language is `input.language` and nothing gates on a language allowlist: the model path passes the tag through unchanged, and the template composer holds one set per language it can serve, English and Spanish, with any other tag served in English and the diagnostic `locale_not_applied` | both samples en; the synthetic set's item 4 record is es; the field is a free tag, so other values must not fail (D26) | the template sets |
-| A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text | no |
+| A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text; the states map of D42 gives every name in a record's own `required_states` its verdict, `consent_verified` from the consent gate, `fair_housing_check_passed` from the `FairHousing` check alone (D38), `brand_style_applied` from the brand-style validator, and every other name not earned by name; the hold-out's `renewal_offer_loaded` is such a name and stays not earned, because a rule for it would be fitted to the hold-out (D9, A19) | no |
 | A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope | no |
 | A16 | Unknown members at any depth are kept, listed in diagnostics, logged per record, never an error | none seen; the statement promises more cases than the samples show | no |
 | A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics | section 2; no decision can be made without these three | no |
@@ -246,6 +246,44 @@ number on the unfitted sets reported beside the fitted one. Security: the OpenAI
 `dotnet user-secrets`, scoped to chat completions, never handled by an agent; pricing and
 eligibility are never free text; the validator runs on every exit.
 
+**Vendor data retention (step 69, D44).** One external service receives user data: OpenAI's
+`/v1/chat/completions`, reached only when `--composer openai` or `--judge` is passed. Read
+from the vendor's own platform data page, `developers.openai.com/api/docs/guides/your-data`,
+on 2026-09-09. API data is not used to train or improve OpenAI models by default, the position
+since 2023-03-01, and the exception is an explicit opt-in. Abuse-monitoring logs for this
+endpoint are retained up to 30 days, unless longer retention is required by law or is
+reasonably necessary to protect the service or a third party from harm; the stated purpose is
+enforcing the usage policies and mitigating harmful uses. Application state is a separate axis
+from abuse monitoring, and for this endpoint it is "None" apart from named exceptions, audio
+outputs for one hour and prompt-cache tensors expiring within 24 hours; the 30-day
+application-state default belongs to the Responses API, not to Chat Completions. Structured
+Outputs has no separate retention rule. Two approval-gated controls exist: Modified Abuse
+Monitoring excludes customer content from the abuse-monitoring logs, and Zero Data Retention
+does the same and additionally forces `store` to false. Both require prior approval by OpenAI
+and additional terms, are requested through OpenAI sales, and are configured under Settings,
+Organization, Data controls, Data retention; `/v1/chat/completions` is on the ZDR-eligible
+list.
+
+Two things the reading did not settle, recorded as absence rather than filled in. The
+documentation does not address a request the client abandons at its timeout while the server
+completes it: the nearest published fact is that the abuse-monitoring log is generated for the
+API feature usage, and nothing narrows or extends the 30-day window for a dropped connection.
+That case is not hypothetical here, because D31 measured roughly a third of abandoned attempts
+completing on the server after the client walked away. And no tier difference is verified:
+`openai.com/enterprise-privacy` returned HTTP 403 and was not read, while the platform data
+page draws no tier distinction of its own, its controls being per organization or project and
+gated on approval rather than on purchase tier. Not verified is what is recorded here, not
+that an enterprise or business tier retains the same way.
+
+The judgment is D44's, and both halves of it are stated rather than the convenient one: the
+default is acceptable for this project as it stands, and it is not acceptable for a production
+deployment carrying real prospect data. The first half holds on what the prompt actually
+contains, which is first name, property name, stated interest, persona, lifecycle stage,
+language, and two dates. It carries no phone number, no email address, no unit number, no
+renewal offer id, and no free-text note, and that is a property of `BuildUserPrompt` a golden
+test already pins. The production path, if a real deployment sends real prospect data, is one
+of the two approval-gated controls above.
+
 ## 9. Plan
 
 Each sprint cites decisions in the log; one PR per sprint against `dev`.
@@ -260,7 +298,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 2 Scaffold and verification harness | the evaluator scores the golden expected outputs at 100 percent and a deliberately wrong output at less | 2026-09-08 in Sprint 3, both proofs in the suite (`ScorerProofTests`, D13) |
 | 3 Deterministic core | the deterministic core passes the synthetic set with every fuzzy component stubbed, and the diagnostics explain every decision | 2026-09-08 in Sprint 5, with the rule for what earns a diagnostics object stated (D18, D22, D23) |
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
-| 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | not passed |
+| 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -270,7 +308,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |
 | 5 Scheduling (landed 2026-09-08) | reference time, floor, the slot on a transition day, and the schedule in the diagnostics (D4, D21, D22) | property tests green over every system zone at both send hours across every 2026 transition; unknown timezone is a row, not an exit |
 | 6 Composition (landed 2026-09-08) | the composer named in the diagnostics, the call-to-action payload and its catalog, language sets, the official SDK bounded and counted, the model prompt inputs and its boundary, the judge (D5, D19, D24 to D30) | all three sets complete on the offline path with outbound HTTPS blocked, and the diagnostics name the composer on every record that has a message |
-| 7 Safety and states | earned states, violations by category, false-positive tests (D3) | every validator has a passing, a failing, and a false-positive test |
+| 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration | interface removal, orchestrator steps, `docs/NARRATION.md`, final numbers (D7); repoint the `LeasingMessageAgent` comment that cites "section 4" to section 5 | narration delivered without notes; both numbers in the README |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
@@ -397,4 +435,36 @@ timeout is a partial refund, not a free abort, and a run that times out on every
 pays for about a third of what it asked for. The estimate made before the run assumed every
 attempt would bill its input, which was high on both counts. Per record, this is about
 $0.00017 for a record that produced no model text at all.
+
+**Numbers after Sprint 7**, the template composer, the same reference times. Every per-check
+tally on all three sets is identical to Sprint 6: `sample.jsonl` 2 of 2 on every check and 2 of
+2 records passing; `holdout_12.jsonl` channel 12 of 12, day 7 of 11, hour 5 of 11, action 7 of
+12, opt-out 11 of 11, call-to-action type 7 of 11, payload 11 of 11, language 11 of 11, safety
+12 of 12, personalization 8 of 8, 4 of 12 records passing; `synthetic_12.jsonl` every check
+perfect, 12 of 12 passing, exit code 2 for the malformed line by design. Nothing moved, and
+nothing was meant to: this sprint changed how a violation is found, categorised and surfaced,
+not which messages pass. `BaselineNumbersTests` is byte-for-byte unchanged and still pins every
+tally.
+
+**Step 71's two numbers, which are the point of the phase.** Zero safety violations and zero
+false-positive suppressions, on all three sets. The review queue of D43 is written on every run
+and is empty on every one of them: 0 rows on `sample.jsonl`, 0 on `holdout_12.jsonl`, 0 on
+`synthetic_12.jsonl`. Every suppression on any set is `no_contact_consent`, 1 on the hold-out
+and 2 on the synthetic set, which is the correct decision rather than a validator misfire. The
+emptiness is now worth something: before D48 the queue could not have held a row on any input,
+because the compose-validate loop destroyed the draft and every safety refusal arrived as a
+composition failure. A constructed record whose own `city_interest` reads `families only` puts
+a row in it, reads `suppression_reason: safety_violation` and `fair_housing_check_passed:
+not_earned`, and is the test that proves the number zero means something.
+
+**What the states map says.** On `sample.jsonl`, all three states earned on both records. On
+`holdout_12.jsonl`, `consent_verified` earned on 12, `fair_housing_check_passed` earned on the
+11 that assert it, `brand_style_applied` earned on the 7 that assert it, and
+`renewal_offer_loaded` recorded as `no_check_defined` on the 3 records that assert it, by name,
+never claimed (D42, D9, A19). On `synthetic_12.jsonl`, `consent_verified` 12, fair housing 10,
+brand style 8, and no unrecognized name. `brand_style_applied` reads earned on every record of
+every run, which is the disclosure D42 makes rather than a result it hides: all three rules pass
+the template composer by construction, a test makes each one fail alone, and the composer it has
+teeth against is the model path.
+
 

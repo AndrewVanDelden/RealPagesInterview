@@ -19,6 +19,11 @@ public class ValidatingMessageComposerTests
     private static NextMessage BadMessage() =>
         new(CommunicationChannel.Sms, null, null, "This community is families only.", null);
 
+    // The message this loop returned, when it returned one. A test that expects a message
+    // says so once here rather than restating the outcome type at every call site.
+    private static ComposedMessage ComposedOf(ComposeOutcome outcome) =>
+        Assert.IsType<ComposeOutcome.Composed>(outcome).Message;
+
     [Fact]
     public async Task ComposeAsync_FirstAttemptClean_ReturnsFirstAttemptWithoutRetry()
     {
@@ -27,10 +32,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
-        Assert.Same(cleanMessage, result.Value.Message);
+        Assert.Same(cleanMessage, ComposedOf(outcome).Message);
         Assert.Equal(1, innerComposer.CallCount);
     }
 
@@ -44,10 +48,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
-        Assert.Same(cleanMessage, result.Value.Message);
+        Assert.Same(cleanMessage, ComposedOf(outcome).Message);
         Assert.Equal(2, innerComposer.CallCount);
     }
 
@@ -58,10 +61,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
-        SafetyValidationResult finalValidation = Validator.Validate(result.Value!.Message, prospectCase.ConstraintsOrEmpty);
+        SafetyValidationResult finalValidation = Validator.Validate(ComposedOf(outcome).Message, prospectCase.ConstraintsOrEmpty);
         Assert.Empty(finalValidation.Violations);
     }
 
@@ -72,9 +74,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
+        Assert.IsType<ComposeOutcome.Composed>(outcome);
         Assert.Equal(2, innerComposer.CallCount);
     }
 
@@ -90,30 +92,39 @@ public class ValidatingMessageComposerTests
         Assert.Equal(2, innerComposer.CallCount);
     }
 
+    // D43: nothing unsafe ships, and the draft is no longer destroyed on the way out. The
+    // refusal carries the fallback draft, which is the one the orchestrator validates and
+    // the review queue holds.
     [Fact]
-    public async Task ComposeAsync_FallbackAlsoUnsafe_ReturnsFailureRatherThanUnvalidatedMessage()
+    public async Task ComposeAsync_FallbackAlsoUnsafe_RefusesAndCarriesTheFallbackDraftOut()
     {
+        NextMessage fallbackDraft = BadMessage();
         var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
-        var unsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var unsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(fallbackDraft));
         var composer = new ValidatingMessageComposer(innerComposer, Validator, unsafeFallback);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.False(result.IsSuccess);
+        ComposeOutcome.Refused refused = Assert.IsType<ComposeOutcome.Refused>(outcome);
+        Assert.Same(fallbackDraft, refused.Draft);
+        Assert.NotEmpty(refused.Error);
     }
 
+    // The other exit: the fallback built no message at all, so there is no draft to carry and
+    // no queue row to write. Failed and Refused are different facts and stay different here.
     [Fact]
-    public async Task ComposeAsync_FallbackComposerFailsToCompose_ReturnsFailure()
+    public async Task ComposeAsync_FallbackComposerFailsToCompose_FailsWithNoDraft()
     {
         var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
         var failingFallback = new SequenceMessageComposer(Result<NextMessage>.Failure("fallback boom"));
         var composer = new ValidatingMessageComposer(innerComposer, Validator, failingFallback);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.False(result.IsSuccess);
+        ComposeOutcome.Failed failed = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.NotEmpty(failed.Error);
     }
 
     [Fact]
@@ -177,8 +188,11 @@ public class ValidatingMessageComposerTests
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
+    // The error text can carry raw model response content on the OpenAI path, so the log
+    // records the failure category and the text itself never reaches a log sink. The
+    // correction still carries it to the next attempt, which the test above proves.
     [Fact]
-    public async Task ComposeAsync_FirstAttemptResultFailure_LogsWarningWithTheFailureReason()
+    public async Task ComposeAsync_FirstAttemptResultFailure_LogsTheCategoryAndNotTheErrorText()
     {
         var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
         var innerComposer = new SequenceMessageComposer(
@@ -190,7 +204,8 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Contains(capturingLogger.Entries, entry =>
-            entry.Level == LogLevel.Warning && entry.Message.Contains("call_now", StringComparison.Ordinal));
+            entry.Level == LogLevel.Warning && entry.Message.Contains("returned a failure result", StringComparison.Ordinal));
+        Assert.DoesNotContain(capturingLogger.Entries, entry => entry.Message.Contains("call_now", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -231,9 +246,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true), result.Value!.Notes);
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true), ComposedOf(outcome).Notes);
     }
 
     [Fact]
@@ -245,9 +260,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2, LocaleApplied: true), result.Value!.Notes);
+        Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2, LocaleApplied: true), ComposedOf(outcome).Notes);
     }
 
     // D28 addendum: a retry the first (rejected) attempt spent is still a retry this record
@@ -264,10 +279,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
-        Assert.Equal(2, result.Value!.Notes.NetworkRetries);
+        Assert.Equal(2, ComposedOf(outcome).Notes.NetworkRetries);
     }
 
     // The fallback composer makes no network call of its own (NetworkRetries stays null),
@@ -284,9 +298,8 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.True(result.IsSuccess);
-        Assert.Equal(2, result.Value!.Notes.NetworkRetries);
+        Assert.Equal(2, ComposedOf(outcome).Notes.NetworkRetries);
     }
 }

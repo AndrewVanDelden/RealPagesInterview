@@ -17,7 +17,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
     // same input can never produce a different result. ValidatingMessageComposer relies
     // on that (a bounded loop that only ever inspects the first attempt in practice) and
     // treats this composer as the always-clean, un-retried fallback.
-    public Task<Result<ComposedMessage>> ComposeAsync(
+    public Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
@@ -52,7 +52,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
         var message = new NextMessage(channel, null, subject, body, new Cta(callToAction.Type, isEmail ? null : optionTexts, link));
         var composed = new ComposedMessage(message, CompositionNotes.ForComposer(ComposerNames.Template, localeApplied));
 
-        return Task.FromResult(Result<ComposedMessage>.Success(composed));
+        return Task.FromResult<ComposeOutcome>(new ComposeOutcome.Composed(composed));
     }
 
     private static string SmsBody(

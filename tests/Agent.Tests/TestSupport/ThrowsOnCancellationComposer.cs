@@ -1,4 +1,3 @@
-using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 
@@ -6,7 +5,7 @@ namespace Agent.Tests.TestSupport;
 
 internal sealed class ThrowsOnCancellationComposer : IMessageComposer
 {
-    public Task<Result<ComposedMessage>> ComposeAsync(
+    public Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,

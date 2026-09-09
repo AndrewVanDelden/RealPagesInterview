@@ -55,7 +55,11 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         }
     }
 
-    // A6: absent and unrecognized are both UTC, but an unrecognized id is worth naming.
+    // A6: absent and unrecognized are both UTC, but an unrecognized id is worth naming as a
+    // fact. The id itself is not quoted back: CliRunner logs DefaultedFields on every record
+    // of every run, and the id is a value the record authored (step 68). Every other entry in
+    // this list is one of this program's own schema paths, which is what makes the whole list
+    // safe to log; the record's own value is one lookup away by task id in the input file.
     private static void NoteTimeZone(List<string> defaulted, string? timeZoneId)
     {
         if (timeZoneId is null)
@@ -64,7 +68,7 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         }
         else if (!TimeZones.TryResolve(timeZoneId, out _))
         {
-            defaulted.Add($"input.timezone (unrecognized '{timeZoneId}', UTC used)");
+            defaulted.Add("input.timezone (unrecognized, UTC used)");
         }
     }
 

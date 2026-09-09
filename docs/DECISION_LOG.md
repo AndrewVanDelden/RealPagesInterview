@@ -9,15 +9,17 @@ sets.
 
 ## Current phase
 
-Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance.
-Check: every validator has a passing test, a failing test, and a false-positive test. Status:
-not passed; the safety validator has passing and failing tests and no false-positive tests, the
-required states of D3 are still claimed rather than earned, and `brand_style_applied` is still
-hardcoded true (playbook step 66).
-Next step: 61 to 71, Sprint 7, Safety and states (the Sprint 7 row of [DESIGN.md](DESIGN.md)
-section 9, D3).
-Open decisions: one, the D31 open question on how a real model-versus-template comparison could
-be run at all, which needs the requester.
+Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Structure and narration.
+Check: the narration is delivered without notes and the orchestrator reads as its steps in
+order. Status: not passed, not started. Phase 5 passed 2026-09-09 in Sprint 7: four safety
+checks and three brand rules, each with a passing, a failing and a false-positive test, the
+allow-list tested both ways, and zero violations and zero false-positive suppressions on the
+synthetic set (D38 to D48).
+Next step: 72 to 79, Sprint 8, Structure and narration (the Sprint 8 row of [DESIGN.md](DESIGN.md)
+section 9, D7).
+Open decisions: two, the D31 open question on how a real model-versus-template comparison could
+be run at all, and whether the latency decisions D32 to D37 get a sprint of their own; both need
+the requester.
 
 Replace these four lines at the end of every sprint. Never append to them. A phase that passed,
 the proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -691,3 +693,457 @@ tokens against roughly 1024, and the vendor's usage page reports a 0 percent hit
 project. The system prompt being identical on every record is what makes it look promising, and
 the length is what rules it out. If prompts grow past the threshold, this becomes a real lever
 and the numbers should be checked again.
+
+## Sprint 7 decisions, safety and states (2026-09-09)
+
+Playbook steps 61 to 71. The latency decisions above (D32 to D37) keep their numbers and their
+scheduling call is still not taken; these are the decisions Sprint 7 actually implements.
+
+**D38. One result per check, never one boolean (2026-09-09).** Question: step 61 says every
+constraint the domain imposes becomes its own validator with its own result, never one boolean.
+`SafetyValidationResult` is a flat `IReadOnlyList<string>` plus `FairHousingCheckPassed`, and
+that flag is computed as `violations.Count == 0`. Options: keep the flat list and let each call
+site re-derive what failed by reading the strings; or return one named result per check.
+Recommendation: one named result per check. The current derivation is not merely coarse, it is
+wrong, and nothing in the suite catches it: a message that merely omits its opt-out line reports
+`fair_housing_check_passed: false`, so the diagnostics record a fair-housing failure that never
+happened, and A14 says a state is earned by the step that proves it. A second defect the flat
+list hides: `FindWholeWord` is `FirstOrDefault`, so a message matching six protected-class terms
+emits exactly one violation, and `safety_violations_max` is scored against that count. Scopes:
+`SafetyValidationResult`, `SafetyValidator`, `AgentDiagnostics.FairHousingCheckPassed`,
+`ValidatingMessageComposer`'s rejection feedback, the review queue of D43, and the evaluator's
+Safety check, which reads only the count and so changes verdict on any message with more than
+one match. Shape: four checks, `SafetyCheck.OptOutInstructions`, `SafetyCheck.SocialSecurityNumber`,
+`SafetyCheck.LongDigitRun` and `SafetyCheck.FairHousing`, each carrying a verdict of `Passed`,
+`Failed` or `NotApplicable` and its own detail lines; `NotApplicable` is a check the record did
+not require, which is not a pass, the same rule A15 states for the scorer. The names are the
+checks themselves rather than one PII check, because D40 gives two of them different answers to
+the question of whether a record may switch them off. Evidence: the probe run recorded under
+D41. Assumptions: A14, A15.
+
+**D39. Which checks gate and which only report (2026-09-09).** Question: step 62 asks, for each
+validator, whether it is a hard gate, a soft flag for review, or a diagnostic, with the reason
+written down. Options: classify per check in code, with a disposition field on the result; or
+classify in this paragraph and let the structure carry it. Recommendation: the second. All four
+safety checks of D38 are hard gates: a failure suppresses the message, which is today's
+behavior and stays it, because each maps to legal exposure rather than to taste. Fair housing is
+the Fair Housing Act; the opt-out instruction is the revocation-of-consent requirement that
+makes a message lawful to send; both identifier checks are a data leak into a channel the
+recipient does not control. Brand style (D42) is the one check that is a diagnostic and never
+suppresses, because an off-voice message is off-voice, not unlawful. Because every safety check
+is a gate and the one non-gate is a different component, the result carries no disposition
+field: a field with one inhabited value is speculative code (LC), and the classification lives
+here where step 62 asks for it. Scopes: `SafetyValidator`, `BrandStyleValidator`,
+`LeasingMessageAgent`'s suppression branch. Evidence: step 62; the four checks of D38.
+
+**D40. Which checks a record cannot switch off (2026-09-09).** Question: step 65 says never let
+a per-record flag disable a check that the law or the domain does not allow to be disabled, and
+document which checks are unconditional and why. Today `no_pii_leak: false`, or its absence
+under D1, turns off both identifier patterns, so a message carrying a literal Social Security
+number validates clean. Options: leave both gated and write down why that is acceptable; make
+both unconditional; or split them. Recommendation: split them, confirmed by the requester on
+2026-09-09. `SocialSecurityNumber` becomes unconditional: no leasing message legitimately
+carries one, so there is no case the flag would be protecting, and a record that says
+`no_pii_leak: false` is saying it does not need the heuristic, not that it consents to a leak.
+`LongDigitRun` stays gated, because it is a proxy that also matches a confirmation number or a
+tour reference (D41, case 26), and a record with a legitimate long identifier needs a way to say
+so. `FairHousing` was already unconditional and stays it, for the reason already on
+`SafetyValidator`: fair housing law has no per-case opt-out. `OptOutInstructions` stays gated on
+`include_opt_out_instructions`, because transactional exemptions are real and the record is the
+only thing that knows whether this message is one. Scopes: `SafetyValidator`,
+`CaseConstraintsExtensions`. This reverses one recorded behavior:
+`Validate_PiiCheckNotRequired_LeakedIdentifierIsNotAViolation` asserted that a Social Security
+number passes when the flag is off, and that test is inverted here deliberately rather than
+deleted, so the contract change is visible in the diff. Assumption: A1 is not involved; this
+depends on A17 only for what an absent constraint means. Evidence: step 65; D1.
+
+**D41. What the proxy normalizes and what it exempts (2026-09-09).** Question: step 63 says
+keyword and pattern validators are proxies, say so in the code, add an allow-list for the
+legitimate uses the pattern would catch, and test both directions. Options: leave the patterns
+as they are and widen the scope-out in CODE_REVIEW.md; or fix the cases a run proves are wrong
+and scope out the rest with the run as evidence. Recommendation: the second, on a probe that
+executed all 37 candidate inputs through the exact patterns as written, on the same .NET regex
+engine. What it found, and what is fixed here:
+
+- The Equal Housing Opportunity disclosure, the sentence a compliant leasing message is
+  expected to carry, matches six terms and is suppressed. That is the proxy blocking the
+  compliant message and passing nothing in its place, and it is the single most important
+  finding of the run. Fixed by an exempt-span list.
+- `families-only` with a hyphen, and `families  only` with two spaces, both miss. Neither needs
+  an adversary: a model composer writes both as ordinary prose. Fixed by normalization.
+- A zero-width space inside a term makes it miss. Fixed by stripping format characters, which
+  arrive by copy and paste, not only by attack.
+- `STOP` inside a URL path satisfies the opt-out check, so a message with no opt-out instruction
+  a recipient can act on certifies as having one, and because `OptOutInstructions` is the one
+  definition the scorer uses too (D13 b), the false pass propagates into the scorecard. Fixed by
+  removing URL spans before the keyword scan.
+- A 14-digit confirmation number matches the long-digit run. Fixed by an exempt span, not by
+  loosening the pattern.
+- A Social Security number written with spaces, and one written bare as nine digits, both miss.
+  Fixed by widening that one pattern.
+
+Normalization is applied to a copy of the text used for term matching only: strip U+200B,
+U+200C, U+200D and U+FEFF; fold the four unicode hyphens the way `OptOutInstructions` already
+folds them; then replace hyphens with spaces and collapse whitespace runs. The allow-list is a
+span list, never a term list, so `disability` and `color` stay live terms that still fire
+elsewhere in the same message; both directions are tested per row. Deliberately not fixed, with
+the run as the evidence rather than an opinion: semantic paraphrase, which is the scope-out
+already recorded in CODE_REVIEW.md and needs understanding rather than a pattern; letter spacing
+and interior punctuation, because matching across arbitrary separators would make `color` fire
+on unrelated letter sequences and trades these misses for a larger false-positive class; and
+Cyrillic homoglyphs, because the text under validation is written by this system's own composer,
+not by an adversary who controls the bytes. Scopes: `SafetyValidator`, `OptOutInstructions`, a
+new normalization helper, CODE_REVIEW.md. Evidence: the probe run of 2026-09-09, 37 inputs,
+executed rather than reasoned about. Assumption: A18 for the threat model of the last item.
+
+**D42. What earns a state, and what brand style is (2026-09-09).** Question: step 66 says earn
+every state the output claims, nothing hardcoded true, and if a claimed state has no check
+behind it, delete the claim or build the check. `brand_style_applied` is the literal `true` in
+`LeasingMessageAgent`, and `assertions.required_states` is parsed and then read by nothing at
+all, so a record asserting a state this program has never heard of is answered with silence.
+Options: delete the claim, since no sample proves what brand style is; or build a check from
+what the two samples do prove and record the rest as not earned. Recommendation: build the
+check, because `required_states` names `brand_style_applied` in both samples and deleting a
+state the input asks for answers the record by ignoring it. Two parts:
+
+First, the states map. Every name in the record's own `required_states` gets a verdict in the
+diagnostics: `consent_verified` from the consent gate having run, `fair_housing_check_passed`
+from the `FairHousing` check of D38 alone rather than from every check (which is the defect D38
+names), `brand_style_applied` from the brand-style validator below, and any other name recorded
+as not earned, by name, which is A14's rule made real. The hold-out's `renewal_offer_loaded` is
+exactly such a name, and it stays not earned: inventing a rule for it from the record that
+carries `renewal_offer_id` would be fitting a rule to the hold-out, which D9 and A19 forbid. Not
+earned is the honest answer and it is the answer the assumption already committed to.
+
+Second, what brand style is. Three rules, each satisfied by both sample bodies and by the
+template composer on sms and email in both language sets: the opt-out instruction sits on the
+body's last non-blank line (sample 1 `Reply STOP to opt out.`, sample 2 `To opt out of emails,
+click here or reply STOP.`), the body carries at most one exclamation mark (sample 1 one, sample
+2 none), and a subject is present exactly when the channel is email (sample 1 sms null, sample
+2 email 59 characters). The keyword half of the first rule calls `OptOutInstructions`, so the
+two definitions cannot drift; what it adds over the existing opt-out check is position, which
+`Evaluator.OptOut` and `SafetyValidator` do not assert.
+
+What was considered and rejected, with the reason, because each is a rule someone will propose
+again. A cap on sms length fails sample 1 outright at 166 characters. A sentence count is 5 and
+3, so any interval containing both is chosen rather than observed. "Exactly one call to action"
+has no text-level definition both samples satisfy: both carry two imperative asks for one
+`cta.type`. "The body carries the first name" and "the message carries an opt-out" are
+`Evaluator`'s personalization and opt-out checks restated, and a brand rule that restates an
+existing check earns nothing. A second-person pronoun rule passes both samples and fails the
+Spanish template output, which has no `you` token, so it is an English rule wearing a general
+name. Most instructive: "no ALL-CAPS word other than STOP" passes both samples and is a real
+brand property, and it is rejected because the template composer fails it on sample 1's own
+record, emitting `TX` from the record's `city_interest` of "Richardson, TX"; flagging a state
+abbreviation the record itself supplied is a false positive, not a finding, and the two
+formulations that would exclude it fit the samples equally, which makes it an open question
+rather than a rule (VF).
+
+What this check does and does not buy, stated rather than left to be discovered: all three rules
+pass the template composer by construction, so `brand_style_applied` reads true on every record
+of every documented run and no tally moves. It is not therefore the hardcoded `true` it
+replaces: it is computed from the message, a test proves each rule can fail, and the composer it
+has teeth against is the model path, whose subject, punctuation and closing line are the model's
+to get wrong. This is the same disclosure D13 a makes about personalization, and it belongs
+beside it rather than inside a claim that the state is now proven. D39 classifies it: it is a
+diagnostic and never suppresses, because an off-voice message is off-voice and not unlawful.
+Scopes: a new `BrandStyleValidator`, `AgentDiagnostics`, `LeasingMessageAgent`, CODE_REVIEW.md.
+Evidence: the two sample bodies measured character by character on 2026-09-09, and the template
+composer's own output for both channels and both language sets. Assumptions: A12, A14.
+
+**D43. Where a suppressed draft goes (2026-09-09).** Question: step 67 says that on a final
+validation failure the program emits a review-queue record rather than silently dropping output,
+because suppression is a business decision and has to be surfaced. Today a safety suppression
+writes the `none` message, sets `suppression_reason`, and discards the draft text entirely, so
+no human can ever see what was rejected or why; and the diagnostics that carry the reason are
+written only when `--diagnostics` is passed. Options: put the draft in the diagnostics file; or
+give the queue its own output. Recommendation: its own output, `--review-queue <path>`, one row
+per record suppressed by the safety gate, carrying the task id, the channel, every violation by
+check, and the rejected draft. The diagnostics file is a full per-record dump of how every
+decision was reached and is read when debugging a run; the review queue is a work list, it is
+empty on a healthy run, and its length is the number this sprint's step 71 has to report.
+Consent suppression is not in it: not contactable is the correct decision, not a failure.
+Composition failure is not in it either, for now, because there is no draft to review. Scopes:
+`CliRunner`, a new writer, OPERATIONS.md. The queue carries prospect text by design, which is
+the one place in this program that is true: it is a file a reviewer opens, not a log line, and
+step 68's redaction rule is about logs. Evidence: step 67. Assumption: A2.
+
+**D44. Whether the vendor's retention default is acceptable (2026-09-09).** Question: step 69
+asks for the data retention of every external service that receives user data, and for the
+production path if the default is not acceptable. Read from OpenAI's own platform data page on
+2026-09-09: API data is not used to train models by default, and abuse-monitoring logs for
+`/v1/chat/completions` are retained up to 30 days. Options: accept the default; take one of the
+vendor's two approval-gated controls; or stop sending prospect data. Recommendation: the default
+is acceptable for this project as it stands and is not acceptable for a production deployment
+carrying real prospect data, and both halves are stated rather than the convenient one. It is
+acceptable here because the evaluation sets are synthetic and because of what the prompt
+actually contains: first name, property name, stated interest, persona, lifecycle stage,
+language, and two dates. It carries no phone number, no email address, no unit number, no
+renewal offer id, and no free-text note, and that is a property of `BuildUserPrompt` a golden
+test already pins. The production path, if a real deployment sends real prospect data, is one of
+the two controls the same page names, Modified Abuse Monitoring or Zero Data Retention; both
+exclude customer content from the abuse-monitoring logs, both require prior approval by OpenAI
+and additional terms, and `/v1/chat/completions` is on the eligible list, with the only side
+effect on that endpoint being a forced `store=false` that a single-shot completion does not
+rely on. What the vendor's documentation does not address, stated as absence rather than filled
+in: what happens to a request the client abandons at its timeout while the server completes it,
+which is the case D31 measured at roughly a third of attempts. Nothing published narrows or
+extends the 30-day window for a dropped connection. Scopes: DESIGN.md section 8. Evidence:
+developers.openai.com/api/docs/guides/your-data, read 2026-09-09; the step 60 run and D31.
+
+**D45. What the widened Social Security pattern is allowed to match (2026-09-09).** Question:
+D41 widened the Social Security pattern so `123 45 6789` and a bare `123456789` match, and the
+implementation of that row, `\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`, also matches a ZIP+4. It matches
+`75201-1234` by reading the separator as optional in the first position and present in the
+second, so a message carrying a property address is suppressed by an unconditional gate that
+D40 made impossible for a record to switch off. The sprint that widened the pattern introduced
+the false positive, and step 71 asks for zero false-positive suppressions, so it does not ship
+as a pinned defect. Options: revert the widening, so the two forms the probe proved missing go
+back to missing; add a ZIP+4 exemption span; or require the pattern's grouping to be
+consistent. Recommendation: consistent grouping, as three explicit alternatives, hyphens
+throughout, spaces throughout, or nine bare digits. A ZIP+4 is a five-digit group and a
+four-digit group, which none of the three describes, so it stops matching by construction
+rather than by an exemption that has to be maintained. Reverting was rejected because the
+missing forms are a real leak of the exact identifier the check exists to catch, which is what
+D41 recorded; an exemption span was rejected because it answers one spelling of the wrong shape
+while `12345-6789` and every other mis-grouped pair stay matched. Second half: the
+confirmation-and-reference exempt span D41 gave the long-digit run is applied to this check
+too, because a bare nine-digit confirmation number is the same false positive as the fourteen
+digit one and the span already exists; leaving it on one check and not the other would be the
+inconsistency, not the fix. Scopes: `SafetyValidator.SocialSecurityNumberPattern` and
+`SocialSecurityNumberCheck`. Evidence: both spellings executed against the pattern on
+2026-09-09; `Ssn_ZipPlusFour_IsAKnownFalsePositive`, the test that recorded the defect, is
+inverted to assert it is not a violation, so the fix is visible in the diff the way D40's
+inversion is. Assumption: A17 is not involved; this check is unconditional under D40.
+
+**D46. What an exception is allowed to say, and who says a missing member's name (2026-09-09).**
+Question: step 68 says never log a prompt, a raw model response, or a secret above debug level.
+An audit of every log call site found the leak is not in any message template: it is
+`LogLineFormatter` appending the whole `Exception.ToString()`, so a `ClientResultException`
+renders the vendor's raw error response body and a `JsonException` renders the offending
+character of whatever it was parsing, both at Warning, to stderr and to `--log-file`. Options:
+redact inside `ToDiagnosticString`, which every failure row already uses; or add a second
+function and choose per call site. Recommendation: the second. `ToDiagnosticString` has four
+remaining callers and every one of them reports an exception whose message this program or the
+operating system wrote, an unopenable `--log-file`, an unknown `--composer`, a missing API key,
+and a per-record bug; redacting those degrades the stderr usage rows and buys no safety.
+`ToRedactedDiagnosticString` reports a type name, and for the two types that carry content a
+bounded locator instead of the content: an HTTP status for `ClientResultException`, a line and
+byte position for `JsonException`, never `Message` and never `Path`. It is used exactly where
+the message can carry vendor, model, or record text. Two rows deliberately change what an
+operator reads: the per-record parse failure and the `--replay` file-format failure now name a
+position rather than the parser's prose, which is accepted because stderr is where the console
+provider renders and is therefore a log stream. Scopes: `ExceptionFormatting`,
+`OpenAiMessageComposer`, `SemanticJudge`, `LenientExpectedOutcomeConverter`, both readers,
+`IngestNotes`, `CliRunner`'s ingest line. Evidence: a real `ClientResultException` built through
+the SDK over `FakeHttpMessageHandler`, asserted to carry the vendor body in `ex.Message` before
+being asserted absent from the rendered line, with a negative control proving the assertions are
+not vacuous. Assumption: A16 for the unknown-member count.
+
+Addendum, the one piece of new logic. Redacting the reader's message broke a stated contract:
+D1 promises that a line missing a required member produces an error row naming the member, and
+that name came only from the deserializer's prose. `JsonlRecordReader` now states it from its
+own `RequiredMembers` constants, which is program-authored text rather than record text. This
+re-establishes D1 rather than adding anything, and it is recorded because a reviewer reading
+the diff would otherwise see a redaction commit growing a feature.
+
+Two findings the audit raised and the implementation disproved, recorded so neither is chased
+again. The `expected` block's parse error does not leak label text: that converter only ever
+sees a well-formed JSON value, because a malformed one fails the outer record read first, and a
+well-formed value's exception carries only declared type and property names plus a position.
+What did reach the log was the full `ToString()`, twenty or more stack frames with absolute
+local source paths, which is why the change was made anyway. And `ReportFailure` passing an
+already-interpolated string as a message template is not the format-injection bug it looked
+like: with no arguments, `FormattedLogValues` never builds a formatter and returns the string
+verbatim, proved by probing five brace shapes through the console provider, so it was left
+alone rather than fixed for a case that cannot occur.
+
+**D47. A null inside a list the element type says cannot hold one (2026-09-09).** Question: D42
+gave `assertions.required_states` its first reader, and a record spelling
+`["consent_verified", null]` took the whole record out with an `ArgumentNullException` from the
+dictionary indexer. The list is typed `IReadOnlyList<string>`, but
+`RespectNullableAnnotations` does not reach inside a collection, so the deserializer honours
+the element's non-nullability nowhere and the type is a claim the wire does not keep. This is
+the same class of defect as the retrospective's silent year-0001 dates, one level deeper: D1
+made every member nullable and stopped at the members. Options: guard at the map only; make the
+element type tell the truth and skip an absent name; or reject the record. Recommendation: the
+second. A16 says an input shape is never an error, and a null name asserts no state, so there
+is nothing to reject and nothing to report: it is skipped, and the names beside it are still
+answered. A blank or whitespace name is the same nothing and goes the same way, through
+`Presence.IsAbsent`, which is already this program's one definition of a stated-but-empty
+value. Scopes: `CaseAssertions.RequiredStates`, `RequiredStateMap.For`. Evidence: the record
+above run through the CLI, which exited 2 with a bare `ArgumentNullException` and no output row
+for that record before the change and exits 0 with its message after. What this does not do,
+recorded so the gap is visible rather than assumed closed: it fixes the one list D42 gave a
+reader, not every collection in the record types. The general rule, that a value-type or
+non-nullable element inside a collection defaults or nulls silently, is now a known shape and
+the next collection to gain a reader inherits it. Assumptions: A16, A17.
+
+**D43 addendum (2026-09-09).** Two differences from the paragraph above, both found by building
+it. First, the entry carries no channel of its own: D43's sentence lists one, but the draft
+already carries it, and two spellings of one fact are what a `with` copy desynchronizes, so a
+reader takes it from `draft.channel`. Second, and not cosmetic, the queue as specified could
+never have had a row in it: see D48.
+
+**D48. The composer seam carries a refusal, not just a failure (2026-09-09).** Question: D43's
+queue was written, wired and empty, and the reason is a defect three layers deep that one run
+exposed. A record whose own `city_interest` reads `families only` has that text written into
+its body by the template composer, so the violation comes from the record's data and the
+fallback reproduces it exactly. `ValidatingMessageComposer` then refuses both attempts and the
+fallback, and returns `Result<ComposedMessage>.Failure(string)`, which has no payload. Three
+things follow, and all three were measured rather than reasoned about. The rejected draft is
+destroyed before anything can queue it. `SuppressionReason.SafetyViolation` is unreachable
+under production wiring, because `CliRunner` always wraps the composer, so the orchestrator's
+own step 5 gate never sees a violating message and the queue is structurally empty rather than
+empty on a healthy run. And the record reports `fair_housing_check_passed: not_evaluated`
+although its message did contain steering language, which is worse than the defect D38 fixed,
+because `not_evaluated` has to mean nothing was ever checked.
+
+Options: descope the queue and record the finding; widen the queue to composition failures,
+which are reachable but carry no draft and no violations, so most of the value is gone; have
+the compose loop stop being a gate and return its best attempt for the orchestrator to refuse,
+which makes a composer knowingly hand back unsafe content; or have the loop's refusal carry the
+draft out alongside the failure. Recommendation: the last, chosen by the requester on
+2026-09-09. Both gates stay where they are and nothing unsafe ships: the loop still refuses,
+it just stops destroying the evidence.
+
+The seam gains its own result, `ComposeOutcome`, with three cases rather than two:
+`Composed` is a message to send, `Failed` is no draft at all (a transport error, a malformed
+completion), and `Refused` is a draft that exists and was refused on safety. `Result<T>` is not
+changed to carry a payload: it is a general type in `Agent.Common` and the thing being carried
+is a composition concept, so it belongs on the composition seam and nowhere else.
+
+`Refused` carries the draft and not the violations, deliberately. The orchestrator re-derives
+them with its own validator, which is the step 5 gate it already has and which until now no
+production record could reach. That keeps one source for one fact, and it means the fix for the
+third defect falls out of the fix for the first: a refused draft flows down the existing
+`hasViolations` branch, so `suppression_reason` reads `safety_violation`,
+`fair_housing_check_passed` reads the FairHousing check's real verdict, and the queue gets its
+row, all from code that was already written and previously unreachable. Scopes:
+`IMessageComposer` and its three implementations, `LeasingMessageAgent`, `CliRunner`, the test
+fakes. Evidence: the steering record above run through the real CLI, whose diagnostics read
+`composition_failed` and `not_evaluated` before the change. Assumptions: A12, A18.
+
+**D49. The introducer span matched inside a longer word (2026-09-09).** Question: a code review
+of the Sprint 7 diff (PR #24) found `IntroducedIdentifierSpan`'s alternation,
+`(?:confirmation(?:\s+number)?|reference)...`, has no word boundary before it, so `reference`
+matches starting inside `preference`. `"Your preference and SSN 123-45-6789 are noted."` strips
+to `"Your p  are noted."` before `SocialSecurityNumberPattern` runs, and the unconditional
+SocialSecurityNumber gate (D40) passes a message that carries a real, unmasked SSN. Options:
+require the alternation to start at a word boundary; or require it to be preceded by
+non-word-or-string-start via a lookbehind. Recommendation: the first, `\b` before the group,
+which is the direct fix and changes nothing else the span matches. Scopes:
+`SafetyValidator.IntroducedIdentifierSpan`. Evidence:
+`Ssn_WordReferenceInsideALongerWord_DoesNotExemptTheFollowingNumber`, written failing against
+the pattern before the fix and passing after. Assumption: none; this is the same check D40
+already made unconditional.
+
+**D50. The disclosure's exempt span crossed a clause it did not own (2026-09-09).** Question:
+the same review found two ways `ExemptSpans`' disclosure alternative,
+`(?:do|does) not discriminate[^.!?]*`, reads past the disclosure sentence it exists to exempt.
+First, greedy `[^.!?]*` does not stop at a comma, so
+`"We do not discriminate, but this community is families only."` has the steering clause erased
+along with the disclosure, and `FairHousingCheck` reports no violation. Second, a report from
+Antigravity (Gemini 3.8 Flash) on the same PR found that `NormalizeForTermMatching` collapses a
+newline to a bare space before `ExemptSpans` runs, so
+`"We do not discriminate\nThis community is families only."` fuses into one sentence with no
+terminator between the disclosure and the steering text, and the same erasure happens with no
+comma involved. Both defeat FairHousing, the other unconditional gate D40 names. Options for the
+first: bound the span's length the way the confirmation-number span is bounded; require it to
+stop before a comma that starts a new clause; or leave it, since the disclosure's own protected-
+class list is comma-separated and a bare-comma stop would flag the disclosure itself. Recommendation:
+stop before a comma immediately followed by a contrastive conjunction (`but`, `yet`, `however`,
+`although`, `though`), which is what introduces a clause the disclosure did not write; an
+ordinary comma inside the term list still passes through untouched. Options for the second:
+teach `ExemptSpans` about newlines directly; or fix the normalizer that erases the boundary
+before `ExemptSpans` ever runs. Recommendation: the second, since the same collapse would defeat
+any future exempt span or term match the same way, not only this one. A newline not already
+preceded by a sentence terminator is now replaced with `". "` rather than `" "`, so the sentence
+boundary a line break represents in a message body survives normalization. Scopes:
+`SafetyValidator.ExemptSpans`, `SafetyTextNormalizer.NormalizeForTermMatching`. Evidence:
+`Validate_DisclosureFollowedByASteeringClauseInTheSameSentence_StillYieldsTheSteeringViolation`
+and `Validate_DisclosureFollowedByASteeringSentenceOnANewLine_StillYieldsTheSteeringViolation`,
+both written failing against the code before the fix and passing after. Assumption: none.
+
+**D51. Redaction did not reach the evaluator's own catch (2026-09-09).** Question: the same
+review found `Evaluator.Score`'s catch attaches the raw exception to `log.LogError` and writes
+`ex.ToDiagnosticString()` into `RecordScore.Unscoreable`, neither of which D46 covers.
+`Score` reads the composed message and the record's own labeled content, the same boundary D46
+named for the composer and the readers, and `LogLineFormatter` appends `Exception.ToString()` in
+full whenever a raw exception is attached, regardless of the message template, so attaching `ex`
+bypasses redaction outright the same way the composer's old call did. Options: leave it, since
+no exception `Score` currently throws is known to carry record or model content; or bring it
+under D46's rule so a future one does not have to be found again. Recommendation: the second,
+consistent with the rest of D46: the exception is never attached to the log entry, and
+`ToRedactedDiagnosticString` supplies both the log parameter and `RecordScore.ScoringError`.
+Scopes: `Evaluator.Score`'s catch. Evidence:
+`Evaluate_ScoringThrows_LogsTheExceptionTypeWithoutAttachingTheRawException`, replacing the test
+that pinned the old, unredacted behavior (`Evaluate_ScoringThrows_LogsErrorWithTheException`),
+written failing against the code before the fix and passing after. Assumption: none.
+
+**D52. The introducer span was computed twice per check (2026-09-09).** Question: the same
+review found `SocialSecurityNumberCheck` and `LongDigitRunCheck` each call
+`IntroducedIdentifierSpan().Replace(text, " ")` independently, and since SocialSecurityNumber is
+unconditional (D40), both run and both strip the same text on any record with `no_pii_leak:
+true`. Recommendation: compute the stripped text once in `Validate` and pass it to both checks,
+the same pattern `FairHousingCheck` already uses for its own `scannable` variable. No behavior
+changed; this is a pure duplication removal. Scopes: `SafetyValidator.Validate`,
+`SocialSecurityNumberCheck`, `LongDigitRunCheck`. Evidence: the existing safety-validator suite
+(78 tests) unchanged and passing after the refactor. Assumption: none.
+
+**D53. `RequiredMembers` duplicated what `ProspectCase`'s constructor already states
+(2026-09-09).** Question: the same review found `JsonlRecordReader.RequiredMembers` hand-spells
+the three D1 members a second time, with nothing tying it to `ProspectCase`'s `[JsonConstructor]`
+parameters, the thing `RespectRequiredConstructorParameters` actually enforces. A future change
+to which members are required could update one and not the other with no test catching the
+drift. Recommendation: derive the array by reflecting on the `[JsonConstructor]`'s parameters and
+running each name through `AgentJsonOptions.Default.PropertyNamingPolicy`, the same policy the
+serializer itself uses, so the two can never disagree. Scopes: `JsonlRecordReader.RequiredMembers`.
+Evidence: the existing reader suite (29 tests) unchanged and passing after the refactor.
+Assumption: none.
+
+**D54. `ComposeOutcome.NoMessage`, reconsidered and kept (2026-09-09).** Question: the same
+review flagged `NoMessage` as an abstraction extracted at its second occurrence rather than its
+third, against this program's own Earned Abstraction rule, and recommended splitting `Failed`
+and `Refused` into two independent records with the two call sites in
+`ValidatingMessageComposer` pattern-matching each explicitly. That change was made, built, and
+then reverted before landing. The two call sites it touches are both places where
+`ComposeOutcome.Refused` cannot occur under any composer this program ships: no inner composer
+refuses its own draft (only the fallback path, after the loop, can), so a real switch or pattern
+match over `Refused` and `Failed` at either site has one arm no test can reach honestly, and
+`SequenceMessageComposer`, the one fake that stands in for an inner composer in tests, says so in
+its own comment. `ComposeAsync` is also async, and this program's coverage gate excludes
+compiler-generated code (`/p:ExcludeByAttribute=CompilerGeneratedAttribute` in `test.ps1`), which
+excludes the state machine an async method compiles to; the gate would not have caught the
+unreachable arm, but writing it anyway is exactly VF's "never write a branch a test cannot
+exercise honestly," done here as reasoning, not tooling. `NoMessage` is not, on reflection, a
+pure DRY convenience someone reached for a call early: reading `Failed` and `Refused` as one case
+is what lets the loop stay written without that branch, which is a second reason for the type
+distinct from the letter of "extract on the third occurrence." Recommendation: no change.
+Scopes: none; `ComposeOutcome.cs` and `ValidatingMessageComposer.cs` are unchanged from D48.
+Assumption: none.
+
+**D55. The final safety validation runs twice on the same text, kept (2026-09-09).** Question:
+the same review found `SafetyValidator.Validate` is called once inside
+`ValidatingMessageComposer`'s compose-validate loop and again, unconditionally, in
+`LeasingMessageAgent`'s step 5, on text that differs only by `SendAt`, which `Validate` never
+reads, and recommended threading the composer's own `SafetyValidationResult` through
+`ComposeOutcome` so step 5 could reuse it instead of recomputing. Recommendation: no change.
+Step 5's own comment already states why: "this is the orchestrator's own gate, not borrowed
+trust in the composer's cooperation." That sentence is D43's design, not an oversight this
+review found; reusing the composer's result would make step 5 trust the composer's own
+validation exactly where the design says it deliberately does not, for every `IMessageComposer`
+that might reach `LeasingMessageAgent` directly in a test or a future caller, not only through
+`ValidatingMessageComposer`. The cost is one extra linear pass over the message text per record,
+not an unbounded or quadratic one. Scopes: none. Assumption: none.
+
+**D56. `RequiredStateMap.For`'s hardcoded switch, kept (2026-09-09).** Question: the same review
+found `RequiredStateMap.For` maps three state names to three positional verdict parameters via a
+switch rather than a declared table, and recommended a table so a new required state would be
+one row instead of a new parameter and two call-site edits. Recommendation: no change. D42
+already closed the required-state set at three names and argued at length against inventing
+verdict logic for a name like `renewal_offer_loaded` without the evidence D9 and A19 require;
+each of the three states is also computed differently at its two call sites (one path passes
+real computed verdicts, the other stubs two of three as `NotEvaluated`), so a table would still
+need per-call-site wiring and would not remove the touch points the finding is concerned about.
+Scopes: none. Assumption: none.

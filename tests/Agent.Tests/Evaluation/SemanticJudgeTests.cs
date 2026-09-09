@@ -91,7 +91,31 @@ public class SemanticJudgeTests
 
         Assert.Equal(CheckResult.NotMeasured, judged.RecordScores[0].ActionSemantic);
         Assert.Equal(CheckResult.NotMeasured, judged.RecordScores[0].BodySemantic);
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
+
+        // Step 68: the exception is named, not attached. This catch is deliberately broad, so
+        // the type reaching it is unknown, and the one it catches most often carries the
+        // vendor's raw error response body as its Message.
+        CapturingLogger<SemanticJudge>.LogEntry entry = Assert.Single(capturingLogger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Contains("HttpRequestException", entry.Message);
+        Assert.DoesNotContain("503", entry.Message);
+    }
+
+    [Fact]
+    public async Task JudgeAsync_ModelReturnsMalformedJson_LogsWarningWithNoFragmentOfTheResponse()
+    {
+        ScoredRun run = Run();
+        var capturingLogger = new CapturingLogger<SemanticJudge>();
+        var judge = new SemanticJudge(new FakeCompletionClient("""{"judge_wrote_taylor_quinn":Taylor}"""), capturingLogger);
+
+        await judge.JudgeAsync(ScorecardFor(run), [run]);
+
+        CapturingLogger<SemanticJudge>.LogEntry entry = Assert.Single(capturingLogger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Contains("JsonException", entry.Message);
+        Assert.DoesNotContain("judge_wrote_taylor_quinn", entry.Message);
     }
 
     [Fact]

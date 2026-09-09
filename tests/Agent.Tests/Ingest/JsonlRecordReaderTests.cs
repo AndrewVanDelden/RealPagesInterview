@@ -439,7 +439,33 @@ public class JsonlRecordReaderTests
             Reader.ReadAll(reader);
         }
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
+        // Step 68: the exception is named, not attached. The 'expected' block is the one part
+        // of a record that holds a written message, and an attached exception renders its
+        // whole ToString() - a parser message and a stack trace - onto the line.
+        CapturingLogger<JsonlRecordReaderTests>.LogEntry entry = Assert.Single(capturingLogger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Contains("JsonException", entry.Message);
+    }
+
+    // Step 68: the failure row names the line and the position in it, never the parser's own
+    // message. That message quotes the offending character back, and its path names the
+    // member being read - which, for a member the record types do not declare, is a name the
+    // record itself authored.
+    [Fact]
+    public void ReadAll_MalformedUndeclaredMember_FailureNamesTheLineAndNoTextTheRecordWrote()
+    {
+        const string undeclaredMember = "note_from_taylor_quinn";
+        string line = MinimalValidLine[..^1] + ",\"" + undeclaredMember + "\":Taylor}";
+        using TextReader reader = new StringReader(line + Environment.NewLine);
+
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Line 1 failed to parse", result.Error);
+        Assert.Contains("JsonException", result.Error);
+        Assert.DoesNotContain(undeclaredMember, result.Error);
+        Assert.DoesNotContain("invalid start of a value", result.Error);
     }
 
     [Fact]

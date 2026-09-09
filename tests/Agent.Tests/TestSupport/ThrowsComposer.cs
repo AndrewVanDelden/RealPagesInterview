@@ -1,4 +1,3 @@
-using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
 
@@ -9,7 +8,7 @@ namespace Agent.Tests.TestSupport;
 // scenario, so LeasingMessageAgent's exception-logging filter can be tested against both.
 internal sealed class ThrowsComposer : IMessageComposer
 {
-    public Task<Result<ComposedMessage>> ComposeAsync(
+    public Task<ComposeOutcome> ComposeAsync(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,

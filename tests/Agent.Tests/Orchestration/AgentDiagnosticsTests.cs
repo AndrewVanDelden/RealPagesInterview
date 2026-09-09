@@ -3,18 +3,22 @@ using Agent.Common;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Orchestration;
+using Agent.Safety;
 using Xunit;
 
 namespace Agent.Tests.Orchestration;
 
 public class AgentDiagnosticsTests
 {
+    private static readonly IReadOnlyDictionary<string, RequiredStateVerdict> NoStates =
+        new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal);
+
     // D3: the suppression reason is spelled in snake_case on the wire, the same spelling
     // next_action.reason uses, so a diagnostics row and an output row read alike.
     [Fact]
     public void Serializes_SuppressionReason_InSnakeCase()
     {
-        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+        var diagnostics = new AgentDiagnostics(NoStates, 0, SuppressionReason: SuppressionReason.NoContactConsent);
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -24,11 +28,77 @@ public class AgentDiagnosticsTests
     [Fact]
     public void Serializes_DefaultSuppressionReason_AsNone()
     {
-        var diagnostics = new AgentDiagnostics(true, true, true, 0);
+        var diagnostics = new AgentDiagnostics(NoStates, 0);
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
         Assert.Contains("\"suppression_reason\":\"none\"", json);
+    }
+
+    // D42: the answer to assertions.required_states. The keys are the record's own strings and
+    // are written verbatim - AgentJsonOptions sets PropertyNamingPolicy and not
+    // DictionaryKeyPolicy - so an answer can be traced back to the assertion that asked for it.
+    // The verdicts are spelled the way every other enum on the wire is (D3).
+    [Fact]
+    public void Serializes_RequiredStates_WithVerbatimKeysAndSnakeCaseVerdicts()
+    {
+        var diagnostics = new AgentDiagnostics(
+            new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal)
+            {
+                ["consent_verified"] = RequiredStateVerdict.Earned,
+                ["fair_housing_check_passed"] = RequiredStateVerdict.NotEvaluated,
+                ["brand_style_applied"] = RequiredStateVerdict.NotEarned,
+                ["renewal_offer_loaded"] = RequiredStateVerdict.NoCheckDefined,
+            },
+            0);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains(
+            "\"required_states\":{\"consent_verified\":\"earned\",\"fair_housing_check_passed\":\"not_evaluated\","
+            + "\"brand_style_applied\":\"not_earned\",\"renewal_offer_loaded\":\"no_check_defined\"}",
+            json);
+    }
+
+    // A record that asserts no state asked no question, so the answer is an empty object, not
+    // a null. Null would be indistinguishable from a run that never built the map.
+    [Fact]
+    public void Serializes_NoRequiredStates_AsAnEmptyObject()
+    {
+        var diagnostics = new AgentDiagnostics(NoStates, 0);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"required_states\":{}", json);
+    }
+
+    // D42: a diagnostic that says only "false" tells a reader nothing, so the row names the
+    // rules that failed. The rule names are spelled in snake_case the way every other enum on
+    // the wire is; the converter is on BrandStyleRule itself because these reach the wire as
+    // list elements.
+    [Fact]
+    public void Serializes_BrandStyleFailures_InSnakeCase()
+    {
+        var diagnostics = new AgentDiagnostics(
+            NoStates,
+            0,
+            [BrandStyleRule.OptOutOnLastLine, BrandStyleRule.SubjectMatchesChannel]);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"brand_style_failures\":[\"opt_out_on_last_line\",\"subject_matches_channel\"]", json);
+    }
+
+    // Empty and null are different facts: an empty list is a message that was checked and
+    // broke no rule, null is a record with no message to check at all.
+    [Fact]
+    public void Serializes_NoBrandStyleFailures_AsAnEmptyListAndAnUncheckedRecordAsNull()
+    {
+        string checkedAndClean = JsonSerializer.Serialize(new AgentDiagnostics(NoStates, 0, []), AgentJsonOptions.Default);
+        string neverChecked = JsonSerializer.Serialize(new AgentDiagnostics(NoStates, 0), AgentJsonOptions.Default);
+
+        Assert.Contains("\"brand_style_failures\":[]", checkedAndClean);
+        Assert.Contains("\"brand_style_failures\":null", neverChecked);
     }
 
     // D18 and the Phase 3 check: the diagnostics say which horizon branch the record took,
@@ -38,12 +108,9 @@ public class AgentDiagnosticsTests
     public void Serializes_ActionPlan_WithSnakeCaseBranchAndSource()
     {
         var diagnostics = new AgentDiagnostics(
-            true,
-            true,
-            true,
+            NoStates,
             0,
-            SuppressionReason.None,
-            new ActionPlanNotes(HorizonBranch.Long, 68, ActionSource.GenericRowNoBranch));
+            ActionPlan: new ActionPlanNotes(HorizonBranch.Long, 68, ActionSource.GenericRowNoBranch));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -55,7 +122,7 @@ public class AgentDiagnosticsTests
     [Fact]
     public void Serializes_AbsentActionPlan_AsNull()
     {
-        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+        var diagnostics = new AgentDiagnostics(NoStates, 0, SuppressionReason: SuppressionReason.NoContactConsent);
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -69,13 +136,10 @@ public class AgentDiagnosticsTests
     public void Serializes_Schedule_WithSnakeCaseFloorAndSlot()
     {
         var diagnostics = new AgentDiagnostics(
-            true,
-            true,
-            true,
+            NoStates,
             0,
-            SuppressionReason.None,
-            new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
-            new ScheduleNotes(ScheduleFloor.LastInteraction, "America/Chicago", SlotResolution.ShiftedPastGap));
+            ActionPlan: new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
+            Schedule: new ScheduleNotes(ScheduleFloor.LastInteraction, "America/Chicago", SlotResolution.ShiftedPastGap));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -87,7 +151,7 @@ public class AgentDiagnosticsTests
     [Fact]
     public void Serializes_AbsentSchedule_AsNull()
     {
-        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+        var diagnostics = new AgentDiagnostics(NoStates, 0, SuppressionReason: SuppressionReason.NoContactConsent);
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -101,14 +165,11 @@ public class AgentDiagnosticsTests
     public void Serializes_Composition_WithComposerAndAttempts()
     {
         var diagnostics = new AgentDiagnostics(
-            true,
-            true,
-            true,
+            NoStates,
             0,
-            SuppressionReason.None,
-            new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
-            new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact),
-            new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true));
+            ActionPlan: new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
+            Schedule: new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact),
+            Composition: new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
@@ -119,7 +180,7 @@ public class AgentDiagnosticsTests
     [Fact]
     public void Serializes_AbsentComposition_AsNull()
     {
-        var diagnostics = new AgentDiagnostics(true, null, false, 0, SuppressionReason.NoContactConsent);
+        var diagnostics = new AgentDiagnostics(NoStates, 0, SuppressionReason: SuppressionReason.NoContactConsent);
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
