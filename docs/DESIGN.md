@@ -250,6 +250,18 @@ eligibility are never free text; the validator runs on every exit.
 
 Each sprint cites decisions in the log; one PR per sprint against `dev`.
 
+Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the top of
+[DECISION_LOG.md](DECISION_LOG.md); this is what has been passed and what passed it.
+
+| Phase | Its check | Passed |
+|---|---|---|
+| 0 Intake | the design doc's assumptions log has an evidence column with no blanks | 2026-09-07, after restarting at step 1 the same day (D12) |
+| 1 Environment and agent setup | a fresh clone builds and runs the empty test suite from one documented command | 2026-09-07, CI green on PR #16, with `dev` requiring the `test` check (D8) |
+| 2 Scaffold and verification harness | the evaluator scores the golden expected outputs at 100 percent and a deliberately wrong output at less | 2026-09-08 in Sprint 3, both proofs in the suite (`ScorerProofTests`, D13) |
+| 3 Deterministic core | the deterministic core passes the synthetic set with every fuzzy component stubbed, and the diagnostics explain every decision | 2026-09-08 in Sprint 5, with the rule for what earns a diagnostics object stated (D18, D22, D23) |
+| 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
+| 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | not passed |
+
 | Sprint | Implements | Proof |
 |---|---|---|
 | 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4, D8 to D12) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |

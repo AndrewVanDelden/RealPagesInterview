@@ -1,5 +1,21 @@
 # Decision log
 
+## Current phase
+
+Phase 5 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Safety, security, and compliance.
+Check: every validator has a passing test, a failing test, and a false-positive test. Status:
+not passed; the safety validator has passing and failing tests and no false-positive tests, the
+required states of D3 are still claimed rather than earned, and `brand_style_applied` is still
+hardcoded true (playbook step 66).
+Next step: 61 to 71, Sprint 7, Safety and states (the Sprint 7 row of [DESIGN.md](DESIGN.md)
+section 9, D3).
+Open decisions: one, the D31 open question on how a real model-versus-template comparison could
+be run at all, which needs the requester.
+
+Replace these four lines at the end of every sprint. Never append to them. A phase that passed,
+the proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
+below and in DESIGN.md section 9, which is where the phase record lives.
+
 One paragraph per decision, in the recording form of `~/.agent-rules/ARCHITECTURE.md`: the
 question, the options, the recommendation, what it scopes, the evidence, the numbered assumption
 it depends on (assumptions are the table in [DESIGN.md](DESIGN.md) section 7). A task that
