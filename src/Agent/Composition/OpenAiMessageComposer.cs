@@ -80,8 +80,14 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         }
         catch (Exception ex) when (ex is ClientResultException or TimeoutException or HttpRequestException or InvalidOperationException or JsonException)
         {
-            log.LogWarning(ex, "Completion request failed.");
-            return Result<ComposedMessage>.Failure($"Completion request failed: {ex.ToDiagnosticString()}");
+            // Step 68: the exception is not attached to the entry. LogLineFormatter appends
+            // the whole Exception.ToString() after the message, and a ClientResultException's
+            // own Message is the vendor's raw error response body. The same redacted text is
+            // what travels on as the failure, because ValidatingMessageComposer and
+            // LeasingMessageAgent both log Result.Error downstream.
+            string failure = ex.ToRedactedDiagnosticString();
+            log.LogWarning("Completion request failed: {CompletionFailure}.", failure);
+            return Result<ComposedMessage>.Failure($"Completion request failed: {failure}");
         }
 
         ComposedMessagePayload? payload;
@@ -91,8 +97,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         }
         catch (JsonException ex)
         {
-            log.LogWarning(ex, "Model response was not valid JSON.");
-            return Result<ComposedMessage>.Failure($"Model response was not valid JSON: {ex.ToDiagnosticString()}");
+            // The deserializer's message names the offending character of the model's own
+            // output, and its path names the member the model wrote; the position alone
+            // locates the failure without either (step 68).
+            string failure = ex.ToRedactedDiagnosticString();
+            log.LogWarning("Model response was not valid JSON: {ResponseFailure}.", failure);
+            return Result<ComposedMessage>.Failure($"Model response was not valid JSON: {failure}");
         }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.Body) || string.IsNullOrWhiteSpace(payload.CtaType))
@@ -106,10 +116,15 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         // client that doesn't enforce the schema as strictly. No check at all when there
         // is no required CTA type: payload.CtaType being non-empty (verified above) is
         // the only requirement in that case.
+        // Neither value is named in the failure. payload.CtaType is text the model wrote, and
+        // requiredCtaType is the record's own primary_cta wherever the catalog does not name
+        // it (CallToActionCatalog.Resolve passes an unrecognized one through), so both are
+        // free text that this failure is logged with downstream (step 68). The record is
+        // identified by the TaskId on the log scope, and its primary_cta is in the record.
         if (requiredCtaType is not null && !string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
             return Result<ComposedMessage>.Failure(
-                $"Model returned cta_type '{payload.CtaType}' but '{requiredCtaType}' was required.");
+                "Model returned a cta_type other than the one the record's primary_cta required.");
         }
 
         // S2 and A21: the link is a fact, so code builds it from the property slug and the

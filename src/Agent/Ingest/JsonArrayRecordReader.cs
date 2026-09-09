@@ -23,7 +23,11 @@ public sealed class JsonArrayRecordReader<T>
         }
         catch (JsonException ex)
         {
-            return Result<IReadOnlyList<T>>.Failure($"The file is not a JSON array of records: {ex.Message}");
+            // Step 68, the same rule the JSONL reader follows: the replay file holds the
+            // message bodies a run produced, so the failure carries the position in the file
+            // and not the parser's message or path.
+            return Result<IReadOnlyList<T>>.Failure(
+                $"The file is not a JSON array of records: {ex.ToRedactedDiagnosticString()}");
         }
     }
 }

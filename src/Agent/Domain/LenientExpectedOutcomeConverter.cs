@@ -24,8 +24,14 @@ public sealed class LenientExpectedOutcomeConverter : JsonConverter<ExpectedOutc
         }
         catch (JsonException ex)
         {
+            // Step 68: the exception is not attached to the entry. The 'expected' block is
+            // the one part of a record that holds a written message - the label's subject
+            // and body - and LogLineFormatter appends the whole Exception.ToString(), a
+            // parser message and a stack trace, after every entry that carries one.
             AgentLog.CreateLogger(nameof(LenientExpectedOutcomeConverter))
-                .LogWarning(ex, "Could not parse the 'expected' field; this record will be treated as unlabeled.");
+                .LogWarning(
+                    "Could not parse the 'expected' field ({ParseFailure}); this record will be treated as unlabeled.",
+                    ex.ToRedactedDiagnosticString());
             return null;
         }
     }

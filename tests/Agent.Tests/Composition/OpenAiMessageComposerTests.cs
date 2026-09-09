@@ -103,7 +103,8 @@ public class OpenAiMessageComposerTests
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("503 Service Unavailable", result.Error);
+        Assert.Contains("HttpRequestException", result.Error);
+        Assert.DoesNotContain("503 Service Unavailable", result.Error);
     }
 
     [Fact]
@@ -115,7 +116,12 @@ public class OpenAiMessageComposerTests
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("no completion content", result.Error);
+        Assert.Contains("InvalidOperationException", result.Error);
+
+        // Step 68: the failure names the category, never the message. An Exception variable
+        // cannot promise who wrote its Message, and this failure is logged twice downstream
+        // (ValidatingMessageComposer, LeasingMessageAgent).
+        Assert.DoesNotContain("no completion content", result.Error);
     }
 
     // OpenAiCompletionClient.BuildResponseFormat parses the response schema with
@@ -131,7 +137,8 @@ public class OpenAiMessageComposerTests
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("Invalid JSON schema.", result.Error);
+        Assert.Contains("JsonException", result.Error);
+        Assert.DoesNotContain("Invalid JSON schema.", result.Error);
     }
 
     [Fact]
@@ -318,7 +325,12 @@ public class OpenAiMessageComposerTests
         Result<ComposedMessage> result = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("call_now", result.Error);
+        Assert.Contains("cta_type", result.Error);
+
+        // Step 68: neither value is named. call_now is text the model wrote, and the required
+        // type is the record's own primary_cta wherever the catalog does not name it
+        // (CallToActionCatalog.Resolve passes an unrecognized one through unchanged).
+        Assert.DoesNotContain("call_now", result.Error);
     }
 
     // Structured Outputs' constrained decoding can only enforce a value (not just a shape)
@@ -373,8 +385,12 @@ public class OpenAiMessageComposerTests
         Assert.Equal("anything_reasonable", result.Value!.Message.Cta!.Type);
     }
 
+    // Step 68: the exception is named, not attached. Attaching it is what put the vendor's
+    // raw error response body into the rendered line, because LogLineFormatter appends the
+    // whole Exception.ToString() after the message - see
+    // Agent.Cli.Tests.Logging.RedactedLoggingTests, which asserts against that rendered line.
     [Fact]
-    public async Task ComposeAsync_CompletionClientThrows_LogsWarningWithTheException()
+    public async Task ComposeAsync_CompletionClientThrows_LogsWarningWithNoExceptionAttached()
     {
         var capturingLogger = new CapturingLogger<OpenAiMessageComposer>();
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new HttpRequestException("503 Service Unavailable")), capturingLogger);
@@ -382,11 +398,15 @@ public class OpenAiMessageComposerTests
 
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is HttpRequestException);
+        CapturingLogger<OpenAiMessageComposer>.LogEntry entry = Assert.Single(capturingLogger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Contains("HttpRequestException", entry.Message);
+        Assert.DoesNotContain("503 Service Unavailable", entry.Message);
     }
 
     [Fact]
-    public async Task ComposeAsync_ModelResponseNotValidJson_LogsWarningWithTheException()
+    public async Task ComposeAsync_ModelResponseNotValidJson_LogsWarningWithNoExceptionAttached()
     {
         var capturingLogger = new CapturingLogger<OpenAiMessageComposer>();
         var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json"), capturingLogger);
@@ -394,7 +414,11 @@ public class OpenAiMessageComposerTests
 
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is JsonException);
+        CapturingLogger<OpenAiMessageComposer>.LogEntry entry = Assert.Single(capturingLogger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Null(entry.Exception);
+        Assert.Contains("JsonException", entry.Message);
+        Assert.DoesNotContain("invalid start of a value", entry.Message);
     }
 
     // Playbook step 55 and D5: every field that changes what the message should say reaches

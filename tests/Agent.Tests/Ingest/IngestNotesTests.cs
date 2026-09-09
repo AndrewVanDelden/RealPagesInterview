@@ -107,14 +107,19 @@ public class IngestNotesTests
         Assert.Contains("assertions.constraints.primary_cta", notes.DefaultedFields);
     }
 
+    // Playbook step 68: CliRunner logs DefaultedFields on every record of every run, so the
+    // list says that the record's timezone was not recognized without quoting the value the
+    // record wrote. Every other entry is one of this program's own schema paths, which is
+    // what makes the whole list safe to log.
     [Fact]
-    public void Describe_UnrecognizedTimezone_NamesItAsDefaulted()
+    public void Describe_UnrecognizedTimezone_NamesItAsDefaultedWithoutTheRecordsOwnValue()
     {
         IngestNotes notes = IngestNotes.Describe(Parse(FullLine.Replace("America/Chicago", "Not/AZone")));
 
         string entry = Assert.Single(notes.DefaultedFields);
         Assert.StartsWith("input.timezone", entry);
-        Assert.Contains("Not/AZone", entry);
+        Assert.Contains("unrecognized", entry);
+        Assert.DoesNotContain("Not/AZone", entry);
     }
 
     [Fact]

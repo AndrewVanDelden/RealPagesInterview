@@ -21,4 +21,13 @@
     <ProjectReference Include="..\..\src\Agent.Cli\Agent.Cli.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- One source file, two test assemblies. Driving the real SDK into a
+         ClientResultException that carries a vendor error body needs the same scripted
+         transport Agent.Tests already has, and the rendered-log tests here are the only
+         place a log line's final text can be asserted (LogLineFormatter is internal to
+         Agent.Cli). Linked rather than copied so the two cannot drift apart. -->
+    <Compile Include="..\Agent.Tests\TestSupport\FakeHttpMessageHandler.cs" Link="TestSupport\FakeHttpMessageHandler.cs" />
+  </ItemGroup>
+
 </Project>

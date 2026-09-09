@@ -198,13 +198,17 @@ public sealed class CliRunner(
 
             using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
-            // D1: one line per record naming every defaulted decision input and every
-            // unknown member, before any decision reads them.
+            // D1: one line per record naming every defaulted decision input and how many
+            // members the record types do not declare, before any decision reads them.
+            // The defaulted paths are this program's own schema names and are safe to log;
+            // an unknown member's name is not (step 68), because a record chose it. The
+            // count is the fact an operator reads this line for, and --diagnostics, which
+            // is a file a person opens rather than a log stream, still carries every name.
             IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
             log.LogInformation(
-                "Ingest: defaulted=[{DefaultedFields}] unknown=[{UnknownMembers}].",
+                "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
                 string.Join(", ", ingestNotes.DefaultedFields),
-                string.Join(", ", ingestNotes.UnknownMembers));
+                ingestNotes.UnknownMembers.Count);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             AgentRunResult result;

@@ -94,7 +94,14 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
         {
             // A judge that could not answer measured nothing. It never fails a record: a
             // failed call is not evidence about the message.
-            log.LogWarning(ex, "Judge call failed for '{JudgedTaskId}'; both semantic checks are not measured.", run.ProspectCase.TaskId);
+            // The exception is not attached to the entry and its message is not reported
+            // (step 68): this catch is deliberately broad, so the type reaching it is
+            // unknown, and the one it catches most often - ClientResultException - carries
+            // the vendor's raw error response body as its Message.
+            log.LogWarning(
+                "Judge call failed for '{JudgedTaskId}' ({JudgeFailure}); both semantic checks are not measured.",
+                run.ProspectCase.TaskId,
+                ex.ToRedactedDiagnosticString());
             return (CheckResult.NotMeasured, CheckResult.NotMeasured);
         }
 
@@ -105,7 +112,12 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
         }
         catch (JsonException ex)
         {
-            log.LogWarning(ex, "Judge response for '{JudgedTaskId}' was not valid JSON.", run.ProspectCase.TaskId);
+            // The deserializer's message and path both quote the judge model's own output
+            // back (step 68); the position locates the failure without them.
+            log.LogWarning(
+                "Judge response for '{JudgedTaskId}' was not valid JSON ({ResponseFailure}).",
+                run.ProspectCase.TaskId,
+                ex.ToRedactedDiagnosticString());
             return (CheckResult.NotMeasured, CheckResult.NotMeasured);
         }
 
