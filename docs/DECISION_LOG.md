@@ -691,3 +691,200 @@ tokens against roughly 1024, and the vendor's usage page reports a 0 percent hit
 project. The system prompt being identical on every record is what makes it look promising, and
 the length is what rules it out. If prompts grow past the threshold, this becomes a real lever
 and the numbers should be checked again.
+
+## Sprint 7 decisions, safety and states (2026-09-09)
+
+Playbook steps 61 to 71. The latency decisions above (D32 to D37) keep their numbers and their
+scheduling call is still not taken; these are the decisions Sprint 7 actually implements.
+
+**D38. One result per check, never one boolean (2026-09-09).** Question: step 61 says every
+constraint the domain imposes becomes its own validator with its own result, never one boolean.
+`SafetyValidationResult` is a flat `IReadOnlyList<string>` plus `FairHousingCheckPassed`, and
+that flag is computed as `violations.Count == 0`. Options: keep the flat list and let each call
+site re-derive what failed by reading the strings; or return one named result per check.
+Recommendation: one named result per check. The current derivation is not merely coarse, it is
+wrong, and nothing in the suite catches it: a message that merely omits its opt-out line reports
+`fair_housing_check_passed: false`, so the diagnostics record a fair-housing failure that never
+happened, and A14 says a state is earned by the step that proves it. A second defect the flat
+list hides: `FindWholeWord` is `FirstOrDefault`, so a message matching six protected-class terms
+emits exactly one violation, and `safety_violations_max` is scored against that count. Scopes:
+`SafetyValidationResult`, `SafetyValidator`, `AgentDiagnostics.FairHousingCheckPassed`,
+`ValidatingMessageComposer`'s rejection feedback, the review queue of D43, and the evaluator's
+Safety check, which reads only the count and so changes verdict on any message with more than
+one match. Shape: four checks, `SafetyCheck.OptOutInstructions`, `SafetyCheck.SocialSecurityNumber`,
+`SafetyCheck.LongDigitRun` and `SafetyCheck.FairHousing`, each carrying a verdict of `Passed`,
+`Failed` or `NotApplicable` and its own detail lines; `NotApplicable` is a check the record did
+not require, which is not a pass, the same rule A15 states for the scorer. The names are the
+checks themselves rather than one PII check, because D40 gives two of them different answers to
+the question of whether a record may switch them off. Evidence: the probe run recorded under
+D41. Assumptions: A14, A15.
+
+**D39. Which checks gate and which only report (2026-09-09).** Question: step 62 asks, for each
+validator, whether it is a hard gate, a soft flag for review, or a diagnostic, with the reason
+written down. Options: classify per check in code, with a disposition field on the result; or
+classify in this paragraph and let the structure carry it. Recommendation: the second. All four
+safety checks of D38 are hard gates: a failure suppresses the message, which is today's
+behavior and stays it, because each maps to legal exposure rather than to taste. Fair housing is
+the Fair Housing Act; the opt-out instruction is the revocation-of-consent requirement that
+makes a message lawful to send; both identifier checks are a data leak into a channel the
+recipient does not control. Brand style (D42) is the one check that is a diagnostic and never
+suppresses, because an off-voice message is off-voice, not unlawful. Because every safety check
+is a gate and the one non-gate is a different component, the result carries no disposition
+field: a field with one inhabited value is speculative code (LC), and the classification lives
+here where step 62 asks for it. Scopes: `SafetyValidator`, `BrandStyleValidator`,
+`LeasingMessageAgent`'s suppression branch. Evidence: step 62; the four checks of D38.
+
+**D40. Which checks a record cannot switch off (2026-09-09).** Question: step 65 says never let
+a per-record flag disable a check that the law or the domain does not allow to be disabled, and
+document which checks are unconditional and why. Today `no_pii_leak: false`, or its absence
+under D1, turns off both identifier patterns, so a message carrying a literal Social Security
+number validates clean. Options: leave both gated and write down why that is acceptable; make
+both unconditional; or split them. Recommendation: split them, confirmed by the requester on
+2026-09-09. `SocialSecurityNumber` becomes unconditional: no leasing message legitimately
+carries one, so there is no case the flag would be protecting, and a record that says
+`no_pii_leak: false` is saying it does not need the heuristic, not that it consents to a leak.
+`LongDigitRun` stays gated, because it is a proxy that also matches a confirmation number or a
+tour reference (D41, case 26), and a record with a legitimate long identifier needs a way to say
+so. `FairHousing` was already unconditional and stays it, for the reason already on
+`SafetyValidator`: fair housing law has no per-case opt-out. `OptOutInstructions` stays gated on
+`include_opt_out_instructions`, because transactional exemptions are real and the record is the
+only thing that knows whether this message is one. Scopes: `SafetyValidator`,
+`CaseConstraintsExtensions`. This reverses one recorded behavior:
+`Validate_PiiCheckNotRequired_LeakedIdentifierIsNotAViolation` asserted that a Social Security
+number passes when the flag is off, and that test is inverted here deliberately rather than
+deleted, so the contract change is visible in the diff. Assumption: A1 is not involved; this
+depends on A17 only for what an absent constraint means. Evidence: step 65; D1.
+
+**D41. What the proxy normalizes and what it exempts (2026-09-09).** Question: step 63 says
+keyword and pattern validators are proxies, say so in the code, add an allow-list for the
+legitimate uses the pattern would catch, and test both directions. Options: leave the patterns
+as they are and widen the scope-out in CODE_REVIEW.md; or fix the cases a run proves are wrong
+and scope out the rest with the run as evidence. Recommendation: the second, on a probe that
+executed all 37 candidate inputs through the exact patterns as written, on the same .NET regex
+engine. What it found, and what is fixed here:
+
+- The Equal Housing Opportunity disclosure, the sentence a compliant leasing message is
+  expected to carry, matches six terms and is suppressed. That is the proxy blocking the
+  compliant message and passing nothing in its place, and it is the single most important
+  finding of the run. Fixed by an exempt-span list.
+- `families-only` with a hyphen, and `families  only` with two spaces, both miss. Neither needs
+  an adversary: a model composer writes both as ordinary prose. Fixed by normalization.
+- A zero-width space inside a term makes it miss. Fixed by stripping format characters, which
+  arrive by copy and paste, not only by attack.
+- `STOP` inside a URL path satisfies the opt-out check, so a message with no opt-out instruction
+  a recipient can act on certifies as having one, and because `OptOutInstructions` is the one
+  definition the scorer uses too (D13 b), the false pass propagates into the scorecard. Fixed by
+  removing URL spans before the keyword scan.
+- A 14-digit confirmation number matches the long-digit run. Fixed by an exempt span, not by
+  loosening the pattern.
+- A Social Security number written with spaces, and one written bare as nine digits, both miss.
+  Fixed by widening that one pattern.
+
+Normalization is applied to a copy of the text used for term matching only: strip U+200B,
+U+200C, U+200D and U+FEFF; fold the four unicode hyphens the way `OptOutInstructions` already
+folds them; then replace hyphens with spaces and collapse whitespace runs. The allow-list is a
+span list, never a term list, so `disability` and `color` stay live terms that still fire
+elsewhere in the same message; both directions are tested per row. Deliberately not fixed, with
+the run as the evidence rather than an opinion: semantic paraphrase, which is the scope-out
+already recorded in CODE_REVIEW.md and needs understanding rather than a pattern; letter spacing
+and interior punctuation, because matching across arbitrary separators would make `color` fire
+on unrelated letter sequences and trades these misses for a larger false-positive class; and
+Cyrillic homoglyphs, because the text under validation is written by this system's own composer,
+not by an adversary who controls the bytes. Scopes: `SafetyValidator`, `OptOutInstructions`, a
+new normalization helper, CODE_REVIEW.md. Evidence: the probe run of 2026-09-09, 37 inputs,
+executed rather than reasoned about. Assumption: A18 for the threat model of the last item.
+
+**D42. What earns a state, and what brand style is (2026-09-09).** Question: step 66 says earn
+every state the output claims, nothing hardcoded true, and if a claimed state has no check
+behind it, delete the claim or build the check. `brand_style_applied` is the literal `true` in
+`LeasingMessageAgent`, and `assertions.required_states` is parsed and then read by nothing at
+all, so a record asserting a state this program has never heard of is answered with silence.
+Options: delete the claim, since no sample proves what brand style is; or build a check from
+what the two samples do prove and record the rest as not earned. Recommendation: build the
+check, because `required_states` names `brand_style_applied` in both samples and deleting a
+state the input asks for answers the record by ignoring it. Two parts:
+
+First, the states map. Every name in the record's own `required_states` gets a verdict in the
+diagnostics: `consent_verified` from the consent gate having run, `fair_housing_check_passed`
+from the `FairHousing` check of D38 alone rather than from every check (which is the defect D38
+names), `brand_style_applied` from the brand-style validator below, and any other name recorded
+as not earned, by name, which is A14's rule made real. The hold-out's `renewal_offer_loaded` is
+exactly such a name, and it stays not earned: inventing a rule for it from the record that
+carries `renewal_offer_id` would be fitting a rule to the hold-out, which D9 and A19 forbid. Not
+earned is the honest answer and it is the answer the assumption already committed to.
+
+Second, what brand style is. Three rules, each satisfied by both sample bodies and by the
+template composer on sms and email in both language sets: the opt-out instruction sits on the
+body's last non-blank line (sample 1 `Reply STOP to opt out.`, sample 2 `To opt out of emails,
+click here or reply STOP.`), the body carries at most one exclamation mark (sample 1 one, sample
+2 none), and a subject is present exactly when the channel is email (sample 1 sms null, sample
+2 email 59 characters). The keyword half of the first rule calls `OptOutInstructions`, so the
+two definitions cannot drift; what it adds over the existing opt-out check is position, which
+`Evaluator.OptOut` and `SafetyValidator` do not assert.
+
+What was considered and rejected, with the reason, because each is a rule someone will propose
+again. A cap on sms length fails sample 1 outright at 166 characters. A sentence count is 5 and
+3, so any interval containing both is chosen rather than observed. "Exactly one call to action"
+has no text-level definition both samples satisfy: both carry two imperative asks for one
+`cta.type`. "The body carries the first name" and "the message carries an opt-out" are
+`Evaluator`'s personalization and opt-out checks restated, and a brand rule that restates an
+existing check earns nothing. A second-person pronoun rule passes both samples and fails the
+Spanish template output, which has no `you` token, so it is an English rule wearing a general
+name. Most instructive: "no ALL-CAPS word other than STOP" passes both samples and is a real
+brand property, and it is rejected because the template composer fails it on sample 1's own
+record, emitting `TX` from the record's `city_interest` of "Richardson, TX"; flagging a state
+abbreviation the record itself supplied is a false positive, not a finding, and the two
+formulations that would exclude it fit the samples equally, which makes it an open question
+rather than a rule (VF).
+
+What this check does and does not buy, stated rather than left to be discovered: all three rules
+pass the template composer by construction, so `brand_style_applied` reads true on every record
+of every documented run and no tally moves. It is not therefore the hardcoded `true` it
+replaces: it is computed from the message, a test proves each rule can fail, and the composer it
+has teeth against is the model path, whose subject, punctuation and closing line are the model's
+to get wrong. This is the same disclosure D13 a makes about personalization, and it belongs
+beside it rather than inside a claim that the state is now proven. D39 classifies it: it is a
+diagnostic and never suppresses, because an off-voice message is off-voice and not unlawful.
+Scopes: a new `BrandStyleValidator`, `AgentDiagnostics`, `LeasingMessageAgent`, CODE_REVIEW.md.
+Evidence: the two sample bodies measured character by character on 2026-09-09, and the template
+composer's own output for both channels and both language sets. Assumptions: A12, A14.
+
+**D43. Where a suppressed draft goes (2026-09-09).** Question: step 67 says that on a final
+validation failure the program emits a review-queue record rather than silently dropping output,
+because suppression is a business decision and has to be surfaced. Today a safety suppression
+writes the `none` message, sets `suppression_reason`, and discards the draft text entirely, so
+no human can ever see what was rejected or why; and the diagnostics that carry the reason are
+written only when `--diagnostics` is passed. Options: put the draft in the diagnostics file; or
+give the queue its own output. Recommendation: its own output, `--review-queue <path>`, one row
+per record suppressed by the safety gate, carrying the task id, the channel, every violation by
+check, and the rejected draft. The diagnostics file is a full per-record dump of how every
+decision was reached and is read when debugging a run; the review queue is a work list, it is
+empty on a healthy run, and its length is the number this sprint's step 71 has to report.
+Consent suppression is not in it: not contactable is the correct decision, not a failure.
+Composition failure is not in it either, for now, because there is no draft to review. Scopes:
+`CliRunner`, a new writer, OPERATIONS.md. The queue carries prospect text by design, which is
+the one place in this program that is true: it is a file a reviewer opens, not a log line, and
+step 68's redaction rule is about logs. Evidence: step 67. Assumption: A2.
+
+**D44. Whether the vendor's retention default is acceptable (2026-09-09).** Question: step 69
+asks for the data retention of every external service that receives user data, and for the
+production path if the default is not acceptable. Read from OpenAI's own platform data page on
+2026-09-09: API data is not used to train models by default, and abuse-monitoring logs for
+`/v1/chat/completions` are retained up to 30 days. Options: accept the default; take one of the
+vendor's two approval-gated controls; or stop sending prospect data. Recommendation: the default
+is acceptable for this project as it stands and is not acceptable for a production deployment
+carrying real prospect data, and both halves are stated rather than the convenient one. It is
+acceptable here because the evaluation sets are synthetic and because of what the prompt
+actually contains: first name, property name, stated interest, persona, lifecycle stage,
+language, and two dates. It carries no phone number, no email address, no unit number, no
+renewal offer id, and no free-text note, and that is a property of `BuildUserPrompt` a golden
+test already pins. The production path, if a real deployment sends real prospect data, is one of
+the two controls the same page names, Modified Abuse Monitoring or Zero Data Retention; both
+exclude customer content from the abuse-monitoring logs, both require prior approval by OpenAI
+and additional terms, and `/v1/chat/completions` is on the eligible list, with the only side
+effect on that endpoint being a forced `store=false` that a single-shot completion does not
+rely on. What the vendor's documentation does not address, stated as absence rather than filled
+in: what happens to a request the client abandons at its timeout while the server completes it,
+which is the case D31 measured at roughly a third of attempts. Nothing published narrows or
+extends the 30-day window for a dropped connection. Scopes: DESIGN.md section 8. Evidence:
+developers.openai.com/api/docs/guides/your-data, read 2026-09-09; the step 60 run and D31.
