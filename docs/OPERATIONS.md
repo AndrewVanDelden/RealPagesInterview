@@ -28,6 +28,7 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 | `--diagnostics <file.json>` | no | Per-record domain diagnostics: `diagnostics` (`consent_verified`, `fair_housing_check_passed`, `brand_style_applied`, `safety_violation_count`, `suppression_reason`, `action_plan`, `schedule`, `composition`) and `ingest_notes` (`defaulted_fields`, `unknown_members`), what the agent decided and why and what the record did not carry, not what the process did. Different thing from logging; see the note in section 3. |
 | `--eval-report <file.txt>` | no | Scores `--output`'s results against each record's labeled `expected` field, if present. Prints to the console and writes to the given file. One row per record with `OK`, `FAIL`, or `n/a` (not measured: no threshold stated, no message to check, or no value recorded) per check: channel, send day, send hour, action type, opt-out, call-to-action type, call-to-action payload, language, safety, personalization (with its coverage score), and the judge's `ActionSem` and `BodySem`, which read `n/a` unless the run passed `--judge`. Then a `Checks:` line of passed over measured per check, the batch p95 latency against the strictest stated budget, and the overall count. A record with no `expected` shows up as an unscoreable row rather than aborting the report. |
 | `--judge` | no (default: off) | Adds the two semantic checks `ActionSem` and `BodySem` to `--eval-report`'s scorecard (D30). A pinned model, `gpt-4o`, grades under a pinned rubric whether the produced message conveys the label's own action and body; it is reference-based, so it grades against the label the customer wrote, never against its own taste. A presence flag, not an option with a value: there is one judge, and its model is pinned in code rather than configured, because a grade only means something next to yesterday's grade if the same model and the same rubric produced both (playbook step 31). It needs `OpenAI:ApiKey` set via `dotnet user-secrets` and makes one model call per scoreable record, so it costs one call per record every time it is asked for. Its two verdicts are their own checks and are excluded from a record's pass or fail, so the judge can never overturn a deterministic check, and a run with the network down reports both as `n/a`. Applies to a normal run and to `--replay` alike. |
+| `--review-queue <path>` | no | The work list of what the safety gate rejected (D43): one row per record the safety validator suppressed, carrying the task id, the channel, every violation by check, and the rejected draft. Empty on a healthy run, which is the point of it; its length is the number to report. Consent suppression is not in it, because "not contactable" is the correct decision rather than a failure, and composition failure is not in it either, because there is no draft to review. This is the one place the program deliberately writes prospect text to a file: the queue carries the rejected draft by design, since it is a file a reviewer opens rather than a log line, and the redaction rule that governs logs does not govern it. |
 | `--log-file <file.log>` | no | Persists structured log lines to a real file. Without it, logs still go to the console's stderr stream (see section 3), this only adds a second, durable sink. |
 
 Nothing above requires all of it at once. The smallest useful run is
@@ -94,6 +95,21 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    makes no network call at all (D28). A whole `composition` of `null`
    means the record carries no message, which is consent suppression or a
    composition failure, and `suppression_reason` separates those two.
+4. **`--review-queue`**, when the question is not about the process or about
+   one record's reasoning at all, but "what did the safety gate reject, and
+   does a person need to read it." That is a different question from the
+   three above and it wants a different artifact (D43). `--diagnostics` is a
+   full per-record dump of how every decision was reached, written for every
+   record, and you open it knowing which record you care about; the review
+   queue is a work list, it holds only the records the safety validator
+   suppressed, and on a healthy run it is empty. So: reach for the queue to
+   find out *whether* there is anything to look at and to read the rejected
+   draft itself, and for `--diagnostics` to work out why a record you have
+   already identified decided what it did. Two suppressions are deliberately
+   absent from the queue and are not bugs: a record with no consented channel
+   never reaches the safety gate, and a record whose composition failed has no
+   draft to review. `suppression_reason` in `--diagnostics` still names which
+   of the three happened.
 
 ## 3. How logging actually works
 
