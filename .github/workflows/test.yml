@@ -21,6 +21,13 @@ jobs:
       # Windows PowerShell 5.1, the same shell the script is written for locally. The script
       # exits with the dotnet test exit code, so a red suite or a coverage gate under 100
       # percent fails this step.
+      # The pillars' meta-rule: a rule that must hold with zero exceptions belongs in tooling,
+      # not in an instruction file that asks nicely. This keeps AGENTS.md rules-only and under
+      # its line limit, and keeps the decision log's phase section replaced rather than grown.
+      - name: Instruction files stay rules, state stays in the decision log
+        shell: powershell
+        run: .\check-instruction-files.ps1
+
       - name: Test with the coverage gate
         shell: powershell
         run: .\test.ps1
