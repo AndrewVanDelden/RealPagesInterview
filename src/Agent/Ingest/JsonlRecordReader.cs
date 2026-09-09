@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Agent.Common;
 using Agent.Domain;
 
@@ -6,11 +8,20 @@ namespace Agent.Ingest;
 
 public sealed class JsonlRecordReader
 {
-    // D1: the three members a record must carry, spelled once. Until step 68's redaction the
-    // error row named a missing one only because the deserializer's own message did; that
-    // message can no longer be reported, so the guarantee is stated here instead, from this
-    // program's own schema names rather than from anything the record wrote.
-    private static readonly string[] RequiredMembers = ["task_id", "consent", "channel_preferences"];
+    // D1: the three members a record must carry. Until step 68's redaction the error row
+    // named a missing one only because the deserializer's own message did; that message can
+    // no longer be reported, so the guarantee is stated here instead, from this program's
+    // own schema names rather than from anything the record wrote.
+    //
+    // Read from ProspectCase's own [JsonConstructor] rather than spelled out a second time
+    // (A17): the constructor's parameters are what RespectRequiredConstructorParameters
+    // actually enforces, so this list can never drift from the contract it describes.
+    private static readonly string[] RequiredMembers = typeof(ProspectCase)
+        .GetConstructors()
+        .Single(constructor => constructor.GetCustomAttribute<JsonConstructorAttribute>() is not null)
+        .GetParameters()
+        .Select(parameter => AgentJsonOptions.Default.PropertyNamingPolicy!.ConvertName(parameter.Name!))
+        .ToArray();
 
     // One result per non-blank line, in file order. A line that does not parse is a
     // failure row naming its 1-based line number; every other line still comes back

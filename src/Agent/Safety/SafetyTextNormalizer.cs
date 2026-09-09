@@ -15,12 +15,14 @@ namespace Agent.Safety;
 // pattern.
 internal static partial class SafetyTextNormalizer
 {
-    // O(n) in the text length: one strip pass, one fold pass, one whitespace pass.
+    // O(n) in the text length: one strip pass, one fold pass, one line-break pass, one
+    // whitespace pass.
     internal static string NormalizeForTermMatching(string text)
     {
         string folded = FoldHyphens(FormatCharacters().Replace(text, string.Empty));
+        string sentenceBounded = UnterminatedLineBreak().Replace(folded, ". ");
 
-        return WhitespaceRun().Replace(folded.Replace('-', ' '), " ");
+        return WhitespaceRun().Replace(sentenceBounded.Replace('-', ' '), " ");
     }
 
     // U+2010 hyphen, U+2011 non-breaking hyphen, U+2013 en dash, U+2014 em dash. The one
@@ -33,6 +35,13 @@ internal static partial class SafetyTextNormalizer
     // U+FEFF zero-width no-break space.
     [GeneratedRegex("[\u200B\u200C\u200D\uFEFF]")]
     private static partial Regex FormatCharacters();
+
+    // A line break not already preceded by a sentence terminator marks a sentence boundary
+    // in a message body the same way a period does; collapsing it to a bare space instead
+    // would fuse two unrelated lines into one sentence for every exempt-span and term-match
+    // pass that runs after this normalization.
+    [GeneratedRegex(@"(?<=[^.!?\s])[ \t]*\n\s*")]
+    private static partial Regex UnterminatedLineBreak();
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRun();

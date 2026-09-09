@@ -44,6 +44,30 @@ public class SafetyValidatorAllowListTests
         Assert.Contains("families only", violation);
     }
 
+    // The exempt span must end at a clause boundary, not only a sentence terminator: a
+    // steering clause tacked onto the disclosure with a comma and a contrastive conjunction
+    // is not part of the disclosure and must still be read.
+    [Fact]
+    public void Validate_DisclosureFollowedByASteeringClauseInTheSameSentence_StillYieldsTheSteeringViolation()
+    {
+        SafetyValidationResult result = Validate("We do not discriminate, but this community is families only.");
+
+        string violation = Assert.Single(result.Violations);
+        Assert.Contains("families only", violation);
+    }
+
+    // Normalization collapses a newline into a space before the exempt span runs, so a
+    // disclosure on its own line with no terminal period must not fuse with the sentence
+    // that follows it on the next line.
+    [Fact]
+    public void Validate_DisclosureFollowedByASteeringSentenceOnANewLine_StillYieldsTheSteeringViolation()
+    {
+        SafetyValidationResult result = Validate("We do not discriminate\nThis community is families only.");
+
+        string violation = Assert.Single(result.Violations);
+        Assert.Contains("families only", violation);
+    }
+
     [Fact]
     public void Validate_DisabilityAccommodationsOffer_YieldsNoViolation()
     {

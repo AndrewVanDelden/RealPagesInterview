@@ -128,6 +128,17 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Failed, Verdict("Your confirmation is ready. Your SSN 123-45-6789 is on file.", SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
+    // The introducer span requires a word boundary before "reference": without one, it
+    // matched starting inside "preference" (p-REFERENCE) and the digits that followed were
+    // exempted as if a confirmation number had introduced them.
+    [Fact]
+    public void Ssn_WordReferenceInsideALongerWord_DoesNotExemptTheFollowingNumber()
+    {
+        Assert.Equal(
+            SafetyCheckVerdict.Failed,
+            Verdict("Your preference and SSN 123-45-6789 are noted.", SafetyCheck.SocialSecurityNumber, NothingStated));
+    }
+
     // --- SafetyCheck.LongDigitRun ---
 
     [Fact]

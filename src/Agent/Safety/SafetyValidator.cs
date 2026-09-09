@@ -30,17 +30,21 @@ public sealed partial class SafetyValidator : ISafetyValidator
         "Body appears to contain a leaked personal identifier (long numeric sequence).";
 
     // O(n) in the combined subject and body length: each check is a bounded number of
-    // single passes over that text.
+    // single passes over that text. The introducer-span strip is computed once, here, and
+    // shared by SocialSecurityNumberCheck and LongDigitRunCheck rather than each repeating
+    // the same pass over the same text: SocialSecurityNumberCheck is unconditional (D40),
+    // so the strip is never wasted work.
     public SafetyValidationResult Validate(NextMessage message, CaseConstraints constraints)
     {
         string text = message.Subject is { Length: > 0 }
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
+        string identifierScannable = IntroducedIdentifierSpan().Replace(text, " ");
 
         return new SafetyValidationResult(
             OptOutInstructionsCheck(text, constraints),
-            SocialSecurityNumberCheck(text),
-            LongDigitRunCheck(text, constraints),
+            SocialSecurityNumberCheck(identifierScannable),
+            LongDigitRunCheck(identifierScannable, constraints),
             FairHousingCheck(text));
     }
 
@@ -68,23 +72,21 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // here too. A bare nine-digit confirmation number is the same false positive as the
     // fourteen-digit one, and leaving the span on one identifier check and not the other
     // would be the inconsistency rather than the fix.
-    // O(n) in the text length: one exempt-span pass, one pattern pass.
-    private static SafetyCheckResult SocialSecurityNumberCheck(string text) =>
-        SocialSecurityNumberPattern().IsMatch(IntroducedIdentifierSpan().Replace(text, " "))
+    // O(n) in the text length: one pattern pass over the already-stripped text.
+    private static SafetyCheckResult SocialSecurityNumberCheck(string identifierScannable) =>
+        SocialSecurityNumberPattern().IsMatch(identifierScannable)
             ? SafetyCheckResult.Failed(SafetyCheck.SocialSecurityNumber, [SocialSecurityNumberDetail])
             : SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber);
 
-    // O(n) in the text length: one exempt-span pass, one pattern pass.
-    private static SafetyCheckResult LongDigitRunCheck(string text, CaseConstraints constraints)
+    // O(n) in the text length: one pattern pass over the already-stripped text.
+    private static SafetyCheckResult LongDigitRunCheck(string identifierScannable, CaseConstraints constraints)
     {
         if (constraints.NoPiiLeak != true)
         {
             return SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun);
         }
 
-        string scannable = IntroducedIdentifierSpan().Replace(text, " ");
-
-        return LongDigitRunPattern().IsMatch(scannable)
+        return LongDigitRunPattern().IsMatch(identifierScannable)
             ? SafetyCheckResult.Failed(SafetyCheck.LongDigitRun, [LongDigitRunDetail])
             : SafetyCheckResult.Passed(SafetyCheck.LongDigitRun);
     }
@@ -140,8 +142,13 @@ public sealed partial class SafetyValidator : ISafetyValidator
     //   <n>k race                      "Join our 5K race on Saturday."
     //   gender neutral                 "The clubhouse has gender-neutral restrooms."
     //   race simulator                 "The game room has a race simulator."
+    // The disclosure span stops before a sentence terminator or, within the sentence,
+    // before a comma that introduces a new clause with a contrastive conjunction ("but",
+    // "yet", "however", "although", "though"): the boilerplate disclosure itself is a
+    // comma-separated list of protected classes, so a bare comma cannot be the stop
+    // condition, but a clause tacked onto the disclosure this way is never part of it.
     [GeneratedRegex(
-        @"(?:do|does) not discriminate[^.!?]*"
+        @"(?:do|does) not discriminate(?:(?!,\s*(?:but|yet|however|although|though)\b)[^.!?])*"
         + @"|disability accommodations"
         + @"|wheelchair accessible"
         + @"|color scheme"
@@ -175,6 +182,10 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // by an exempt span, not by loosening the pattern. The introducer reaches at most 20
     // characters and never across a sentence terminator, so a number in the next sentence
     // is not exempted by a confirmation mentioned in this one.
-    [GeneratedRegex(@"(?:confirmation(?:\s+number)?|reference)[^.!?\d]{0,20}\d(?:[- ]?\d)*", RegexOptions.IgnoreCase)]
+    //
+    // The leading \b is load-bearing: without it, "reference" matches starting inside a
+    // longer word like "preference", exempting a number that followed only by coincidence
+    // of spelling, not because anything actually introduced it.
+    [GeneratedRegex(@"\b(?:confirmation(?:\s+number)?|reference)[^.!?\d]{0,20}\d(?:[- ]?\d)*", RegexOptions.IgnoreCase)]
     private static partial Regex IntroducedIdentifierSpan();
 }

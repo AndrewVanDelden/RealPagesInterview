@@ -643,8 +643,14 @@ public class EvaluatorTests
         Assert.False(score.Passed);
     }
 
+    // D46: Score handles the composed message and the record's own labeled content, so a
+    // scoring exception is exactly the boundary the redaction rule covers. The raw
+    // exception is never attached to the log entry: ILogger's default formatter appends
+    // Exception.ToString() in full regardless of the message template, so attaching it
+    // would bypass ToRedactedDiagnosticString entirely, the same leak playbook step 68
+    // closed for the composer and the readers.
     [Fact]
-    public void Evaluate_ScoringThrows_LogsErrorWithTheException()
+    public void Evaluate_ScoringThrows_LogsTheExceptionTypeWithoutAttachingTheRawException()
     {
         var capturingLogger = new CapturingLogger<Evaluator>();
         var evaluator = new Evaluator(capturingLogger);
@@ -652,7 +658,10 @@ public class EvaluatorTests
 
         evaluator.Evaluate([Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody))]);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error && entry.Exception is NullReferenceException);
+        CapturingLogger<Evaluator>.LogEntry entry =
+            Assert.Single(capturingLogger.Entries, entry => entry.Level == LogLevel.Error);
+        Assert.Null(entry.Exception);
+        Assert.Contains("NullReferenceException", entry.Message);
     }
 
     [Fact]

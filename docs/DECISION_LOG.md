@@ -1023,3 +1023,127 @@ row, all from code that was already written and previously unreachable. Scopes:
 `IMessageComposer` and its three implementations, `LeasingMessageAgent`, `CliRunner`, the test
 fakes. Evidence: the steering record above run through the real CLI, whose diagnostics read
 `composition_failed` and `not_evaluated` before the change. Assumptions: A12, A18.
+
+**D49. The introducer span matched inside a longer word (2026-09-09).** Question: a code review
+of the Sprint 7 diff (PR #24) found `IntroducedIdentifierSpan`'s alternation,
+`(?:confirmation(?:\s+number)?|reference)...`, has no word boundary before it, so `reference`
+matches starting inside `preference`. `"Your preference and SSN 123-45-6789 are noted."` strips
+to `"Your p  are noted."` before `SocialSecurityNumberPattern` runs, and the unconditional
+SocialSecurityNumber gate (D40) passes a message that carries a real, unmasked SSN. Options:
+require the alternation to start at a word boundary; or require it to be preceded by
+non-word-or-string-start via a lookbehind. Recommendation: the first, `\b` before the group,
+which is the direct fix and changes nothing else the span matches. Scopes:
+`SafetyValidator.IntroducedIdentifierSpan`. Evidence:
+`Ssn_WordReferenceInsideALongerWord_DoesNotExemptTheFollowingNumber`, written failing against
+the pattern before the fix and passing after. Assumption: none; this is the same check D40
+already made unconditional.
+
+**D50. The disclosure's exempt span crossed a clause it did not own (2026-09-09).** Question:
+the same review found two ways `ExemptSpans`' disclosure alternative,
+`(?:do|does) not discriminate[^.!?]*`, reads past the disclosure sentence it exists to exempt.
+First, greedy `[^.!?]*` does not stop at a comma, so
+`"We do not discriminate, but this community is families only."` has the steering clause erased
+along with the disclosure, and `FairHousingCheck` reports no violation. Second, a report from
+Antigravity (Gemini 3.8 Flash) on the same PR found that `NormalizeForTermMatching` collapses a
+newline to a bare space before `ExemptSpans` runs, so
+`"We do not discriminate\nThis community is families only."` fuses into one sentence with no
+terminator between the disclosure and the steering text, and the same erasure happens with no
+comma involved. Both defeat FairHousing, the other unconditional gate D40 names. Options for the
+first: bound the span's length the way the confirmation-number span is bounded; require it to
+stop before a comma that starts a new clause; or leave it, since the disclosure's own protected-
+class list is comma-separated and a bare-comma stop would flag the disclosure itself. Recommendation:
+stop before a comma immediately followed by a contrastive conjunction (`but`, `yet`, `however`,
+`although`, `though`), which is what introduces a clause the disclosure did not write; an
+ordinary comma inside the term list still passes through untouched. Options for the second:
+teach `ExemptSpans` about newlines directly; or fix the normalizer that erases the boundary
+before `ExemptSpans` ever runs. Recommendation: the second, since the same collapse would defeat
+any future exempt span or term match the same way, not only this one. A newline not already
+preceded by a sentence terminator is now replaced with `". "` rather than `" "`, so the sentence
+boundary a line break represents in a message body survives normalization. Scopes:
+`SafetyValidator.ExemptSpans`, `SafetyTextNormalizer.NormalizeForTermMatching`. Evidence:
+`Validate_DisclosureFollowedByASteeringClauseInTheSameSentence_StillYieldsTheSteeringViolation`
+and `Validate_DisclosureFollowedByASteeringSentenceOnANewLine_StillYieldsTheSteeringViolation`,
+both written failing against the code before the fix and passing after. Assumption: none.
+
+**D51. Redaction did not reach the evaluator's own catch (2026-09-09).** Question: the same
+review found `Evaluator.Score`'s catch attaches the raw exception to `log.LogError` and writes
+`ex.ToDiagnosticString()` into `RecordScore.Unscoreable`, neither of which D46 covers.
+`Score` reads the composed message and the record's own labeled content, the same boundary D46
+named for the composer and the readers, and `LogLineFormatter` appends `Exception.ToString()` in
+full whenever a raw exception is attached, regardless of the message template, so attaching `ex`
+bypasses redaction outright the same way the composer's old call did. Options: leave it, since
+no exception `Score` currently throws is known to carry record or model content; or bring it
+under D46's rule so a future one does not have to be found again. Recommendation: the second,
+consistent with the rest of D46: the exception is never attached to the log entry, and
+`ToRedactedDiagnosticString` supplies both the log parameter and `RecordScore.ScoringError`.
+Scopes: `Evaluator.Score`'s catch. Evidence:
+`Evaluate_ScoringThrows_LogsTheExceptionTypeWithoutAttachingTheRawException`, replacing the test
+that pinned the old, unredacted behavior (`Evaluate_ScoringThrows_LogsErrorWithTheException`),
+written failing against the code before the fix and passing after. Assumption: none.
+
+**D52. The introducer span was computed twice per check (2026-09-09).** Question: the same
+review found `SocialSecurityNumberCheck` and `LongDigitRunCheck` each call
+`IntroducedIdentifierSpan().Replace(text, " ")` independently, and since SocialSecurityNumber is
+unconditional (D40), both run and both strip the same text on any record with `no_pii_leak:
+true`. Recommendation: compute the stripped text once in `Validate` and pass it to both checks,
+the same pattern `FairHousingCheck` already uses for its own `scannable` variable. No behavior
+changed; this is a pure duplication removal. Scopes: `SafetyValidator.Validate`,
+`SocialSecurityNumberCheck`, `LongDigitRunCheck`. Evidence: the existing safety-validator suite
+(78 tests) unchanged and passing after the refactor. Assumption: none.
+
+**D53. `RequiredMembers` duplicated what `ProspectCase`'s constructor already states
+(2026-09-09).** Question: the same review found `JsonlRecordReader.RequiredMembers` hand-spells
+the three D1 members a second time, with nothing tying it to `ProspectCase`'s `[JsonConstructor]`
+parameters, the thing `RespectRequiredConstructorParameters` actually enforces. A future change
+to which members are required could update one and not the other with no test catching the
+drift. Recommendation: derive the array by reflecting on the `[JsonConstructor]`'s parameters and
+running each name through `AgentJsonOptions.Default.PropertyNamingPolicy`, the same policy the
+serializer itself uses, so the two can never disagree. Scopes: `JsonlRecordReader.RequiredMembers`.
+Evidence: the existing reader suite (29 tests) unchanged and passing after the refactor.
+Assumption: none.
+
+**D54. `ComposeOutcome.NoMessage`, reconsidered and kept (2026-09-09).** Question: the same
+review flagged `NoMessage` as an abstraction extracted at its second occurrence rather than its
+third, against this program's own Earned Abstraction rule, and recommended splitting `Failed`
+and `Refused` into two independent records with the two call sites in
+`ValidatingMessageComposer` pattern-matching each explicitly. That change was made, built, and
+then reverted before landing. The two call sites it touches are both places where
+`ComposeOutcome.Refused` cannot occur under any composer this program ships: no inner composer
+refuses its own draft (only the fallback path, after the loop, can), so a real switch or pattern
+match over `Refused` and `Failed` at either site has one arm no test can reach honestly, and
+`SequenceMessageComposer`, the one fake that stands in for an inner composer in tests, says so in
+its own comment. `ComposeAsync` is also async, and this program's coverage gate excludes
+compiler-generated code (`/p:ExcludeByAttribute=CompilerGeneratedAttribute` in `test.ps1`), which
+excludes the state machine an async method compiles to; the gate would not have caught the
+unreachable arm, but writing it anyway is exactly VF's "never write a branch a test cannot
+exercise honestly," done here as reasoning, not tooling. `NoMessage` is not, on reflection, a
+pure DRY convenience someone reached for a call early: reading `Failed` and `Refused` as one case
+is what lets the loop stay written without that branch, which is a second reason for the type
+distinct from the letter of "extract on the third occurrence." Recommendation: no change.
+Scopes: none; `ComposeOutcome.cs` and `ValidatingMessageComposer.cs` are unchanged from D48.
+Assumption: none.
+
+**D55. The final safety validation runs twice on the same text, kept (2026-09-09).** Question:
+the same review found `SafetyValidator.Validate` is called once inside
+`ValidatingMessageComposer`'s compose-validate loop and again, unconditionally, in
+`LeasingMessageAgent`'s step 5, on text that differs only by `SendAt`, which `Validate` never
+reads, and recommended threading the composer's own `SafetyValidationResult` through
+`ComposeOutcome` so step 5 could reuse it instead of recomputing. Recommendation: no change.
+Step 5's own comment already states why: "this is the orchestrator's own gate, not borrowed
+trust in the composer's cooperation." That sentence is D43's design, not an oversight this
+review found; reusing the composer's result would make step 5 trust the composer's own
+validation exactly where the design says it deliberately does not, for every `IMessageComposer`
+that might reach `LeasingMessageAgent` directly in a test or a future caller, not only through
+`ValidatingMessageComposer`. The cost is one extra linear pass over the message text per record,
+not an unbounded or quadratic one. Scopes: none. Assumption: none.
+
+**D56. `RequiredStateMap.For`'s hardcoded switch, kept (2026-09-09).** Question: the same review
+found `RequiredStateMap.For` maps three state names to three positional verdict parameters via a
+switch rather than a declared table, and recommended a table so a new required state would be
+one row instead of a new parameter and two call-site edits. Recommendation: no change. D42
+already closed the required-state set at three names and argued at length against inventing
+verdict logic for a name like `renewal_offer_loaded` without the evidence D9 and A19 require;
+each of the three states is also computed differently at its two call sites (one path passes
+real computed verdicts, the other stubs two of three as `NotEvaluated`), so a table would still
+need per-call-site wiring and would not remove the touch points the finding is concerned about.
+Scopes: none. Assumption: none.
