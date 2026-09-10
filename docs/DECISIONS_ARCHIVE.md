@@ -2440,3 +2440,141 @@ project, and the cut rule is better applied when a second project shows the same
 104; `~/.agent-rules` only, no file in this repository. Evidence: the citations above.
 Assumptions: none. Taken 2026-09-10 by the owner: (d), none. The rules stay as they are; the
 twelve items stand only as this project's record, and step 104 is closed with no change.
+
+**Run and debug fact, the narration checked against the code (2026-09-10).** One record,
+`prospect_welcome_day0`, was traced through the code file by file with the narration read beside
+it, and all three sets were re-run at the tag with the diagnostics and the evaluation report on.
+Every value reproduced. Eight statements did not match the code or the artifacts and were fixed in
+`docs/NARRATION.md`: the run artifacts it cited were written fifteen hours before the tag; the SMS
+reply options were attributed to the call-to-action table rather than the English prose set; the
+ingest notes were attributed to the reader rather than the runner; step 6 was described as writing
+the row per record when the array is written once after the batch, and "every check reads OK"
+when the two judge columns read not measured; curveball five counted a no-branch miss among the
+no-match misses; two of the three interfaces were said to have an offline implementation in the
+product when their substitutes are in the tests; the horizon rule was said to be under 45 days when
+it is at most 45; and question 5 gave one exit of the three the template asks for.
+
+**D80. Whether `TalkingPoints.md` stays in the repository (proposed 2026-09-10).** Question: the
+root holds `TalkingPoints.md`, 147 lines written in Sprint 8 as the spoken script before
+`docs/NARRATION.md` existed, and the narration now answers the same seven questions from the
+playbook template, so the two files say the same thing twice and only one is kept current.
+Options: (a) delete it, and the retrospective and this archive keep naming it as what was true on
+their dates; (b) delete it and rewrite every document that names it; (c) keep it as an archive.
+Recommendation: (a), since a retrospective and a decision record are not rewritten after the fact,
+while `docs/OPERATIONS.md` is a live reference and gets one clause pointing at the git history
+instead. Scopes: the root file; one clause in `docs/OPERATIONS.md`; its name removed from the scan
+roots of `check-instruction-files.ps1`, which already skipped a path that does not exist; four code
+comments in `src` and `tests` that cite its Sprint 7 and Sprint 8 history stay, since `git log --
+TalkingPoints.md` still serves that history. Evidence:
+the two files side by side on 2026-09-10; the git history keeps every version. Assumptions: none.
+Taken 2026-09-10 by the owner: (a).
+
+**Run and debug fact, the architecture score (2026-09-10).** A read of the orchestrator, ingest,
+decisions, composition, safety, evaluator, the runner and the docs scored the system 7 of 10:
+structure 9, determinism 9, failure handling 8, verification 8, domain coverage 4,
+maintainability 5, scalability 6. One finding was withdrawn on evidence: the constant
+`consent_verified` was read as a state that carries no information, but the hold-out record
+`resident_opt_out_respected` asserts that state and expects `no_op`, so the label means "consent
+was checked" and the constant states exactly that. The two custom logger providers were read and
+kept: `AddConsole` writes to the real console and cannot be redirected to the injected writer the
+tests isolate on, which the file header records. The eight hold-out misses were traced to their
+fields: four action types the samples never showed (`reset_cadence`, `schedule_sms_reminder`,
+`branch_on_intent`, `start_esign_flow`), three call-to-action types (`reschedule`,
+`intent_capture`, `review_renewal_details`), the long branch of the new-prospect row, and a send
+day and hour per stage where the program has one hour per channel. D81 to D88 are the plan to
+raise every dimension to 9.
+
+**D81. The hold-out becomes training data and a new frozen set carries the honest number
+(proposed 2026-09-10).** Question: D9 forbids fitting to `holdout_12.jsonl`, the catalog has two
+rows because `sample.jsonl` has two records, and the hold-out reads 4 of 12 with every miss a rule
+the samples never showed. Options: (a) playbook step 103: declare the hold-out training data, write
+a new frozen set first, from the personas and stages in `problem_statement.txt`, labeled before any
+rule lands and by an agent that has not read `src`, and report that set as the honest number; (b)
+keep D9 and 4 of 12; (c) write more labeled data without reading the hold-out and fit to that.
+Recommendation: (a), the step the playbook wrote for this case. Scopes: `synthetic_v2.jsonl`, an
+amendment to D9, the numbers in the README and DESIGN.md section 9, `BaselineNumbersTests`.
+Evidence: the score fact above and the hold-out trace of 2026-09-10. Assumptions: none. Check: the
+frozen set is committed before the first D82 rule, and every report labels which set is which.
+Order: first, alone.
+
+**D82. The rules the hold-out shows, and where they live (proposed 2026-09-10).** Question: eight
+misses need seven catalog rows (`prospect/no_show`, `prospect/cancelled_manager`,
+`resident/renewal_window`, `resident/renewal_undecided`, `resident/welcome`,
+`resident/loyalty_engage`, `resident/renewal_details_requested`), the long branch of
+`prospect/new`, four action types, three call-to-action rows, and a send slot per persona and
+stage with a day offset and an hour, where today one hour per channel is the whole rule. Options:
+(a) rows in code as today, each with its record as evidence; (b) a JSON rule file loaded by a
+`--rules` flag and validated per row through the existing `Create` gate; (c) both, the compiled
+table as the default and the file as an override. Recommendation: (c): a cadence rename should
+not need a build, and the program stays runnable with no file. Scopes: `Decisions/` (catalog,
+action types, planner, scheduler and a new slot table), `Composition/CallToActionCatalog.cs`, the
+input members a slot rule reads (`lease_end_date`, `move_in_date`), the `--rules` flag in
+`CliRunner.cs` after D86 merges, DESIGN.md sections 3 and 7. Two agents in disjoint files: one for
+rows, types and call-to-action rows, one for the slot table. Evidence: the hold-out trace.
+Assumptions: a rule fitted to one record per stage is fitted, not learned; D81 is what measures
+it. Check: every measured check on the hold-out passes, `synthetic_12.jsonl` stays 12 of 13, and
+`synthetic_v2.jsonl` is reported at whatever it reads.
+
+**D83. A generic-row answer is queued for review (proposed 2026-09-10).** Question: when no row
+covers a persona and stage the generic row emits a confident action and only the diagnostics say
+so. Options: (a) the record also gets a review-queue row naming the missing pair, and the message
+still goes out; (b) `no_op` with a reason and no message; (c) keep. Recommendation: (a): the queue
+is the work list an operator already reads, and the generic welcome is safe to send while the
+action is reviewed. Scopes: `Orchestration/` (the result carries a queue reason for a generic
+source), `ReviewQueueEntry`, the fold in `CliRunner.cs`, OPERATIONS.md. Same agent as D84, since
+both edit `LeasingMessageAgent.cs`; rebased on D86. Evidence: eight of twelve hold-out records
+took the generic row. Assumptions: none. Check: `synthetic_02_unseen_persona_and_stage` produces a
+queue row; the hold-out queue is empty after D82.
+
+**D84. One validation per composed record (proposed 2026-09-10).** Question: the same validator
+instance runs on a draft inside the compose-validate loop and again at step 5. Options: (a) the
+loop returns the draft paired with its validation result, in a type only the loop builds, and
+step 5 reads the result it was handed and validates only a refused draft; (b) move the loop into
+the orchestrator; (c) keep. Recommendation: (a). Scopes: `ComposeOutcome.Composed`,
+`ValidatingMessageComposer.cs`, step 5 of `LeasingMessageAgent.cs`, the tests that count
+validator calls. Evidence: the score fact; the D57 rule that two components computing one
+predicate is a finding. Assumptions: none. Check: a counting validator sees one call per composed
+record and one per refused draft; every tally unmoved.
+
+**D85. A scorecard that cannot carry stale tallies (proposed 2026-09-10).** Question: the tallies
+and p95 are field initializers on a record, so a `with` copy that replaces the rows carries the
+old numbers, and AGENTS.md warns about it instead of the type preventing it. Options: (a) a sealed
+class with one constructor and no `with`, the append method building a new instance as it already
+does; (b) tallies computed on read; (c) keep. Recommendation: (a). Scopes:
+`Evaluation/Scorecard.cs`, `ScorecardFormatter.cs`, its tests, the AGENTS.md gotcha line.
+Evidence: the gotcha in AGENTS.md. Assumptions: none. Check: `with` on the type does not compile;
+every scorecard golden unchanged.
+
+**D86. Bounded memory in the batch (proposed 2026-09-10).** Question: every output, diagnostics
+and queue row stays resident until the batch ends and is serialized once, O(n) in records.
+Options: (a) an ordered fold that writes each row in input order as it completes, behind a
+reorder window of `MaxConcurrentRecords`, the array written incrementally, the small scorecard
+rows staying resident; (b) keep; (c) JSONL output. Recommendation: (a). Scopes: the loop and fold
+in `CliRunner.cs`, `JsonArrayRecordWriter.cs` (begin, row, end), `RecordRun.cs`. Evidence: the
+score fact. Assumptions: none. Check, per the Bounded Cost rule: wall time and peak working set at
+12, 120, 1,200 and 12,000 records pasted into DESIGN.md, wall time linear, working set flat past
+120, and the three output files byte-identical to today on the three sets.
+
+**D87. Comments state the rule, not the decision number (proposed 2026-09-10).** Question: comments
+in `src` and `tests` cite D and S numbers that resolve only in this archive, so no file reads
+without it, and every trim of the archive is a repo-wide grep. Options: (a) every comment states
+the rule and its why in place, no D or S number in code, at most eight lines per comment, the
+archive keeps the history, and the citation check drops `src` and `tests` from its scan; (b)
+keep. Recommendation: (a). Scopes: every file under `src` and `tests`,
+`check-instruction-files.ps1`, the AGENTS.md workflow line, then `sync-agent-rules.ps1`. Order:
+last, after every other stream merges; every other stream writes its new comments in this form.
+Evidence: the Sprint 8 and D68 facts recording the two renumbering sweeps. Assumptions: none.
+Check: a grep for a D or S number under `src` and `tests` returns nothing; build, tests and the
+instruction check unchanged.
+
+**D88. A mutation score beside the coverage gate (proposed 2026-09-10).** Question: coverage at
+100 percent proves every line ran, not that a test would notice a changed line, and the glossary
+already names mutation testing as the number that replaces it. Options: (a) Stryker.NET as a
+tool-manifest tool in `test.ps1` and CI, the threshold pinned at the first measured score and
+raised as it rises, coverage kept; (b) coverage only. Recommendation: (a). The agent confirms the
+current package version and its .NET 10 support from the Stryker documentation before adding it;
+neither was checked when this was written. Scopes: `test.ps1`, `.github/workflows/test.yml`, a
+tool manifest, DESIGN.md section 9. Order: set up in parallel, the threshold pinned after D87
+merges, since every stream moves the score. Evidence: the glossary entries for coverage and
+mutation testing. Assumptions: none. Check: a planted mutant, the planner threshold flipped from
+at most to under, is reported killed, and the score is in `test-output.txt`.

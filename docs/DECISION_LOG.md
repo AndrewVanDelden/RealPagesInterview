@@ -16,7 +16,7 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, met by the retrospective of 2026-09-06 (D77).
 Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-10: its section 10.
 Next step: none. Step 104 closed with no change to `~/.agent-rules` (D79); the project is complete at `v1.0.0`.
-Open decisions: none.
+Open decisions: D81 to D88, proposed 2026-09-10, the plan to raise every architecture dimension to 9. Taking D81 sends the project back to Phase 2 (step 9, a frozen set) per step 102.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -113,3 +113,16 @@ closing Phase 8, a run and debug fact. The retrospective's new section 10 names 
 for each of its sixteen findings: fourteen existing steps, one new step for finding 7, and finding
 8 declined by D55. A step 104 audit of the failures since then found seven with no step and four
 steps that earned nothing here; D79 took none of them, and the rules stay as they are.
+
+**D80, cleanup (2026-09-10).** `TalkingPoints.md`, the Sprint 8 spoken script, deleted as a
+duplicate of `docs/NARRATION.md` (D80). The same day the narration was checked against a trace of
+one record through the code and a re-run of all three sets at the tag, a run and debug fact: eight
+statements that did not match were fixed in place.
+
+**D81 to D88, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
+fact, read 7 of 10 and traced the eight hold-out misses to their fields. The plan: the hold-out
+becomes training data and a new frozen set carries the honest number (D81); the rules it shows,
+compiled by default and loadable from a file (D82); a generic-row answer queued for review (D83);
+one validation per composed record (D84); a scorecard that cannot carry stale tallies (D85);
+bounded memory in the batch with a benchmark (D86); comments that state the rule and cite no
+number (D87); a mutation score beside coverage (D88). None taken.
