@@ -14,15 +14,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
-Check: the README's run command and the runbook's steps both work from the tagged commit.
-Status: not passed. `docs/RUNBOOK.md` exists and ran clean from a fresh clone (step 88), but
-nothing is tagged.
-Phase 7 passed 2026-09-10 in Sprint 11: the synthetic scorecard, the variance report and the
-fault-injection results are files in the repo, `docs/scorecards/`, `docs/VARIANCE.md` and
-`docs/FAULT_INJECTION.md` (D69 to D71), and its steps 86 to 88 are done. The narration of step
-98 is still owed.
-Next step: Phase 8 from step 90, the README.
-Open decisions: none. D67 and D32 to D37 were settled in Sprint 11.
+Check: the README's run command and the runbook's steps both work from the tagged commit. Not passed: nothing is tagged.
+Next step: settle D75, then step 93; steps 90, 91 and 95 are done, 92 and 96 audited.
+Open decisions: D75, the step 96 changes to `AGENTS.md` and the check script.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -92,6 +86,13 @@ four lines of stale prose.
 (D70); a line that did not parse or a record that threw is an `ERROR` row, so the synthetic set
 reads 12 of 13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7; code then took
 the opt-out sentence and an unstated call to action (D72, D73), and refusals fell from 33 to 0.
-The sprint also took D67, D34, D33, D35 and D37 (the fallback's spend on every exit, a retry only
-after a safety rejection, none after a timeout, the whole budget per attempt, four records at
-once) and did steps 86 to 88.
+The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed three PR #28
+review findings, a run and debug fact.
+
+**D74 and D75, Sprint 12, Phase 8 documentation (2026-09-10).** The README is rewritten to step
+90 with every command in it run, and DESIGN.md has step 91's interface table, a decision number
+on every rule, nine open questions, Phase 7's changes to seven assumptions and two new ones, A22
+and A23. Step 95 found no secret and no personal path in any commit; the repository stays public
+with the assignment's text and data, the owner's choice (D74). The step 92 audit's two fixes, the
+phase section and the Sprint 11 paragraph, are made; D75, the step 96 changes, is open. Four
+agents ran these steps at once, a Phase First departure recorded as a run and debug fact.

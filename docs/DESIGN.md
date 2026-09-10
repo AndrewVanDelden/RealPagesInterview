@@ -88,23 +88,24 @@ The two samples differ on: the second channel preference order, sms consent, the
 the chosen channel, the subject (null versus present), the call-to-action payload (options
 versus link), the send hour, and the next action. Each rule below names the field it keys on,
 its application to both samples, and every other field that would reproduce the same two
-values (the confound). Ids and names are labels, not evidence.
+values (the confound). Ids and names are labels, not evidence. The last column also names the
+decision paragraphs in [DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md) that took the rule.
 
-| Decision | Rule (keyed on) | Sample 1 | Sample 2 | Confound or gap, and the assumption |
+| Decision | Rule (keyed on) | Sample 1 | Sample 2 | Confound or gap, the assumption, the decision |
 |---|---|---|---|---|
-| Communicate | at least one preferred channel is opted in (`consent`, `channel_preferences`) | sms and email on: yes | email on: yes | no negative sample; suppression shape is A2 |
-| Channel | first entry of `channel_preferences` that is opted in | [sms, email], sms on: sms | [email, sms], sms off: email | "sms when consented, else email" fits both too; A3 picks preference order because the list is ordered |
-| Send day | first day at or after max(reference time, `last_interaction`) in `input.timezone` | last 12-08 09:04 local, ref 12-09: 12-09 | last 12-06 05:30 local, ref 12-09: 12-09 | "last_interaction plus N" needs N=1 and N=3, two constants for two rows; the reference time is A4 |
-| Send hour | by channel: sms 09:00, email 10:00 local | 09:00 | 10:00 | voice unseen; minutes unseen; A5 |
+| Communicate | at least one preferred channel is opted in (`consent`, `channel_preferences`) | sms and email on: yes | email on: yes | no negative sample; suppression shape is A2; D2, D57 |
+| Channel | first entry of `channel_preferences` that is opted in | [sms, email], sms on: sms | [email, sms], sms off: email | "sms when consented, else email" fits both too; A3 picks preference order because the list is ordered; D57 |
+| Send day | first day at or after max(reference time, `last_interaction`) in `input.timezone` | last 12-08 09:04 local, ref 12-09: 12-09 | last 12-06 05:30 local, ref 12-09: 12-09 | "last_interaction plus N" needs N=1 and N=3, two constants for two rows; the reference time is A4; D4, D10 |
+| Send hour | by channel: sms 09:00, email 10:00 local | 09:00 | 10:00 | voice unseen; minutes unseen; A5; D4 |
 | Send slot on a transition day | a slot the zone springs forward across resolves past the gap; one it falls back across resolves to the earlier of its two instants; `schedule.slot` in the diagnostics names which | both samples exact | both samples exact | no zone in the current database transitions across 09:00 or 10:00, so neither branch is reachable from the data; A20, D21 |
-| Subject | email only | null | present | A11 |
-| Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel | all present | all present | A12 |
-| Call to action type | `constraints.primary_cta` through a vocabulary table | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9) |
+| Subject | email only | null | present | A11; D42's third brand rule checks it |
+| Body facts | first name, property, stated interest, horizon cue, opt-out phrase for the channel; on the model path, code appends the record's language set's opt-out sentence when the draft carries none | all present | all present | A12; D5, D13 a, D72 |
+| Call to action type | `constraints.primary_cta` through a vocabulary table, on both composers; the model's response schema allows only the type the table resolves | book_tour: schedule_tour | book_tour: schedule_tour | one pair observed; unknown values pass through, absent is generic (A9); D5, D73 |
 | Call to action payload | sms carries numbered options in the body and `cta.options`; email carries `cta.link`, built from the property slug and the catalog's path | options | link | link value unseen beyond one host; A10, A21, D25 |
-| Next action | horizon = `move_date_target` minus reference date picks the branch (short or long); the branch reads the catalog row for `persona` and `lifecycle_stage` | prospect/new, 32 days: start_cadence | prospect/open, 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7 |
-| Unknown persona or stage, or a branch no row states | the generic row, and `action_plan.source` in the diagnostics names which of the two fallbacks fired | prospect/new states no long branch | prospect/open states no short branch | A8 |
+| Next action | horizon = `move_date_target` minus reference date picks the branch (short or long); the branch reads the catalog row for `persona` and `lifecycle_stage` | prospect/new, 32 days: start_cadence | prospect/open, 68 days: follow_up_in_days 3 | threshold anywhere in (32, 68]; N seen once; absent date; A7; D2, D17, D18 |
+| Unknown persona or stage, or a branch no row states | the generic row, and `action_plan.source` in the diagnostics names which of the two fallbacks fired | prospect/new states no long branch | prospect/open states no short branch | A8; D2, D17 |
 | Language | body in `input.language`, with no allowlist anywhere; the offline composer holds a template set per language it can serve, English and Spanish, and any other tag is served in English with `locale_applied` false; the model path passes the tag through | en | en | A13, D26 |
-| Required states | earned by the step that proves them, recorded in diagnostics; unknown names are reported as not earned | 3 named | 3 named | A14 |
+| Required states | earned by the step that proves them, recorded in diagnostics; unknown names are reported as not earned | 3 named | 3 named | A14; D42, D57 |
 
 ## 4. What the examples cannot tell (step 7) and what was asked (step 8)
 
@@ -140,12 +141,41 @@ Questions put to the requester on 2026-09-07 and the answers, recorded either wa
   semantically. (A8)
 - What are the send minutes and per-stage send days? No answer; not modeled (A5).
 
+**Open questions the data could not answer (step 91).** Each is open after Phase 7, with the
+measurement that shows it is open and the assumption that stands in for an answer.
+
+1. The oracle's send days, hours and minutes per stage, and the voice hour. The hold-out reads
+   `Day 7/11, Hour 5/11` under the template (`tests/Agent.Tests/Evaluation/BaselineNumbersTests.cs`,
+   line 27); the two samples fix only the hour by channel (A4, A5).
+2. The next-action vocabulary beyond the two samples. The hold-out reads `Action 7/12` (same
+   line); every miss is a type the samples never showed (A8).
+3. The call-to-action vocabulary beyond `book_tour`. The hold-out reads `CTA 7/11` (same line)
+   (A9).
+4. Where in (32, 68] days the horizon threshold sits. Two samples bound it and nothing places it;
+   45 is a round number in range (`src/Agent/Decisions/NextActionPlanner.cs`, line 10; A7).
+5. Whether the model writes better messages than the template. After D72 and D73 both read
+   `Overall: 12/13 passed` on the synthetic set (`docs/scorecards/synthetic_12_template.txt`,
+   `docs/scorecards/synthetic_12_openai_after_d72_run1.txt` to `_run3.txt`), and no deterministic
+   check rewards the model's prose. The judge is the check that could, and it read `ActionSem 0/0,
+   BodySem 0/0` on every committed scorecard, because no Phase 7 run passed `--judge` (D70).
+6. Whether a live model can meet the records' own `p95_latency_ms` of 2000 ms. The one run bounded
+   by it after D33, D35 and D37 had the model write 2 of 10 messages at p95 2066 ms, FAIL
+   (`docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`); D36 is closed for evaluation
+   runs only (A22).
+7. The vendor's rate limit for concurrent calls, against which four records in flight is an
+   unmeasured margin (A23).
+8. What earns `renewal_offer_loaded`, which three hold-out records assert and no check defines;
+   a rule for it would be fitted to the hold-out (A14, A19).
+9. How the vendor retains a request the client abandoned at its timeout; the vendor's page does
+   not say (section 8, D44).
+
 ## 5. Architecture
 
 The four starting decisions of `~/.agent-rules/ARCHITECTURE.md` stay on their defaults
 (S1 to S4 in the archive): one command-line tool over one library; code owns every decision and a
-model writes prose only, choosing the call-to-action type from a code-owned catalog under
-constrained decoding; seams exist only at the composer, the completion client, and the safety
+model writes prose only, with code setting the call-to-action type, which the response schema
+restricts to the one type the catalog resolves (D73), and appending the required opt-out sentence
+when the model leaves it out (D72); seams exist only at the composer, the completion client, and the safety
 validator, each with a real and an offline implementation, and time is a value passed in;
 evaluation is part of the deliverable and is built and proven before the product.
 
@@ -171,17 +201,28 @@ flowchart TD
 | `JsonlRecordReader` | one `Result<ProspectCase>` per line; unknown members retained | none |
 | `ChannelSelector` | contactable channel or none, from consent and preferences | none |
 | `ActionCatalog` | the action for a persona and lifecycle stage, one branch per horizon, compiled into one file with the generic row; `Create` is the gate every catalog goes through (D17, D18) | none |
-| `TemplateMessageComposer`, `OpenAiMessageComposer` | subject, body, call to action, plus the notes saying which of them wrote it (D24) | `IMessageComposer` (real plus offline) |
+| `TemplateMessageComposer`, `OpenAiMessageComposer` | subject, body, call to action, plus the notes saying which of them wrote it (D24); on the model path code sets the call-to-action type and appends a missing opt-out sentence (D72, D73) | `IMessageComposer` (real plus offline) |
+| `ValidatingMessageComposer` | the compose-validate loop: validates every draft, retries only a safety rejection with its violations in the prompt, answers any other failure with the fallback composer at once, validates the fallback too, and carries a refused draft out rather than destroying it (D34, D48) | implements `IMessageComposer` and wraps two of them |
 | `CallToActionCatalog`, `PropertyLink` | the call-to-action vocabulary and the email link (A9, A10, A21) | none |
 | `MessageTemplates`, `MessageTemplateCatalog` | one prose set per language the offline composer can serve (A13, D26) | none |
-| `OpenAiCompletionClient` | the only network call, on the official SDK, bounded and counted (D27, D28) | `ICompletionClient` (real plus fake) |
+| `OpenAiCompletionClient` | the only network call, on the official SDK, bounded and counted: the whole call budget to one attempt, a retry only on a transient status, never after a timeout (D27, D28, D33, D35; A22) | `ICompletionClient` (real plus fake) |
 | `SemanticJudge` | the two semantic checks, off unless `--judge` (D30) | none; it takes the completion client |
 | `SafetyValidator` | four checks answering for themselves: opt-out instructions, Social Security number, long digit run, fair-housing terms; violations by check (D38, D39) | `ISafetyValidator` (real plus fixed) |
+| `BrandStyleValidator` | three brand rules, reported in the diagnostics and never a gate (D39, D42) | none; a static class |
 | `SendScheduler` | `send_at` from the reference time, `last_interaction`, timezone, channel | none; time is a parameter |
 | `NextActionPlanner` | `next_action` from the catalog row and the horizon, plus the branch, the horizon in days and which row answered; no `Result`, because the generic row makes every record classifiable (D18) | none |
 | `LeasingMessageAgent` | the six numbered steps above, one comment each | none |
 | `Evaluator` | the scorecard of section 6 | none |
-| `CliRunner` | `--input`, `--output`, `--replay`, `--now`, `--composer`, `--diagnostics`, `--eval-report`, `--judge`, `--review-queue`, `--log-file`; the one owner of the `TaskId` log scope (D16); exit 0, 1, 2 | none |
+| `CliRunner` | `--input`, `--output`, `--replay`, `--now`, `--composer`, `--model-call-budget-ms`, `--diagnostics`, `--eval-report`, `--judge`, `--review-queue`, `--log-file`; the one owner of the `TaskId` log scope (D16); up to four records at once, folded back in input order (D37); a line that did not parse or a record that threw is an `ERROR` row of the scorecard (D71); exit 0, 1, 2 | none |
+
+**Interfaces (step 91).** Exactly three, the seams S3 names and D58 kept; `interface I` matches
+these three files in `src/` and nothing else.
+
+| Interface | Implementations in `src/` | Test substitutes |
+|---|---|---|
+| `IMessageComposer` (`src/Agent/Composition/IMessageComposer.cs`) | `OpenAiMessageComposer` (real), `TemplateMessageComposer` (offline, and the fallback), `ValidatingMessageComposer` (the compose-validate loop, which wraps an inner and a fallback composer) | `SequenceMessageComposer`, `ThrowsComposer`, `ThrowsOnCancellationComposer` in `tests/Agent.Tests/TestSupport/`; `ThrowingComposer`, `StaggeredComposer`, `CancelOnFirstComposeComposer`, `CancelsWhileComposingComposer` in `tests/Agent.Cli.Tests/TestSupport/` |
+| `ICompletionClient` (`src/Agent/Composition/ICompletionClient.cs`) | `OpenAiCompletionClient` | `FakeCompletionClient` in `tests/Agent.Tests/TestSupport/`; `CostingCompletionClient`, `FixedJudgeCompletionClient` in `tests/Agent.Cli.Tests/TestSupport/` |
+| `ISafetyValidator` (`src/Agent/Safety/ISafetyValidator.cs`) | `SafetyValidator` | `FixedSafetyValidator` in `tests/Agent.Tests/TestSupport/` |
 
 ## 6. Evaluation
 
@@ -201,9 +242,13 @@ instruction by the one definition the validator enforces (D13 b); body language 
 stop-word detector for English and Spanish, not measured for any other stated language
 (D13 c); safety violations within the stated budget, default zero; personalization as coverage
 of the first name and the property name over subject plus body (D13 a). Latency is judged
-once per batch, a nearest-rank p95 against the strictest stated budget. The scorecard prints
+once per batch, a nearest-rank p95 against the strictest stated budget, which stays the
+records' own on a run where `--model-call-budget-ms` raises the call bound (D70). The scorecard prints
 one row per record, a per-check line of passed over measured (the source of every number
-in this document and the README), the p95 line, and the overall count. Three sets, all
+in this document and the README), the p95 line, and the overall count. An input line that did
+not parse, and a record that threw inside the agent, each get one `ERROR` row that counts in the
+overall count and is measured on no check, so the synthetic set reads `Overall: 12/13 passed`
+(D71; `docs/scorecards/synthetic_12_template.txt`). Three sets, all
 reported and labeled: `sample.jsonl`, the fitting evidence; `holdout_12.jsonl`, never fitted
 to; `synthetic_12.jsonl`, written from section 4 before any decision code changed and never
 edited after. `--replay` re-scores an existing output file against its input without running
@@ -222,22 +267,24 @@ constant until a second known value earns a setting.
 | A3 | Channel is the first opted-in entry of `channel_preferences`; an unknown channel name parses as the `Unknown` value, which is never opted in, and the ingest notes name it | sample 1 and 2 as in section 3; the list is ordered by name | no |
 | A4 | Send day is the first day at or after max(reference time, `last_interaction`) in the record's timezone; reference time comes from `--now`, default current UTC time | sample 2's date is three days after its last interaction and sample 1's is one day after, so a time outside the record sets the day; answer from the requester, D10 | the flag only |
 | A5 | Send hour by channel: sms 09:00, email 10:00, voice 09:00 local; no minutes | sample 1 09:00 sms, sample 2 10:00 email; voice and minutes unseen | no |
-| A6 | Unknown or absent timezone resolves as UTC with a diagnostic | both samples America/Chicago; the field is a free string | no |
+| A6 | Unknown or absent timezone resolves as UTC with a diagnostic | both samples America/Chicago; the field is a free string. Phase 7 confirmed it on data: `synthetic_08_unknown_timezone` reads Day and Hour OK on every scorecard in `docs/scorecards/`, and FAULT_INJECTION.md section 4 (b) names the diagnostics and tests | no |
 | A7 | Horizon = `move_date_target` minus the reference date; at most 45 days is short (`start_cadence`), else long (`follow_up_in_days` 3); an absent date is long (no date, no cadence to start); a past date is short (the move is due) | 32 days gave `start_cadence`, 68 gave `follow_up_in_days` 3; 45 falls inside the open interval (32, 68]; it is not the midpoint (50), just a round number in range; absent and past are unseen | no |
 | A8 | Unknown persona or stage uses the generic row: A7's rule, diagnostics name the fallback; the catalog names `start_cadence`, `follow_up_in_days`, `no_op`. A row states only the horizon branch a sample showed, so prospect/new has no long branch and prospect/open no short one, and both fall to the generic row rather than to an invented value (A19) | both samples are prospects at `new` and `open`; other values are unseen | the catalog file, `src/Agent/Decisions/ActionCatalog.cs` (D17) |
-| A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply` | one pair in both samples; absence unseen | the catalog file |
+| A9 | Call-to-action type: `primary_cta` through the vocabulary table (`book_tour` to `schedule_tour`); unknown values pass through unchanged with a diagnostic; absent gives the generic `reply`; the model path is held to the same type, which its response schema allows alone (D73) | one pair in both samples; absence unseen. Phase 7 refuted leaving the type to the model when the record states none: `synthetic_05` reads CTA FAIL in `docs/scorecards/synthetic_12_openai_run1.txt` and `_run2.txt`, where the model chose `contact`, and OK in `_run3.txt` only because the template answered (VARIANCE.md, per-record table); after D73 it reads OK in all three `synthetic_12_openai_after_d72_run*.txt` | the catalog file |
 | A10 | sms carries numbered reply options in the body and `cta.options`; email carries `cta.link` built as `https://{property slug}.example/{cta path}` | sample 1 options Thu, Fri; sample 2 link `https://oakridge.example/tour` from Oak Ridge Apartments | no |
 | A11 | Subject on email only | sample 1 null on sms, sample 2 present on email | no |
-| A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored | no |
-| A13 | Body language is `input.language` and nothing gates on a language allowlist: the model path passes the tag through unchanged, and the template composer holds one set per language it can serve, English and Spanish, with any other tag served in English and the diagnostic `locale_not_applied` | both samples en; the synthetic set's item 4 record is es; the field is a free tag, so other values must not fail (D26) | the template sets |
+| A12 | Body carries first name and property (the two facts the scorer counts, D13 a), stated interest when present, horizon cue when a date exists, and the channel's opt-out phrase; on the model path code appends the record's language set's opt-out sentence when the draft carries none (D72) | both samples carry name, property, and opt-out; sample 2 carries its amenities; sample 1's body omits its city, so stated interest is composed but not scored. Phase 7: left to the model, the opt-out was the one reason the safety gate refused drafts, 11, 10 and 12 a run, and none were refused after D72 (VARIANCE.md, both batch tables); OptOut reads 10/10 on every scorecard in `docs/scorecards/` | no |
+| A13 | Body language is `input.language` and nothing gates on a language allowlist: the model path passes the tag through unchanged, and the template composer holds one set per language it can serve, English and Spanish, with any other tag served in English and the diagnostic `locale_not_applied` | both samples en; the synthetic set's item 4 record is es; the field is a free tag, so other values must not fail (D26). Phase 7 confirmed the pass-through on the model path: after D72 the model wrote `synthetic_04` on all three runs, with the Spanish set's opt-out sentence appended (VARIANCE.md, After D72 and D73), and Lang reads 10/10 on every scorecard in `docs/scorecards/` | the template sets |
 | A14 | Required states are earned by the step that proves them and recorded in diagnostics; an unknown state name is recorded as not earned, never claimed | three names in both samples; the list is free text; the states map of D42 gives every name in a record's own `required_states` its verdict, `consent_verified` from step 1, the consent-driven channel selection, which owns the state and earns it for every record that reaches it, whatever it answers and whatever the record's `channel_preferences` list holds (D57), `fair_housing_check_passed` from the `FairHousing` check alone (D38), `brand_style_applied` from the brand-style validator, and every other name not earned by name; the hold-out's `renewal_offer_loaded` is such a name and stays not earned, because a rule for it would be fitted to the hold-out (D9, A19) | no |
-| A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope | no |
+| A15 | `p95_latency_ms` is a nearest-rank p95 over the batch against the strictest stated budget; `personalization_score_min` is fact coverage; a check with no stated threshold, no message to check, or no recorded value is not measured, never passed; `reply_classification_f1_min` and any unknown threshold are not measured | four names in both samples; no classifier is in scope. Phase 7: every model-path scorecard fails the p95 against 2000 ms, at 8043, 8261, 9356, 2318, 2398, 4508 and 2066 ms (`docs/scorecards/synthetic_12_openai_*.txt`), where the template's reads 19 ms OK (`synthetic_12_template.txt`) | no |
 | A16 | Unknown members at any depth are kept, listed in diagnostics, logged per record, never an error | none seen; the statement promises more cases than the samples show | no |
-| A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics | section 2; no decision can be made without these three | no |
-| A18 | The model writes prose only and picks the call-to-action type from the catalog under constrained decoding; the template composer is the offline path and the fallback | the statement asks for an autonomous agent, not a model; decision S2 | no |
+| A17 | Required members are `task_id`, `consent`, `channel_preferences`; a line missing one is an error row naming it; every other member is optional with its default named in diagnostics; that line is also one `ERROR` row of the scorecard, counted in the overall count and measured on no check (D71) | section 2; no decision can be made without these three. Phase 7: `docs/scorecards/synthetic_12_template.txt` line 14 reads `ERROR: Line 11 failed to parse`, under `Overall: 12/13 passed`, which `tests/Agent.Tests/Evaluation/BaselineNumbersTests.cs` pins (line 33) | no |
+| A18 | The model writes prose only; code sets the call-to-action type, which the response schema allows alone (D73), and appends the required opt-out sentence the model leaves out (D72); the template composer is the offline path and the fallback | the statement asks for an autonomous agent, not a model; decision S2. Phase 7 refuted the older form, in which the model picked the type and wrote the disclosure: across the first three live runs channel, send time, action type and payload matched the template's on every run, while `synthetic_05`'s type and 33 opt-out refusals moved with the model (VARIANCE.md); after D72 and D73 the model wrote all 10 messages at one call each on every run and the scored outcome stopped moving (VARIANCE.md, After D72 and D73) | no |
 | A19 | The twelve-record file is an evaluation set; no rule or constant is fitted to it | requester's answer, D9 | no |
 | A20 | The channel's slot on a day the zone springs forward across it resolves to the first instant that exists at or after the slot; a slot the zone falls back across, and so reaches twice, resolves to the earlier instant; the diagnostics name which happened | none: both samples are `America/Chicago` at 09:00 and 10:00, and no transition in the current zone database covers those hours, so the branch is unreachable from any observed record; stated over a zone's adjustment rules, proved against custom zones and a sweep of every system zone's transitions (D21) | no |
 | A21 | The email link is `https://{slug}.example/{path}`: the slug is the property name lowercased with non-alphanumeric characters removed and a trailing property-type word dropped, and the path comes from the catalog's call-to-action column | sample 2's `https://oakridge.example/tour` from "Oak Ridge Apartments" and `book_tour`; one pair, so "the first two words concatenated" fits it equally and this picks the type-word rule because the other breaks on a one-word or four-word name (D25) | the catalog file |
+| A22 | A model call is bounded by the strictest `p95_latency_ms` the batch states, given whole to one attempt, and a timeout is never retried (D28, D33, D35); `--model-call-budget-ms` replaces the bound for a run, and the p95 check keeps the records' own budget (D70) | added from Phase 7, which relied on it: with 1000 ms attempts the model wrote none of 23 messages (section 9, the step 60 run); with one 2000 ms attempt it wrote 2 of 10, 10 calls and 2 completed, p95 2066 ms (`docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`); with the flag at 30000 ms it wrote all 10 at 1.5 to 4.5 seconds a record (VARIANCE.md, After D72 and D73). On these sets the stated budget and a live model do not fit together, and D36 is closed for evaluation runs only | the flag, with `--composer openai` only (D70) |
+| A23 | Four records in flight at once stay under the vendor's rate limit | added from Phase 7, which relied on it and did not measure it: D37 sets four as a margin under a limit this project has never measured (`src/Agent.Cli/CliRunner.cs`, `MaxConcurrentRecords`, line 54), and the one live run made under it, `docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`, ended 8 of its 10 calls at the timeout (VARIANCE.md) | no; a constant |
 
 ## 8. Non-goals, quality bar, security
 
@@ -315,6 +362,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
 | 9 Diagnostics, guards and fault injection (landed 2026-09-09) | Phase 6's check restored to the playbook's, per-record latency and token counts on the diagnostics row, the step 81 by-hand run, a guard on every path the CLI opens in either direction and on every empty argument, the two spend counts moved off `composition`, `docs/FAULT_INJECTION.md` (D60 to D66) | every per-check tally unmoved on all three sets; all four artifacts and the documented exit code on each; six command-line failures that ended the process unhandled now exit 1 with no stack frame; the six faults of step 84 each named with the tests that prove it |
+| 10 Decision log trim (landed 2026-09-10) | every decision paragraph moved to `DECISIONS_ARCHIVE.md` under the bold heading a citation resolves by, one paragraph per sprint left in the log, and the word cap and the check that no cited number dangles moved into `check-instruction-files.ps1` (D68) | `check-instruction-files.ps1`, which CI runs, holds the log under two thousand words and fails on any D or S number with no paragraph |
 | 11 Phase 7 evidence (landed 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71), `docs/VARIANCE.md` from three live runs, and D72 and D73, opened by those runs and fixed: code appends the opt-out sentence and sets a call to action the record leaves unstated; then D67, D34, D33, D35 and D37 (the fallback's own spend on every exit, a retry only after a safety rejection, no retry after a timeout, the whole budget to one attempt, four records at once with retries counted per call), `docs/RUNBOOK.md`, a clean-clone run and the step 86 test review | the model answers on `synthetic_12.jsonl` for the first time, 7 to 9 of 10 messages across three runs, then 10 of 10 with no draft refused after D72 and D73; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
@@ -656,6 +704,13 @@ by design, which until D71 had no row at all while the exit code already counted
 three runs: overall 11, 11 and 12 of 13, CTA 9, 9 and 10 of 10, every other check unmoved, p95
 8,043, 8,261 and 9,356 ms against 2000 ms; the model wrote 8, 9 and 7 of the 10 messages and the
 template the rest, and its first draft missed the opt-out instructions on nine of the ten records
-on every run (D72). Phase 7's check passes on these three files, 2026-09-10. Steps 86 (review
+on every run (D72). After D72 and D73 the same command made three more runs, each 12 of 13 with
+CTA 10 of 10, 10 calls, no draft refused, and p95 2318, 2398 and 4508 ms, still FAIL
+(`docs/scorecards/synthetic_12_openai_after_d72_run1.txt` to `_run3.txt`); one run without the
+flag, after D33, D35 and D37, read 12 of 13 with 10 calls and 2 completed, p95 2066 ms, FAIL
+(`docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`). What these runs changed in the
+assumptions log is recorded there, A6, A9, A12, A13, A15, A17 and A18, and in the two they added,
+A22 and A23. Phase 7's check passes on the scorecard, the variance report and the fault-injection
+results named at the top of this paragraph, 2026-09-10. Steps 86 (review
 every test), 87 (the one-screen runbook) and 88 (a clean-clone run) were done the same day; the
 archive's run and debug facts of 2026-09-10 record them.
