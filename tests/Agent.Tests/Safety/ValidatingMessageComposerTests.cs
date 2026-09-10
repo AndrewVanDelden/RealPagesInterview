@@ -431,4 +431,57 @@ public class ValidatingMessageComposerTests
         Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), failed.ModelCost);
         Assert.Null(failed.NetworkRetries);
     }
+
+    // D67 (a): a fallback composer that spends is billed like any attempt. The refusal adds the
+    // fallback outcome's own counts to what the rejected attempts spent, the way WithAttempts
+    // adds the winner's, so the three exits read alike. The template fallback this program
+    // wires spends nothing, so this fake is the only fallback that can show the difference.
+    [Fact]
+    public async Task ComposeAsync_FallbackUnsafeAfterSpendingItsOwn_TheRefusalAddsTheFallbackSpend()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()))
+        {
+            NetworkRetries = [1],
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7)],
+        };
+        var spendingUnsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()))
+        {
+            NetworkRetries = [2],
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 5, OutputTokens: 3)],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, spendingUnsafeFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        var refused = Assert.IsType<ComposeOutcome.Refused>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 3, CompletedCalls: 3, InputTokens: 27, OutputTokens: 17), refused.ModelCost);
+        Assert.Equal(4, refused.NetworkRetries);
+    }
+
+    // D67 (a), the other no-message exit: the fallback made a call that returned nothing
+    // usable. That call is still one this record spent, so the failure carries it beside the
+    // attempts' spend rather than reading the fallback's outcome for its error alone.
+    [Fact]
+    public async Task ComposeAsync_FallbackFailsAfterSpendingItsOwn_TheFailureAddsTheFallbackSpend()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()))
+        {
+            NetworkRetries = [1],
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7)],
+        };
+        var spendingFailingFallback = new SequenceMessageComposer(Result<NextMessage>.Failure("fallback call abandoned"))
+        {
+            NetworkRetries = [2],
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, spendingFailingFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        var failed = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 3, CompletedCalls: 2, InputTokens: 22, OutputTokens: 14), failed.ModelCost);
+        Assert.Equal(4, failed.NetworkRetries);
+    }
 }

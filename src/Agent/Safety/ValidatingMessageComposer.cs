@@ -101,7 +101,9 @@ public sealed class ValidatingMessageComposer(
 
         // D66: the two exits below return no message, so there are no notes to stamp, and
         // before D66 that is where the accumulation above was dropped. Both counts go on the
-        // outcome itself instead.
+        // outcome itself instead. D67 (a): each exit also adds the fallback outcome's own
+        // counts, the way WithAttempts adds the winner's, so all three exits sum both sources.
+        // The template fallback this program wires spends nothing, so today that adds null.
         if (fallbackOutcome is not ComposeOutcome.Composed fallbackComposed)
         {
             // No draft anywhere: the fallback built no message either. Nothing to review, so
@@ -109,8 +111,8 @@ public sealed class ValidatingMessageComposer(
             log.LogError("Fallback composer produced no message; suppressing.");
             return new ComposeOutcome.Failed(((ComposeOutcome.NoMessage)fallbackOutcome).Error)
             {
-                ModelCost = discardedModelCost,
-                NetworkRetries = discardedNetworkRetries,
+                ModelCost = ModelCostNotes.Add(discardedModelCost, fallbackOutcome.ModelCost),
+                NetworkRetries = AddRetries(discardedNetworkRetries, fallbackOutcome.NetworkRetries),
             };
         }
 
@@ -122,8 +124,8 @@ public sealed class ValidatingMessageComposer(
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
         return new ComposeOutcome.Refused(fallbackComposed.Message.Message, RefusalError)
         {
-            ModelCost = discardedModelCost,
-            NetworkRetries = discardedNetworkRetries,
+            ModelCost = ModelCostNotes.Add(discardedModelCost, fallbackComposed.ModelCost),
+            NetworkRetries = AddRetries(discardedNetworkRetries, fallbackComposed.NetworkRetries),
         };
     }
 
