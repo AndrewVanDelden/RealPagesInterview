@@ -2352,3 +2352,33 @@ evaluation runs only; three hold-out records assert `renewal_offer_loaded`; `int
 three files in `src/`; DESIGN.md section 9 records batch p95s of 19 to 22 ms. Findings: none.
 The second reviewer `docs/CODE_REVIEW.md` names, Gemini under Antigravity, is run by the owner
 on the Sprint 12 PR and has not run.
+
+**Run and debug fact, playbook steps 93, 94, 97 and 98 and the Phase 8 check (2026-09-10).** The
+owner marked step 93 complete with its second reviewer, Gemini under Antigravity, not run: PR #29
+merged with no review and no comment on GitHub. Step 94 is the owner's read: the release PR from
+`dev` into `main` names nine files, `SafetyValidator.cs`, `SafetyTextNormalizer.cs`,
+`OptOutInstructions.cs` and `ValidatingMessageComposer.cs` under `src/Agent/Safety/`,
+`ChannelSelector.cs`, `LeasingMessageAgent.cs`, `OpenAiMessageComposer.cs`,
+`ExceptionFormatting.cs`, and the two key reads in `CliRunner.cs`. Step 97: the annotated tag
+`v1.0.0` is on `ccf3c5c`, the PR #29 merge into `dev`, and the release PR carries the narrative.
+Step 98: `docs/NARRATION.md` opens with a 150-word script that answers all seven questions in one
+minute spoken, written in the owner's voice at the owner's request; the delivery aloud is the
+owner's. The rehearsal was rerun at the tag and every value it states matched. The check ran from
+a worktree at `v1.0.0`: `dotnet build` 0 warnings and 0 errors; `.\test.ps1` exit 0, 86 and 564
+tests at 100 percent line, branch and method coverage; the README run command exit 0;
+`sample.jsonl` at `Overall: 2/2 passed`; the runbook's hold-out run exit 0 at
+`Overall: 4/12 passed`, its synthetic run exit 2 at `Overall: 12/13 passed`, a
+`TaskId=prospect_welcome_day0` line in `run.log`, and its replay exit 0 with the same tallies and
+Safety 0/0. Phase 8's check passed.
+
+**D77. Whether Phase 9 is already met (proposed 2026-09-10).** Question: playbook step 99 runs
+the real judged set with no code touched, and this project's judged set was `holdout_12.jsonl`,
+run and read in `docs/RETROSPECTIVE_2026-09-06.md`, which took steps 100 to 102 that day. The
+product was then rebuilt from that retrospective's decisions, so step 103 counts the hold-out as
+seen, although D9 fits no rule to it, and no unseen judged set exists. Options: (a) the
+retrospective of 2026-09-06 meets Phase 9, `synthetic_12.jsonl`, frozen since 2026-09-08,
+carries the honest number, and step 104, updating the playbook from this project, is what
+remains; (b) a fresh judged set labeled by someone other than its author, and steps 99 to 104 run
+against `v1.0.0`; (c) close the project at Phase 8. Recommendation: (a), since the interview is
+over and (b) needs a labeler the project does not have. Scopes: Phase 9, steps 99 to 104.
+Evidence: `docs/RETROSPECTIVE_2026-09-06.md`; DESIGN.md section 4. Assumptions: none. Open.
