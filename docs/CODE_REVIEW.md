@@ -152,3 +152,38 @@ or human) doesn't re-flag them as missing behavior.
   `log.IsEnabled(LogLevel.Information)` is always `true` in this codebase today - adding
   the guard would be an always-true branch the coverage gate can't exercise on the
   `false` side. Revisit if a `--log-level` flag is ever added.
+
+- **No by-hand re-scoring of the examples (Sprint 9, D63).** Playbook step 81 asks that the
+  examples be run end to end from the documented command and the output checked by hand
+  against the expected records. The per-field, per-record comparison against the label is
+  exactly what `Evaluator` already does, under D13 d, which fixes the label as the oracle and
+  forbids scoring against the product's own tables; `--eval-report` prints one verdict per
+  check per record and a per-check tally, and `ScorerProofTests` is what proves the scorer can
+  fail. A person redoing that across 26 rows would run the same comparison less reliably, and
+  a disagreement would mean the scorer is wrong rather than the output. What is kept from step
+  81 is the half no automated check makes: that each documented command produces the output
+  file, the diagnostics file, the review queue and the scorecard and exits with the documented
+  code, that the scorecard's tally lines agree with its own rows (`Scorecard` computes its
+  tallies once in field initializers, so a `with` copy that replaces `RecordScores` prints a
+  report whose rows and totals disagree), and that one record read end to end across its four
+  artifacts tells one consistent story. Recorded as a dated subsection of `docs/DESIGN.md`
+  section 9. Do not flag the absence of a manual scoring pass as a missing step.
+
+- **Disk full is proved as the open that fails, not as a full volume (Sprint 9, D64).**
+  Playbook step 84 names disk full on output as a fault to inject. Sprint 9 gives `--output`,
+  `--diagnostics`, `--review-queue` and `--eval-report` the same fail-fast guard on
+  `IOException` and `UnauthorizedAccessException` that `--log-file` already has, so every
+  cause of a failed open, a missing directory, a read-only path, a locked file, a volume
+  that is already full, produces one clean stderr line naming its own flag and exit code 1
+  rather than an unhandled exception. What the guard does not cover, stated rather than
+  implied: on `--output`, `--diagnostics` and `--review-queue` it sits at the open, so a
+  volume that fills after the file is opened throws from inside the writer, downstream of
+  every guard in `CliRunner`, and that run still ends on an unhandled exception with an exit
+  code that is none of the three documented ones. (`--eval-report` is the one written in a
+  single guarded call rather than through a stream held open across the batch, so its own
+  write is covered.) Producing an actual out-of-space condition, at the open or after it, is
+  scoped out: it needs a virtual disk or a filesystem quota, which is machine setup this
+  suite cannot carry and CI cannot reproduce, and at the open it would exercise the same
+  catch the guard's own tests already exercise. The six faults and their proofs, including
+  that uncovered case, are in `docs/FAULT_INJECTION.md`. Do not flag the absence of a real
+  out-of-space test.

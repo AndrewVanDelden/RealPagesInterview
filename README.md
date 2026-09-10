@@ -105,7 +105,13 @@ nothing, because it makes no request and needs no key. The one live run this pro
 `--composer openai` across all three sets on 2026-09-08, cost about $0.004 read off the vendor's
 own usage page rather than estimated, roughly $0.00017 per record, and the model wrote none of the
 text: every call was abandoned at its 1000 ms timeout and the template answered, which is what the
-fallback is for (D31, and the arithmetic in [docs/DESIGN.md](docs/DESIGN.md) section 9).
+fallback is for (D31, and the arithmetic in [docs/DESIGN.md](docs/DESIGN.md) section 9). That
+dollar figure is dated prose and stays dated prose; what the program measures is tokens.
+`diagnostics.model_cost` carries the vendor's own input and output token counts for
+each record, null when no model call was made at all and a counted call with zero tokens when one
+was abandoned at its timeout, and the scorecard's `Batch model cost:` line is the batch total
+(D62). A price constant in code is a fact about a vendor's web page that no test here could tell
+stale from current, so today's money is today's published price times the tokens a run reports.
 
 Add `--eval-report <file>` against a labeled file (one with `expected` populated) to get
 the scorecard: one row per record with a verdict per check (channel, send day and hour,
