@@ -15,8 +15,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
 Check: the README's run command and the runbook's steps both work from the tagged commit. Not passed: nothing is tagged.
-Next step: settle D75, then step 93; steps 90, 91 and 95 are done, 92 and 96 audited.
-Open decisions: D75, the step 96 changes to `AGENTS.md` and the check script.
+Next step: step 93's second reviewer, Gemini on the Sprint 12 PR, then step 94; steps 90 to 92, 95 and 96 are done.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -89,10 +89,11 @@ the opt-out sentence and an unstated call to action (D72, D73), and refusals fel
 The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed three PR #28
 review findings, a run and debug fact.
 
-**D74 and D75, Sprint 12, Phase 8 documentation (2026-09-10).** The README is rewritten to step
-90 with every command in it run, and DESIGN.md has step 91's interface table, a decision number
-on every rule, nine open questions, Phase 7's changes to seven assumptions and two new ones, A22
-and A23. Step 95 found no secret and no personal path in any commit; the repository stays public
-with the assignment's text and data, the owner's choice (D74). The step 92 audit's two fixes, the
-phase section and the Sprint 11 paragraph, are made; D75, the step 96 changes, is open. Four
-agents ran these steps at once, a Phase First departure recorded as a run and debug fact.
+**D74 to D76, Sprint 12, Phase 8 documentation (2026-09-10).** The README meets step 90 and
+every command in it ran; DESIGN.md has step 91's interface table, a decision number on every
+rule, nine open questions, and Phase 7's changes to seven assumptions plus A22 and A23. Step 95
+found no secret and no personal path; the repository stays public with the assignment's text and
+data, the owner's choice (D74). Step 92's two fixes are made; D75 takes none of the step 96
+changes. Four agents ran these steps at once, a Phase First departure on record. Step 93 reviewed
+this sprint's diff, the one no PR had reviewed (D76), and found nothing; the second reviewer is
+owed.

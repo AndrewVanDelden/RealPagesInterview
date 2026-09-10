@@ -2314,7 +2314,7 @@ is. Recommendation: private. Taken 2026-09-10 by the owner: public as it is, the
 step 95 records. Scopes: step 95; no file changes. Evidence: the step 95 run and debug fact above.
 Assumptions: none.
 
-**D75 (open). The step 96 changes to the instruction files (2026-09-10).** Question: which of the
+**D75. The step 96 changes to the instruction files (2026-09-10).** Question: which of the
 step 96 audit's findings become changes. `AGENTS.md` is 150 lines, which the check script passes
 because it tests greater than 150, and step 96's "under 150" does not. Options: (a) trim the
 passages the code already states (the Layout folder list, the `AgentJsonOptions` sentence, the
@@ -2327,5 +2327,28 @@ and debug facts of 2026-09-09 and 2026-09-10); correct the two stale lines, "All
 never `main`" while work lands on sprint branches merged into `dev`, and "four rules" followed by
 five; and have the script enforce the 120-word paragraph cap (D68), the four-line phase section of
 step 92, and under 150 lines; (b) the two rules and the corrections only; (c) none.
-Recommendation: (a). Scopes: Sprint 12, step 96. Evidence: the step 96 audit of 2026-09-10.
-Assumptions: none.
+Recommendation: (a). Taken 2026-09-10 by the owner: (c), none. `AGENTS.md` stays at 150 lines
+with the two stale lines as they are, and the script's limits stay as they are, so step 96's
+"under 150" is an exception on record rather than a pass. Scopes: Sprint 12, step 96. Evidence:
+the step 96 audit of 2026-09-10. Assumptions: none.
+
+**D76. What step 93's final diff is (2026-09-10).** Question: step 93 runs the automated review
+on "the final diff", and PRs #1 to #28 were each reviewed on their own. Options: this sprint's
+diff into `dev`, the one part of the release no review has read; or the whole release, `dev`
+against `main`, which `main`'s single README commit makes the entire project. Recommendation:
+the first, since a whole-project review is `/code-review ultra`, which only the owner can launch.
+Taken 2026-09-10 by Claude as the stated default when the owner said to go on to step 93.
+Scopes: step 93. Evidence: `gh pr view 28` shows four reviews posted from the owner's account and
+no bot; `.github/workflows/test.yml` is the only workflow. Assumptions: none.
+
+**Run and debug fact, playbook step 93 (2026-09-10).** The Claude Code review ran at high over
+`dev...sprint-12-documentation` and the working tree, a docs-only diff: `README.md`,
+`docs/DESIGN.md`, this log and this archive. Each claim the diff adds was traced to its source:
+D42's third brand rule is `SubjectMatchesChannel`; `ValidatingMessageComposer` retries only a
+safety rejection, with the violations fed back, sends any other failure straight to the fallback,
+and validates the fallback; `OpenAiCompletionClient` retries once on 408, 429, 500, 502, 503 or
+504 and never after a timeout; D70 leaves the judge out of every option and closes D36 for
+evaluation runs only; three hold-out records assert `renewal_offer_loaded`; `interface I` matches
+three files in `src/`; DESIGN.md section 9 records batch p95s of 19 to 22 ms. Findings: none.
+The second reviewer `docs/CODE_REVIEW.md` names, Gemini under Antigravity, is run by the owner
+on the Sprint 12 PR and has not run.
