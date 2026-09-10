@@ -2085,3 +2085,45 @@ one for `Missing required opt-out instructions`. One cosmetic effect of D71: the
 the last column to its widest cell, so every row of a scorecard with an `ERROR` row carries
 trailing spaces to the width of the reader's failure text, as an unscoreable row always did.
 Nothing is pinned for the live run: its prose, its latency and its token counts are the vendor's.
+
+**D72 (open). The model's drafts refused for missing opt-out instructions (2026-09-10).**
+Question: across the three runs of VARIANCE.md the safety gate refused 33 of the model's drafts,
+11, 10 and 12, every one for `Missing required opt-out instructions`, and the first draft failed
+on nine of the ten records on every run. The prompt says only `Opt-out instructions: required.`
+(`OpenAiMessageComposer.BuildUserPrompt`), while the gate accepts a narrow definition
+(`OptOutInstructions`: STOP in capitals, `reply stop` or `text stop`, `opt out`, `opt-out`,
+`unsubscribe`); the corrective retry carries the violation reason and usually passes, at the
+cost of a second call on almost every record. `synthetic_04`, the Spanish record, was refused on
+both attempts on all three runs and the template wrote it each time. Why is not read, because no
+artifact carries a draft refused inside the compose-validate loop: the review queue holds only
+what the final gate refuses (D43) and a log line never carries prose (step 68). Options: (a) state
+the accepted forms in the prompt, which is prompt text and a golden-test change and still leaves
+the model to comply; (b) have code append the opt-out sentence after the model writes, from the
+per-language sets the template composer already uses, so a required disclosure is owned by code
+the way the link is (S2); (c) leave it and pay the second call. Recommendation: (b), because a
+required disclosure is a reproducible decision and S2 gives those to code, and it removes the
+refusal rather than making it rarer; its effect is measured by rerunning VARIANCE.md's three
+runs. Scopes: `OpenAiMessageComposer`, the language sets, the prompt's golden test, VARIANCE.md.
+Evidence: VARIANCE.md and the three runs' error streams. Assumption: A18.
+
+**D73 (open). The model's call to action on a record that states none (2026-09-10).** Question:
+`synthetic_05` states no `primary_cta`, the prompt then says `No specific call to action is
+required; choose one reasonable for this message.`, and the model chose `contact` on both runs
+where it wrote the message. The label expects `reply`, which is what the template writes under
+A9's generic call to action, so the one scored check that varied across VARIANCE.md's three runs
+passed only when both model drafts were refused and the fallback answered. Options: (a) name
+A9's generic type in the prompt when the record states none; (b) have code set the type from A9
+and leave the model only the options prose; (c) leave it, since the label is one reading of an
+unstated constraint. Recommendation: (b), keyed on the absence of the input field as A9 already
+is and not on this label, which D9 forbids fitting to: the type is a decision, and S2 gives
+decisions to code. Scopes: `OpenAiMessageComposer`'s call-to-action instruction and its response
+schema. Evidence: VARIANCE.md's per-record table. Assumption: A9.
+
+**Run and debug fact, step 83's three runs and the Phase 7 close (2026-09-10).** Runs 2 and 3
+were made at e4c74ad with run 1's command, changing only the scorecard name, and wrote
+`docs/scorecards/synthetic_12_openai_run2.txt` and `_run3.txt`; both exited 2, for line 11.
+Their numbers and run 1's are tabled in VARIANCE.md, written by hand from the three scorecards
+and the three runs' diagnostics and output files, which were read from the scratchpad and not
+committed. With it, Phase 7's check holds: the synthetic scorecard, the variance report and the
+fault-injection results are all files in the repo. Steps 86, 87 and 88 were not done and are
+recorded as owed in the log's Current phase block. No code changed for the close.

@@ -13,19 +13,17 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 7 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Test the way it will be judged.
-Check: the scorecard on the synthetic set, the variance report and the fault-injection results
-are all files in the repo. Status: not passed. `docs/FAULT_INJECTION.md` is there; the other two
-are not, and the scorecard is written today only to a path `.gitignore` excludes, which is an
-open question of its own before any of the three can be a file in the repo.
-Phase 6 passed 2026-09-09 in Sprint 9, against the playbook's check and not this log's (D60):
-the documented one-line command produced the output file, the diagnostics file, the review queue
-and the scorecard on all three sets and exited 0, 0 and 2, checked by hand and recorded in
-DESIGN.md section 9 (D63). The narration this block used to gate Phase 6 on is step 98, inside
-Phase 8, and is still owed there.
-Next step: decide where a committed scorecard and a variance report live, then produce them.
-Open decisions: three. D31's question on how a real model-versus-template comparison could be
-run at all and whether D32 to D37 get a sprint of their own need the requester; D67 is the third.
+Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
+Check: the README's run command and the runbook's steps both work from the tagged commit.
+Status: not passed. Nothing is tagged, and the one-screen runbook is not written.
+Phase 7 passed 2026-09-10 in Sprint 11: the synthetic scorecard, the variance report and the
+fault-injection results are files in the repo, `docs/scorecards/`, `docs/VARIANCE.md` and
+`docs/FAULT_INJECTION.md` (D69 to D71). Its steps 86 (review every test), 87 (the one-screen
+runbook) and 88 (a clean-clone run) were not done and are owed, as the narration of step 98 is.
+Next step: steps 86 to 88, then Phase 8 from step 90.
+Open decisions: four. D72, the model's drafts refused for missing opt-out instructions; D73, the
+model's call to action on a record that states none; D67, the fallback's dropped spend; and
+whether D33 to D35 and D37 get a sprint.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -90,10 +88,10 @@ CI runs. Executed 2026-09-10. A run and debug fact of the same day records seven
 fixed: what the check counts as a definition, the S numbers and the archive it did not scan, and
 four lines of stale prose.
 
-**D69 to D71, Sprint 11, the Phase 7 evidence (2026-09-10).** Where the committed scorecard
-lives: written by the CLI into `docs/scorecards/`, a dated snapshot rather than a golden, because
-two offline runs differed only on wall clock (D69). What the variance report measures: the
-requester chose getting the model to answer at all, so a `--model-call-budget-ms` flag for
-evaluation runs, after a scratch run measured 2 to 4 seconds a call against D28's 1000 ms
-attempt (D70). A line that did not parse, or a record that threw, is an `ERROR` row that counts
-in `Overall`, so the synthetic set reads 12 of 13 (D71).
+**D69 to D73, Sprint 11, the Phase 7 evidence (2026-09-10).** The committed scorecard is
+written by the CLI into `docs/scorecards/`, a dated snapshot rather than a golden (D69). A
+`--model-call-budget-ms` flag for evaluation runs lets the model answer, after a scratch run
+measured 2 to 4 seconds a call against D28's 1000 ms attempt (D70). A line that did not parse,
+or a record that threw, is an `ERROR` row counted in `Overall`, so the synthetic set reads 12 of
+13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7. They opened D72, drafts
+refused for missing opt-out instructions, and D73, the call to action on a record stating none.

@@ -302,6 +302,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
 | 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
 | 6 Orchestration, entry points, and operations | the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code | 2026-09-09 in Sprint 9, on the by-hand run of step 81 recorded below: all four artifacts on all three sets, exit codes 0, 0 and 2 (D60, D63). The narration this table previously fused onto this gate is the playbook's step 98, inside Phase 8, and is still owed there (D60) |
+| 7 Test the way it will be judged | the scorecard on the synthetic set, the variance report, and the fault-injection results are all files in the repo | 2026-09-10 in Sprint 11: `docs/scorecards/synthetic_12_template.txt`, `docs/VARIANCE.md` and `docs/FAULT_INJECTION.md` (D69 to D71). Steps 86, 87 and 88 were not done and are owed |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -314,7 +315,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
 | 9 Diagnostics, guards and fault injection (landed 2026-09-09) | Phase 6's check restored to the playbook's, per-record latency and token counts on the diagnostics row, the step 81 by-hand run, a guard on every path the CLI opens in either direction and on every empty argument, the two spend counts moved off `composition`, `docs/FAULT_INJECTION.md` (D60 to D66) | every per-check tally unmoved on all three sets; all four artifacts and the documented exit code on each; six command-line failures that ended the process unhandled now exit 1 with no stack frame; the six faults of step 84 each named with the tests that prove it |
-| 11 Phase 7 evidence (in progress 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71) | the model answers on `synthetic_12.jsonl` for the first time, 8 of 10 messages on the committed run; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
+| 11 Phase 7 evidence (landed 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71), `docs/VARIANCE.md` from three live runs, and D72 and D73 opened by them | the model answers on `synthetic_12.jsonl` for the first time, 7 to 9 of 10 messages across three runs; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
 file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
@@ -645,13 +646,14 @@ before any logger exists and writes to stderr directly, so it has one line to pr
 **Phase 7 evidence, Sprint 11 (2026-09-10).** Where Phase 7's check stands: the scorecard on the
 synthetic set is a file in the repo, `docs/scorecards/synthetic_12_template.txt`, written by the
 CLI with `--eval-report` from the Sprint 11 working tree on 7d7bb17 and never edited (D69); the
-fault-injection results are [FAULT_INJECTION.md](FAULT_INJECTION.md); the variance report is not
-written. Step 82, every row of that scorecard read: twelve records pass every check they are
-measured on, and the thirteenth row is line 11 of `synthetic_12.jsonl`, malformed by design, which
-until D71 had no row at all while the exit code already counted it. The first model run under
-D70's flag is `docs/scorecards/synthetic_12_openai_run1.txt`, the committed set with `--composer
-openai --model-call-budget-ms 30000`; its numbers, and those of the scratch run before it, are the
-two run and debug facts of 2026-09-10 in the archive. Step 83 asks for three such runs and a
-variance report; the requester chose one working run first and the count afterward (D70), so the
-report waits on that call. What the two runs already show: the model's first draft missed the
-opt-out instructions on nine of the ten records both times, and the safety gate caught every one.
+fault-injection results are [FAULT_INJECTION.md](FAULT_INJECTION.md); the variance report is
+[VARIANCE.md](VARIANCE.md), three runs of the committed set with `--composer openai
+--model-call-budget-ms 30000` (D70), their scorecards beside the template's in
+`docs/scorecards/`. Step 82, every row of the template scorecard read: twelve records pass every
+check they are measured on, and the thirteenth row is line 11 of `synthetic_12.jsonl`, malformed
+by design, which until D71 had no row at all while the exit code already counted it. Step 83's
+three runs: overall 11, 11 and 12 of 13, CTA 9, 9 and 10 of 10, every other check unmoved, p95
+8,043, 8,261 and 9,356 ms against 2000 ms; the model wrote 8, 9 and 7 of the 10 messages and the
+template the rest, and its first draft missed the opt-out instructions on nine of the ten records
+on every run (D72). Phase 7's check passes on these three files, 2026-09-10. Steps 86 (review
+every test), 87 (the one-screen runbook) and 88 (a clean-clone run) were not done and are owed.
