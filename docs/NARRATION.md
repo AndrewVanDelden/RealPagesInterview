@@ -1,77 +1,34 @@
 # How the next-best-message agent works, out loud
 
-Filled from Appendix B of `~/.agent-rules/PROJECT_PLAYBOOK.md`. The seven questions are the
-five-minute answer; questions 1 and 2 alone are the sixty-second answer. While speaking: no
-pattern names, no class names, one file name at most (question 3), and walk one record rather
-than walking the parts. Question 6 is updated after every run that changes the number.
+Filled from Appendix B of `~/.agent-rules/PROJECT_PLAYBOOK.md`. The script below answers all
+seven questions in 150 words, one minute spoken, one paragraph per question and questions 2 and 3
+together. Rules while speaking: no pattern names, no class names, one file name at most, and walk
+one record rather than the parts. The number in question 6 is updated after every run that
+changes it.
 
-## The seven questions
+## One minute
 
-**1. What it is.** A file of prospect and resident records goes in, one JSON object per line,
-and a JSON array comes out, one row per record, saying which channel to use, when to send, what
-the message says, and what the next action is. A record nobody is allowed to contact still gets
-a row: suppression is a decision the output states, not an absence.
+It reads leasing records and writes one row each: channel, send time, message and next action. A
+record nobody may contact still gets a row saying so.
 
-**2. The steps, in order.** Six, and they run in this order every time.
+Six steps run in one file, `LeasingMessageAgent.cs`. It picks the first consented channel, looks
+up the next action by persona and stage, writes the message in their language, schedules it in
+their timezone, runs four safety checks, and emits the row with its reasons.
 
-1. Pick the contactable channel: walk the record's own preference order and take the first one
-   its consent opts into. Nothing consented means suppress and stop.
-2. Plan the next action: count the days from the run's reference date to the move date, call
-   that horizon short or long, and look the action up by the record's persona and lifecycle
-   stage, falling back to one generic row when no row covers that pair.
-3. Write the message, in the record's language.
-4. Schedule the send: the channel's hour on the first day at or after the later of the run's
-   reference time and the record's last interaction, in the record's own timezone.
-5. Validate the finished message: the opt-out line is present, no Social Security number, no
-   long run of digits, no fair-housing steering. A violation suppresses the message.
-6. Emit the row, plus a per-record account of how each of the five decisions above was reached.
+Code makes every decision. A model, when asked, only writes the prose, and the safety gate checks
+it first.
 
-**3. Where the decisions live.** One file: `src/Agent/Orchestration/LeasingMessageAgent.cs`. It
-reads top to bottom as those six steps, one numbered comment each, and it holds no rule of its
-own: every step hands the question to the component that owns it and takes the answer back.
+A bad line becomes one failure row and the batch keeps going.
 
-**4. What code decides and what it delegates.** Steps 1, 2, 4 and 5 are deterministic code with
-no I/O at all, and the run's clock is a value the caller passes in, so the same file at the same
-reference time gives the same answer on every machine on any day. Step 3 is the only step that
-can reach outside the process, and only when the run asks for it: by default the prose comes
-from a template set compiled into the program, and a flag sends it to a model instead. The model
-never picks the channel, the time or the action; it writes prose and chooses a call-to-action
-type from a list the code hands it. The evaluation report can also ask a model to grade two of
-its checks, and that is off unless asked for too.
+An evaluator scores each field against the customer's labels. The hold-out passes 4 of 12; it
+misses on send times and vocabulary the samples never showed.
 
-**5. How it fails.** Bad arguments exit 1 and nothing runs. A line that will not parse becomes
-one failure row naming its line number, every other record still runs, and the process exits 2.
-Inside a record there are three suppressions and they are different facts: no consented channel,
-which is the correct answer rather than a failure; prose that could not be written at all; and a
-finished message that failed safety, which also writes a row to a review queue file carrying the
-draft that was rejected, so a person can read what was refused. When the model path times out,
-the template writes the message and the per-record account names the fallback, so a degraded run
-looks different from a clean one instead of looking the same.
+Only the model judge can fail a weak message body, and it's off by default. I'd make it part of
+every run.
 
-**6. How I know it works.** An evaluator scores every output field against the label the
-customer wrote, per record and per check, and a proof test corrupts a correct output to show the
-scorer can fail rather than only pass.
-
-Last result, 2026-09-09, template composer, reference times as documented:
-
-- `sample.jsonl`, the two records any rule is fitted to: every check 2 of 2, 2 of 2 records pass,
-  exit code 0.
-- `holdout_12.jsonl`: channel 12 of 12, send day 7 of 11, send hour 5 of 11, action type 7 of 12,
-  opt-out 11 of 11, call-to-action type 7 of 11, payload 11 of 11, language 11 of 11, safety
-  12 of 12, personalization 8 of 8; 4 of 12 records pass every check; exit code 0.
-- `synthetic_12.jsonl`: every check perfect, 12 of 12 records pass, exit code 2 for its one
-  deliberately malformed line.
-- Zero safety violations and an empty review queue on all three.
-
-The numbers that would change what to fix are send day and send hour, and they are one fact
-rather than two: the oracle uses a per-stage send day and hour that the two fitted records never
-showed, so the scheduler answers with the only rule the evidence supports.
-
-**7. What I would change.** The message body still has no check with teeth on a normal run. The
-personalization proxy reads 1.00 on every message because the template inserts both facts it
-counts, so that number cannot fall; the check that could fall is the model judge, and it is off
-by default. I would make the body's grade part of the number the run reports rather than an
-opt-in flag.
+Last result, 2026-09-10, tag `v1.0.0`, template composer, reference times as documented:
+`holdout_12.jsonl` 4 of 12, `synthetic_12.jsonl` 12 of 13 with its malformed line an `ERROR` row,
+zero safety violations on both.
 
 ## Curveballs I have rehearsed
 
@@ -103,7 +60,7 @@ opt-in flag.
 ## The rehearsal: one record, file by file
 
 `prospect_welcome_day0`, the first line of `sample.jsonl`, at `--now 2025-12-09T00:00:00-06:00`.
-Every value below is from the run of 2026-09-09 that wrote `out_sample.json` and
+Every value below is from the run of 2026-09-10 at tag `v1.0.0` that wrote `out_sample.json` and
 `diag_sample.json`.
 
 - **`src/Agent.Cli/Program.cs` into `src/Agent.Cli/CliRunner.cs`.** The flags are parsed, every
