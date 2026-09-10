@@ -314,6 +314,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
 | 9 Diagnostics, guards and fault injection (landed 2026-09-09) | Phase 6's check restored to the playbook's, per-record latency and token counts on the diagnostics row, the step 81 by-hand run, a guard on every path the CLI opens in either direction and on every empty argument, the two spend counts moved off `composition`, `docs/FAULT_INJECTION.md` (D60 to D66) | every per-check tally unmoved on all three sets; all four artifacts and the documented exit code on each; six command-line failures that ended the process unhandled now exit 1 with no stack frame; the six faults of step 84 each named with the tests that prove it |
+| 11 Phase 7 evidence (in progress 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71) | the model answers on `synthetic_12.jsonl` for the first time, 8 of 10 messages on the committed run; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
 file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
@@ -640,3 +641,17 @@ writes one failure through the logger and through the error writer both, and the
 the CLI's own `error` stream, so a guarded open produces a timestamped log line and the plain
 stderr line under it; that is unchanged from D64's four output guards. The empty-value scan runs
 before any logger exists and writes to stderr directly, so it has one line to print.
+
+**Phase 7 evidence, Sprint 11 (2026-09-10).** Where Phase 7's check stands: the scorecard on the
+synthetic set is a file in the repo, `docs/scorecards/synthetic_12_template.txt`, written by the
+CLI with `--eval-report` from the Sprint 11 working tree on 7d7bb17 and never edited (D69); the
+fault-injection results are [FAULT_INJECTION.md](FAULT_INJECTION.md); the variance report is not
+written. Step 82, every row of that scorecard read: twelve records pass every check they are
+measured on, and the thirteenth row is line 11 of `synthetic_12.jsonl`, malformed by design, which
+until D71 had no row at all while the exit code already counted it. The first model run under
+D70's flag is `docs/scorecards/synthetic_12_openai_run1.txt`, the committed set with `--composer
+openai --model-call-budget-ms 30000`; its numbers, and those of the scratch run before it, are the
+two run and debug facts of 2026-09-10 in the archive. Step 83 asks for three such runs and a
+variance report; the requester chose one working run first and the count afterward (D70), so the
+report waits on that call. What the two runs already show: the model's first draft missed the
+opt-out instructions on nine of the ten records both times, and the safety gate caught every one.

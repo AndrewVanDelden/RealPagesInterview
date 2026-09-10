@@ -10,6 +10,9 @@ namespace Agent.Tests.Evaluation;
 // fails the build. These are measurements, not targets (D6, D9): a number that rises is
 // recorded here and in README.md together, never chased. The template composer runs on every
 // set with the set's documented reference time; latency is not measured in the suite.
+// D71: a line that did not parse is a row of the report too, so the overall pinned here is the
+// one the CLI prints. synthetic_12.jsonl's line 11 is the only such line on any set, and its
+// 12/13 is a drop taken on that decision, not a regression.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -27,7 +30,7 @@ public class BaselineNumbersTests
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",
         "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 12/12, OptOut 10/10, CTA 10/10, Payload 10/10, Lang 10/10, Safety 12/12, Personalization 9/9",
-        "Overall: 12/12 passed")]
+        "Overall: 12/13 passed")]
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadCases(fileName);
@@ -41,7 +44,8 @@ public class BaselineNumbersTests
             runs.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, LatencyMs: null));
         }
 
-        string report = ScorecardFormatter.Format(new Evaluator().Evaluate(runs));
+        IReadOnlyList<RecordScore> unparsedRows = RealAgentFactory.ReadFailures(fileName).Select(RecordScore.DidNotParse).ToList();
+        string report = ScorecardFormatter.Format(new Evaluator().Evaluate(runs).AppendUnprocessed(unparsedRows));
 
         Assert.Contains(expectedChecksLine, report);
         Assert.Contains(expectedOverallLine, report);

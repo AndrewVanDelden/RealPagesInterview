@@ -53,6 +53,18 @@ public class ModelCallBudgetTests
         Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(0)]));
     }
 
+    // D70: an evaluation run may state its own budget for the composer's model calls, because
+    // on these sets the records' 2000 ms cannot fit one completion, measured at 2 to 4 s a call.
+    // The override replaces the records' budget rather than taking the stricter of the two, or
+    // it could never raise a budget at all.
+    [Fact]
+    public void PerCallBudget_OverrideGiven_ReplacesEveryRecordsBudget()
+    {
+        TimeSpan? timeout = ModelCallBudget.PerCallBudget([WithBudget(2000), WithBudget(800)], TimeSpan.FromSeconds(30));
+
+        Assert.Equal(TimeSpan.FromSeconds(30), timeout);
+    }
+
     // D28 as corrected: the budget bounds one client call including its retry, so the client
     // divides it by the number of attempts it may make. A budget that bounded a single
     // attempt would be exceeded by the retry beside it, which is a bound that is documented

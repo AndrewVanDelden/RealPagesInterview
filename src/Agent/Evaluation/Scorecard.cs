@@ -40,6 +40,14 @@ public sealed record Scorecard(
             ? CheckResult.NotMeasured
             : p95 <= budget ? CheckResult.Passed : CheckResult.Failed;
 
+    // D71: every input the batch could not process, a line that did not parse or a record that
+    // threw, as one unscoreable row each. Built rather than copied with `with`, because the
+    // tallies and the p95 are computed at construction. Called after the judge, which pairs rows
+    // with runs by position, so these rows sit past the last run.
+    // O(n + m) in the rows already here and the rows appended.
+    public Scorecard AppendUnprocessed(IReadOnlyList<RecordScore> unprocessedRows) =>
+        new([.. RecordScores, .. unprocessedRows], LatencyBudgetMs, BatchLatencyMs, BatchModelCost);
+
     public int PassedCountOf(EvaluationCheck check) => tallies[check].Passed;
 
     public int MeasuredCountOf(EvaluationCheck check) => tallies[check].Measured;

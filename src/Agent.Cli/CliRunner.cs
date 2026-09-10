@@ -55,6 +55,7 @@ public sealed class CliRunner(
         string? nowOption = GetOption(args, "--now");
         string? replayPath = GetOption(args, "--replay");
         string? reviewQueuePath = GetOption(args, "--review-queue");
+        string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
 
         // D30: the judge is off unless it is asked for. It is a presence flag, not an
         // option with a value: there is one judge, and its model is pinned rather than
@@ -84,7 +85,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -111,6 +112,28 @@ public sealed class CliRunner(
         {
             error.WriteLine($"--now '{nowOption}' is not an ISO-8601 date-time (for example 2025-12-09T00:00:00-06:00).");
             return CliExitCodes.UsageError;
+        }
+
+        // D70: an evaluation run's own budget for the composer's model calls, in place of the one
+        // D28 derives from the records. A positive whole number of milliseconds, and only on the
+        // composer that makes model calls: anywhere else it would bound nothing, and a flag that
+        // silently does nothing is a flag someone trusts.
+        TimeSpan? modelCallBudget = null;
+        if (modelCallBudgetOption is not null)
+        {
+            if (!int.TryParse(modelCallBudgetOption, NumberStyles.None, CultureInfo.InvariantCulture, out int budgetMs) || budgetMs <= 0)
+            {
+                error.WriteLine($"--model-call-budget-ms '{modelCallBudgetOption}' is not a positive whole number of milliseconds.");
+                return CliExitCodes.UsageError;
+            }
+
+            if (composerName != ComposerNames.OpenAi)
+            {
+                error.WriteLine("--model-call-budget-ms applies only to --composer openai.");
+                return CliExitCodes.UsageError;
+            }
+
+            modelCallBudget = TimeSpan.FromMilliseconds(budgetMs);
         }
 
         // FileLoggerProvider is disposed here, explicitly, rather than trusted to
@@ -167,11 +190,17 @@ public sealed class CliRunner(
         }
 
         List<ProspectCase> cases;
-        int failureCount;
+        List<string> parseFailures;
         using (StreamReader inputReader = inputOpen.Value)
         {
-            (cases, failureCount) = ReadInput(inputReader, log);
+            (cases, parseFailures) = ReadInput(inputReader, log);
         }
+
+        int failureCount = parseFailures.Count;
+
+        // D71: every input the batch cannot process is a row of the scorecard, starting with the
+        // lines that did not parse; a record that throws in the loop below adds its own.
+        List<RecordScore> unprocessedRows = parseFailures.Select(RecordScore.DidNotParse).ToList();
 
         // D28: the model call is bounded by the strictest latency budget the batch states, so
         // the composer is built after the records are read. Nothing that costs time or money
@@ -184,7 +213,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases, modelCallBudget)),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -307,6 +336,10 @@ public sealed class CliRunner(
                 failureCount++;
                 log.LogError(ex, "Record failed.");
                 error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.ToDiagnosticString()}");
+
+                // D71: the scorecard is a file a person keeps, so its row carries the exception
+                // type alone (D46): nothing here knows who wrote the exception's message.
+                unprocessedRows.Add(RecordScore.Unscoreable(prospectCase.TaskId, $"Record failed: {ex.ToRedactedDiagnosticString()}"));
                 continue;
             }
 
@@ -366,7 +399,7 @@ public sealed class CliRunner(
             // Scores the results already captured above - never re-runs the agent, so the
             // report describes exactly what was persisted to --output, not a second,
             // possibly different sample (this matters for non-deterministic composers).
-            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, cancellationToken);
+            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, unprocessedRows, cancellationToken);
             if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
@@ -398,11 +431,13 @@ public sealed class CliRunner(
         }
 
         List<ProspectCase> cases;
-        int failureCount;
+        List<string> parseFailures;
         using (StreamReader inputReader = inputOpen.Value)
         {
-            (cases, failureCount) = ReadInput(inputReader, log);
+            (cases, parseFailures) = ReadInput(inputReader, log);
         }
+
+        int failureCount = parseFailures.Count;
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
         if (ReportIfFailed(replayOpen, log))
@@ -427,7 +462,7 @@ public sealed class CliRunner(
         }
 
         log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
-        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, cancellationToken);
+        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, parseFailures.Select(RecordScore.DidNotParse).ToList(), cancellationToken);
         if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
@@ -437,14 +472,16 @@ public sealed class CliRunner(
     }
 
     // A line that did not parse is one failure row with its line number; there is no task
-    // id to scope the log line on, so the line number is the only identity it has.
+    // id to scope the log line on, so the line number is the only identity it has. The
+    // failure text is returned as well as reported, because the scorecard carries it as a
+    // row (D71).
     // O(n) in the file size: one line parsed, and on failure reported, per iteration.
-    private (List<ProspectCase> Cases, int FailureCount) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
+    private (List<ProspectCase> Cases, List<string> ParseFailures) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
     {
         IReadOnlyList<Result<ProspectCase>> readResults = new JsonlRecordReader().ReadAll(inputReader);
 
         var cases = new List<ProspectCase>(readResults.Count);
-        int failureCount = 0;
+        var parseFailures = new List<string>();
 
         foreach (Result<ProspectCase> readResult in readResults)
         {
@@ -454,11 +491,11 @@ public sealed class CliRunner(
                 continue;
             }
 
-            failureCount++;
+            parseFailures.Add(readResult.Error);
             ReportFailure(log, LogLevel.Error, $"Record failed to parse: {readResult.Error}");
         }
 
-        return (cases, failureCount);
+        return (cases, parseFailures);
     }
 
     // A case missing its labeled expected outcome shows up as an unscoreable row rather
@@ -615,12 +652,15 @@ public sealed class CliRunner(
         ILoggerFactory loggerFactory,
         double? batchLatencyMs,
         ModelCostNotes? batchModelCost,
+        IReadOnlyList<RecordScore> unprocessedRows,
         CancellationToken cancellationToken)
     {
         var evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
         Scorecard scorecard = evaluator.Evaluate(runs, batchLatencyMs, batchModelCost);
+        Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
 
-        return judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
+        // D71: appended after the judge, which pairs rows with runs by position.
+        return judged.AppendUnprocessed(unprocessedRows);
     }
 
     private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)

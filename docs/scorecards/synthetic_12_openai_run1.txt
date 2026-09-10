@@ -1,0 +1,20 @@
+Task ID                                         | Channel | Day | Hour | Action | OptOut | CTA  | Payload | Lang | Safety | Personalization | ActionSem | BodySem | Latency (ms) | Result                                                                 
+synthetic_01_no_consented_channel               | OK      | n/a | n/a  | OK     | n/a    | n/a  | n/a     | n/a  | OK     | n/a             | n/a       | n/a     | 3            | PASS                                                                   
+synthetic_02_unseen_persona_and_stage           | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4595         | PASS                                                                   
+synthetic_03_lease_end_instead_of_move_date     | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 3384         | PASS                                                                   
+synthetic_04_spanish_locale                     | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4250         | PASS                                                                   
+synthetic_05_unseen_constraint_threshold_no_cta | OK      | OK  | OK   | OK     | OK     | FAIL | OK      | OK   | OK     | 1.00 n/a        | n/a       | n/a     | 4576         | FAIL                                                                   
+synthetic_06_unknown_members_at_every_depth     | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4085         | PASS                                                                   
+synthetic_07_suppressed_as_none_object          | OK      | n/a | n/a  | OK     | n/a    | n/a  | n/a     | n/a  | OK     | n/a             | n/a       | n/a     | 0            | PASS                                                                   
+synthetic_08_unknown_timezone                   | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4493         | PASS                                                                   
+synthetic_09_send_across_dst_transition         | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4360         | PASS                                                                   
+synthetic_10_no_last_interaction                | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 4289         | PASS                                                                   
+synthetic_12_unseen_cta_vocabulary              | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 8043         | PASS                                                                   
+synthetic_13_past_move_date                     | OK      | OK  | OK   | OK     | OK     | OK   | OK      | OK   | OK     | 1.00 OK         | n/a       | n/a     | 1895         | PASS                                                                   
+(did not parse)                                 | -       | -   | -    | -      | -      | -    | -       | -    | -      | -               | -         | -       | -            | ERROR: Line 11 failed to parse: JsonException: line 0, byte position 96
+
+Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 12/12, OptOut 10/10, CTA 9/10, Payload 10/10, Lang 10/10, Safety 12/12, Personalization 9/9, ActionSem 0/0, BodySem 0/0
+Latency p95: 8043 ms, budget 2000 ms: FAIL
+Batch latency: 43978 ms
+Batch model cost: 19 call(s), 19 completed, 7479 input + 2129 output token(s)
+Overall: 11/13 passed

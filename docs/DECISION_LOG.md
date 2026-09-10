@@ -89,3 +89,11 @@ check that no cited number dangles move out of prose into `check-instruction-fil
 CI runs. Executed 2026-09-10. A run and debug fact of the same day records seven review findings
 fixed: what the check counts as a definition, the S numbers and the archive it did not scan, and
 four lines of stale prose.
+
+**D69 to D71, Sprint 11, the Phase 7 evidence (2026-09-10).** Where the committed scorecard
+lives: written by the CLI into `docs/scorecards/`, a dated snapshot rather than a golden, because
+two offline runs differed only on wall clock (D69). What the variance report measures: the
+requester chose getting the model to answer at all, so a `--model-call-budget-ms` flag for
+evaluation runs, after a scratch run measured 2 to 4 seconds a call against D28's 1000 ms
+attempt (D70). A line that did not parse, or a record that threw, is an `ERROR` row that counts
+in `Overall`, so the synthetic set reads 12 of 13 (D71).

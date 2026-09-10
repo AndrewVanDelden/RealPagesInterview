@@ -109,6 +109,184 @@ public class CliRunnerTests
         }
     }
 
+    // D70: the budget an evaluation run states for the composer's model calls is a positive whole
+    // number of milliseconds; anything else bounds nothing a call could satisfy.
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("1.5")]
+    public async Task RunAsync_ModelCallBudgetNotAPositiveWholeNumber_WritesCleanErrorAndReturnsUsageError(string value)
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai", "--model-call-budget-ms", value]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"--model-call-budget-ms '{value}' is not a positive whole number of milliseconds.", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D70: on any composer but openai the flag would bound nothing, and a flag that silently
+    // does nothing is a flag someone trusts.
+    [Fact]
+    public async Task RunAsync_ModelCallBudgetWithoutTheOpenAiComposer_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--model-call-budget-ms", "30000"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--model-call-budget-ms applies only to --composer openai.", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D70: the flag changes what bounds a model call, never whether the key a call needs is
+    // required.
+    [Fact]
+    public async Task RunAsync_ModelCallBudgetWithTheOpenAiComposerAndNoKey_StillRefusesOnTheMissingKey()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai", "--model-call-budget-ms", "30000"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("OpenAI:ApiKey is not configured", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D71: a line that did not parse is a failure the scorecard shows, not only the exit code:
+    // one ERROR row naming the line, counted in the overall and never passed.
+    [Fact]
+    public async Task RunAsync_OneLineFailsToParse_ScorecardCarriesAnErrorRowCountedInTheOverall()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            "{not valid json",
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("(did not parse)", report);
+            Assert.Contains("ERROR: Line 1 failed to parse", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D71: a record that threw inside the agent left the batch loop by a continue and vanished
+    // from the scorecard the same way. It is a row under its own task id, its reason the
+    // exception type alone (D46), since the message of an exception is not known to be safe.
+    [Fact]
+    public async Task RunAsync_OneRecordThrows_ScorecardCarriesAnErrorRowUnderItsTaskId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), new ThrowingComposer("t2"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains(
+                report.Split('\n'),
+                line => line.StartsWith("t2 ", StringComparison.Ordinal) && line.Contains("ERROR: Record failed: InvalidOperationException", StringComparison.Ordinal));
+            Assert.DoesNotContain("Injected fault", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D71: replay reads --input through the same reader, so a line that did not parse is the
+    // same row there.
+    [Fact]
+    public async Task RunAsync_ReplayWithAnUnparsableInputLine_ScorecardCarriesAnErrorRow()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
+        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("(did not parse)", report);
+            Assert.Contains("ERROR: Line 2 failed to parse", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_TemplateComposerTwoValidRecords_WritesTwoOutputRecordsAndReturnsSuccess()
     {

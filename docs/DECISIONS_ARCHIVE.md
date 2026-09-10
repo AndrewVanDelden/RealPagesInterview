@@ -1948,3 +1948,140 @@ reporting 150 lines, 1,111 words of 2,000 and 72 cited numbers resolving among 7
 clean with 0 warnings; `.\test.ps1` exit code 0 with 584 tests in `Agent.Tests` and 78 in
 `Agent.Cli.Tests`, all passing, 100 percent line, branch and method coverage on both modules,
 unmoved. Nothing under `src/` or `tests/` changed.
+
+## Sprint 11 decisions, the Phase 7 evidence (2026-09-10)
+
+**D69. Where the committed scorecard lives (2026-09-10).** Question: Phase 7's check asks for
+the scorecard on the synthetic set as a file in the repo, and today `--eval-report` writes it
+only where `.gitignore` excludes it (`/eval*.txt` at the root), so no documented run leaves one
+behind. Options: (a) the CLI writes it straight into a tracked folder, `docs/scorecards/`, one
+file per set and composer, never edited by hand; (b) un-ignore the root report, so a tracked file
+sits where every documented run in OPERATIONS.md overwrites it and dirties the tree; (c) paste
+the table into DESIGN.md section 9, a hand copy that can drift from what the CLI printed and is a
+section rather than a file; (d) (a), plus a golden test that regenerates the file and fails on
+any difference. Recommendation: (a). Option (d) cannot hold as stated: two offline runs of the
+synthetic set on 2026-09-10 at 7d7bb17 wrote byte-identical output files and scorecards that
+differed only on wall clock, record 2 at 19 ms against 20 ms, p95 19 against 20 and batch 29
+against 30, so a golden either fails on noise or masks the latency cells, and every tally it
+would pin `BaselineNumbersTests` already pins. The file is therefore a dated snapshot: DESIGN.md
+section 9 names the command, the commit and the date that wrote it, and a sprint that moves a
+tally on that set rewrites it. Scopes: `docs/scorecards/`, DESIGN.md section 9, and the variance
+report of D70, which is built from files of the same kind. Evidence: the two runs above.
+Assumption: none.
+
+**D70. What the variance report measures (2026-09-10).** Question: playbook step 83 says
+to run the synthetic set with the real model three times and report the variance. D31 measured
+that on these sets the model answers nothing: the call timeout is derived from the strictest
+stated `p95_latency_ms`, 2000 ms, split into two 1000 ms attempts (D28), and no completion of
+this size returned inside 1000 ms on any of 46 calls. Options: (a) run `--composer openai` three
+times as the product stands, where every record falls back to the template, so every check
+column is identical across runs by construction and only latency and token counts vary: the
+variance of the shipped configuration, which says nothing about the model's prose; (b) take
+D31's second way out, which is D36's third option, a documented flag that sets the per-call
+timeout for an evaluation run in place of the budget-derived one, built test-first, then three
+runs, so the model answers and the report measures what step 83 asks about, and the first
+successful call is also D32's measurement; (c) take D36's second option, `p95_latency_ms` read as
+a reporting threshold with the timeout configured separately, which reverses D28 for every run
+rather than for evaluation runs and ships a configuration that fails the p95 check on purpose.
+Recommendation: (b), weakly over (a). Option (a) costs no code and is honest, but three runs that
+cannot differ measure the fallback, which FAULT_INJECTION.md section 1 already proves. Under any
+option the report is `docs/VARIANCE.md`, written by hand from the three runs' scorecards in
+`docs/scorecards/` and their diagnostics, with no new code for the report itself. Cost of (b),
+estimated and not measured: D31's addendum priced 46 abandoned calls at about $0.004 with roughly
+a third of them billed; three runs over the ten records that get a message are about 30 to 60
+calls billed in full at `gpt-4o-mini`, on the order of a cent. Options (b) and (c) close D31's
+open question and D36; (a) leaves both open. The judge (`--judge`, `gpt-4o`) is out of all three,
+since step 83 does not ask for its variance. Needs the requester: D31 reserves (b) and (c) for
+the requester as product changes, and every option spends on the requester's key and sends the
+synthetic records to the vendor under D44's retention. Scopes: `docs/VARIANCE.md`,
+`docs/scorecards/`, and under (b) `CliRunner`, `ModelCallBudget`, OPERATIONS.md, D28, D31, D32
+and D36. Evidence: D31 and its addendum. Assumptions: A15, A18. Taken 2026-09-10 by the
+requester, whose answer was to get the model runs working first and settle how many runs the
+report needs afterward, so step 83's count of three waits on a working run. Option (b), in this
+form: `--model-call-budget-ms <n>` replaces the budget D28 derives from the records, for the
+composer's model calls only, where `n` is a positive whole number of milliseconds. The flag is
+refused with exit code 1 when `n` is not one, and when the composer is not `openai`, because on
+any other composer it would bound nothing, and a flag that silently does nothing is a flag
+someone trusts. The scorecard's p95 check keeps the records' own stated budget, so a run under
+the flag reports its p95 against 2000 ms and fails it, which is D36's cost stated rather than
+hidden. The judge keeps its own default. D32's measurement is the run and debug fact at the end
+of this section, taken with a scratch copy of the set before the flag existed. This closes D31's
+open question and D36 for evaluation runs only; D33 to D35 and D37 stay unscheduled.
+
+**D71. What the scorecard says about an input line that did not parse (2026-09-10).**
+Question: step 82 is to read every scorecard row. The synthetic set's scorecard, run 2026-09-10
+at 7d7bb17, has 12 rows and reads `Overall: 12/12 passed`, and it says nothing about line 11,
+which is malformed by design (DESIGN.md section 4, item 10). The line is reported, but
+elsewhere: `JsonlRecordReader.ReadAll` returns a failure for it, the error stream and the log
+carry `Line 11 failed to parse`, the log's `Batch complete` line reads `13 record(s), 1
+failure(s)`, and the exit code is 2. None of that reaches the scorecard, and the scorecard is the
+file D69 commits, so a reader of that file alone sees a clean 12 of 12 for a 13-line input.
+Options: (a) the scorecard gains one line naming every input line that did not parse, by line
+number and never by content, with `Overall` still stated over the records that parsed; (b) the
+same line, with `Overall` stated over every line read; (c) a table row per unparsed line reading
+`n/a` across; (d) leave the scorecard and state beside the committed file that the exit code and
+the error stream carry it. Recommendation: (a). A line that did not parse has no `expected` that
+could be read, so it can be neither passed nor failed, and counting it in `Overall` (b) would
+lower a tally `BaselineNumbersTests` pins for a line no check measured; a row (c) puts a task id
+column on the one thing whose task id is what failed to parse; (d) keeps the fact out of the only
+file the check names. Under (a) no pinned tally moves. `--replay` reads `--input` through the
+same reader, so the line applies there too. Scopes: `Scorecard` and its formatter, `CliRunner`
+where the parse failures are known, the `--eval-report` row of OPERATIONS.md, and the committed
+scorecard of D69, which is written after this is settled. Evidence: the run above and its error
+stream. Assumption: none. Taken 2026-09-10 by the requester, in a form none of the four options
+named: a line that did not parse is a failure, and the scorecard says so. It becomes one row
+reading `(did not parse)` in the task id column, because its task id is what failed to parse,
+and `ERROR:` plus the reader's own failure text in the result column, which names the line
+number and a byte position and never the line's content (step 68). That is the form an
+unscoreable record already takes (step 34), so the row counts in `Overall`, never passes and
+measures no check, which leaves every per-check tally where it was; it is the split JUnit's XML
+report keeps between an error and a failure, both counted among the tests. The synthetic set
+now reads `Overall: 12/13 passed`, and `BaselineNumbersTests` pins that drop deliberately, on
+this decision. The same reading found a second gap of the same kind: a record that throws inside
+the agent leaves the batch loop by a `continue` and is missing from the scorecard too, so it gets
+the same row under its own task id, its reason redacted to the exception type as D46 requires.
+The rows are appended after the judge, which pairs rows with runs by position, through
+`Scorecard.AppendUnprocessed`, which builds a new scorecard rather than copying one; its three
+callers are the run path, the replay path and `BaselineNumbersTests`.
+
+**Run and debug fact, the first model calls that answered (2026-09-10).** D32's measurement,
+taken before any code changed. A scratch copy of `synthetic_12.jsonl` with every
+`p95_latency_ms` raised from 2000 to 30000, kept outside the repo and never committed, was run
+at 7d7bb17 with `--composer openai --now 2026-03-07T12:00:00Z`, so D28 gave each call 30000 ms
+and each attempt 15000 ms. Exit code 2, for line 11. The model answered: 19 calls, 19 completed,
+7,479 input and 2,135 output tokens, zero network retries. Of the ten records that get a
+message, seven read `composition.composer: openai` (one at `attempts` 1, six at 2) and three read
+`template` at 3, after both model drafts were rejected (`synthetic_02`, `_04`, `_12`). What one
+completion costs in wall clock: `synthetic_13`, the one record that made a single call, took
+1,855 ms end to end; the two-call records took 4,467 to 8,302 ms, about 2.2 to 4.2 s a call.
+No completion fits D28's 1000 ms attempt, and few would fit the whole 2000 ms, which is D35's
+second case: no division scheme helps, and D36 is the real question. The scorecard: CTA 9 of 10
+(`synthetic_05` FAIL), every other check unmoved, 11 of 12 overall, p95 9,218 ms against the
+file's 30000. Three findings the run opened, none a decision yet: the first model draft failed
+the safety gate for `Missing required opt-out instructions` on nine of the ten records, every
+one but `synthetic_13`; `synthetic_05`'s call-to-action type is wrong under the model and right
+under the template; and brand style reported `ExclamationLimit` on `_03`, `_05` and `_09`.
+Money was not read from the vendor's usage page, so none is stated.
+
+**Run and debug fact, D70 and D71 executed (2026-09-10).** Test-first: eight new CLI tests
+failed before the change, the four invalid budgets and the template-composer refusal because the
+flag did not exist and the three scorecard tests because no `ERROR` row was printed; the no-key
+guard test passed before and after, as a rule the change had to keep; and the library tests
+failed to compile on exactly the three missing members, `RecordScore.DidNotParse`,
+`Scorecard.AppendUnprocessed` and the two-argument `ModelCallBudget.PerCallBudget`. After:
+`.\test.ps1` exit code 0, 587 tests in `Agent.Tests` and 87 in `Agent.Cli.Tests`, all passing,
+100 percent line, branch and method coverage on both modules; `check-instruction-files.ps1` exit
+0 over 75 cited numbers. The two committed scorecards, both written by the CLI from the Sprint 11
+working tree on 7d7bb17 with `--now 2026-03-07T12:00:00Z` and never edited:
+`docs/scorecards/synthetic_12_template.txt`, every check unmoved, `Overall: 12/13 passed`, p95
+19 ms, exit 2; and `docs/scorecards/synthetic_12_openai_run1.txt`, with `--composer openai
+--model-call-budget-ms 30000`, exit 2, 19 calls, 19 completed, 7,479 input and 2,129 output
+tokens, eight of the ten messages written by the model (`synthetic_13` at one attempt, seven at
+two) and two by the template after both drafts were rejected (`synthetic_02`, `_04`), CTA 9 of 10
+(`synthetic_05`), p95 8,043 ms against 2000 ms and so FAIL, `Overall: 11/13 passed`. Against the
+scratch run earlier the same day, `synthetic_12` moved from the template to the model, the first
+run-to-run variance this project has observed; eleven drafts across the run were rejected, every
+one for `Missing required opt-out instructions`. One cosmetic effect of D71: the formatter pads
+the last column to its widest cell, so every row of a scorecard with an `ERROR` row carries
+trailing spaces to the width of the reader's failure text, as an unscoreable row always did.
+Nothing is pinned for the live run: its prose, its latency and its token counts are the vendor's.

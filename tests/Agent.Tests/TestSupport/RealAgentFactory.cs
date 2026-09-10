@@ -35,12 +35,22 @@ internal static class RealAgentFactory
     public static IReadOnlyList<ProspectCase> ReadSampleCases() => ReadCases("sample.jsonl");
 
     // The parsed cases of the named fixture. synthetic_12.jsonl carries one deliberately
-    // malformed line, so failure rows are skipped here; JsonlRecordReaderTests pins the
-    // exact row count of every fixture, which is where a silently shorter set would show.
+    // malformed line, so failure rows are skipped here and returned by ReadFailures;
+    // JsonlRecordReaderTests pins the exact row count of every fixture, which is where a
+    // silently shorter set would show.
     public static IReadOnlyList<ProspectCase> ReadCases(string fileName)
     {
         using IDisposable scope = AgentLog.Configure(NullLoggerFactory.Instance);
         using var reader = new StreamReader(Path.Combine(AppContext.BaseDirectory, "TestData", fileName));
         return new JsonlRecordReader().ReadAll(reader).Where(result => result.IsSuccess).Select(result => result.Value).ToList();
+    }
+
+    // The failure text of every line of the named fixture that did not parse, in file order:
+    // the rows D71 appends to a scorecard, so a baseline pins the overall the CLI prints.
+    public static IReadOnlyList<string> ReadFailures(string fileName)
+    {
+        using IDisposable scope = AgentLog.Configure(NullLoggerFactory.Instance);
+        using var reader = new StreamReader(Path.Combine(AppContext.BaseDirectory, "TestData", fileName));
+        return new JsonlRecordReader().ReadAll(reader).Where(result => !result.IsSuccess).Select(result => result.Error).ToList();
     }
 }
