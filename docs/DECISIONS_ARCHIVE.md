@@ -2438,4 +2438,5 @@ twelve; (b) the eight additions and no cuts; (c) finding 7's step only; (d) none
 Recommendation: (b), since each addition has a failure behind it while each cut rests on one
 project, and the cut rule is better applied when a second project shows the same. Scopes: step
 104; `~/.agent-rules` only, no file in this repository. Evidence: the citations above.
-Assumptions: none. Open.
+Assumptions: none. Taken 2026-09-10 by the owner: (d), none. The rules stay as they are; the
+twelve items stand only as this project's record, and step 104 is closed with no change.

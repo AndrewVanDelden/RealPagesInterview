@@ -15,8 +15,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, met by the retrospective of 2026-09-06 (D77).
 Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-10: its section 10.
-Next step: step 104, the owner's update to the playbook, as D79 decides.
-Open decisions: D79, which step 104 changes land in `~/.agent-rules`.
+Next step: none. Step 104 closed with no change to `~/.agent-rules` (D79); the project is complete at `v1.0.0`.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -112,4 +112,4 @@ retrospective of 2026-09-06, and the release is published on GitHub from
 closing Phase 8, a run and debug fact. The retrospective's new section 10 names the playbook step
 for each of its sixteen findings: fourteen existing steps, one new step for finding 7, and finding
 8 declined by D55. A step 104 audit of the failures since then found seven with no step and four
-steps that earned nothing here; D79 asks which changes land, and is open.
+steps that earned nothing here; D79 took none of them, and the rules stay as they are.
