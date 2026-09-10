@@ -383,6 +383,139 @@ public class CliRunnerTests
         }
     }
 
+    // D37 and D14: records run at the same time and finish in whatever order they finish, and
+    // every file the batch writes still lists them in input order, because --replay pairs output
+    // rows with input records by position. StaggeredComposer holds the three records until all
+    // are composing at once, which only a concurrent loop reaches, and releases the last input
+    // record first. t1 and t2 are refused at the safety gate and t3 is not, so the output, the
+    // diagnostics, the review queue and the scorecard each carry an order that can be read.
+    [Fact]
+    public async Task RunAsync_RecordsFinishInReverseInputOrder_EveryFileKeepsInputOrder()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            SteeringRecordJson("t1"),
+            SteeringRecordJson("t2"),
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), new StaggeredComposer(["t1", "t2", "t3"]));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--review-queue", reviewQueuePath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(
+                new[] { "none", "none", "sms" },
+                output.RootElement.EnumerateArray().Select(row => row.GetProperty("next_message").GetProperty("channel").GetString()).ToArray());
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal(
+                new[] { "t1", "t2", "t3" },
+                diagnostics.RootElement.EnumerateArray().Select(row => row.GetProperty("task_id").GetString()).ToArray());
+
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(
+                new[] { "t1", "t2" },
+                queue.RootElement.EnumerateArray().Select(row => row.GetProperty("task_id").GetString()).ToArray());
+
+            string[] scorecardTaskIds = (await File.ReadAllLinesAsync(evalReportPath))
+                .Select(line => line.Split('|')[0].Trim())
+                .Where(cell => cell is "t1" or "t2" or "t3")
+                .ToArray();
+            Assert.Equal(new[] { "t1", "t2", "t3" }, scorecardTaskIds);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(reviewQueuePath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D37 and D16: the TaskId scope is per record while records overlap. StaggeredComposer holds
+    // three records composing at once and then fails each with a fault naming it, so every
+    // failure is logged while another record's scope is still open. Each "Record failed." entry
+    // ends in its own TaskId and no other, and the stderr lines, written once the batch is done,
+    // follow input order rather than the reverse order the records failed in.
+    [Fact]
+    public async Task RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, new StaggeredComposer(["t1", "t2", "t3"], throwInjectedFault: true));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string errorText = errorWriter.ToString();
+            string[] lines = errorText.Split(Environment.NewLine);
+            foreach (string taskId in new[] { "t1", "t2", "t3" })
+            {
+                int entry = Array.FindIndex(lines, line => line.EndsWith($": Record failed. TaskId={taskId}", StringComparison.Ordinal));
+                Assert.True(entry >= 0, $"No 'Record failed.' entry scoped to {taskId} alone.");
+                Assert.Contains($"Injected fault for '{taskId}'", lines[entry + 1], StringComparison.Ordinal);
+            }
+
+            int t1Line = errorText.IndexOf("Record 't1' failed", StringComparison.Ordinal);
+            int t2Line = errorText.IndexOf("Record 't2' failed", StringComparison.Ordinal);
+            int t3Line = errorText.IndexOf("Record 't3' failed", StringComparison.Ordinal);
+            Assert.True(t1Line >= 0 && t1Line < t2Line && t2Line < t3Line, "stderr's record failures are not in input order.");
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D37: cancellation still stops the batch once records run concurrently. The first record
+    // cancels the run; the loop starts no record after that, so fewer records compose than the
+    // batch holds, the run throws, and nothing is written to --output.
+    [Fact]
+    public async Task RunAsync_CancelledWhileRecordsAreInFlight_StartsNoFurtherRecordAndThrows()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string[] records = Enumerable.Range(1, 8).Select(number => RecordJson($"t{number}", "2026-01-10", "2025-12-08T15:04:00Z")).ToArray();
+        await File.WriteAllTextAsync(inputPath, string.Join(Environment.NewLine, records));
+        using var cancellation = new CancellationTokenSource();
+        var composer = new CancelOnFirstComposeComposer(cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
+
+            Assert.InRange(composer.Calls, 1, records.Length - 1);
+            Assert.Equal(string.Empty, await File.ReadAllTextAsync(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     // D10: the run's reference time comes from --now; the send day follows it (A4).
     [Fact]
     public async Task RunAsync_NowFlagProvided_SendAtFollowsTheReferenceDay()
