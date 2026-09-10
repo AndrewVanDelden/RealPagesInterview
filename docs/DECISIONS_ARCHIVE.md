@@ -2264,3 +2264,91 @@ openai` and no `--model-call-budget-ms`, to measure what D33 and D35 bought on t
 calls with 2 completed, 792 input and 186 output tokens, 12 of 13, p95 2,066 ms and so FAIL,
 batch latency 6,072 ms under D37's four records at once against the step 60 run's 63 seconds.
 Scorecard `docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`; VARIANCE.md tables it.
+
+**Run and debug fact, the PR #28 review fixes (2026-09-10).** Commit e852939 fixed three findings
+from the PR #28 review before the merge. `CliRunner.RunRecordAsync` no longer catches
+`OperationCanceledException` as a record failure, matching `LeasingMessageAgent.RunAsync`'s own
+exclusion; under D37's concurrency one cancellation could otherwise log up to four spurious
+`Record failed.` entries, and `CancelsWhileComposingComposer` is the test substitute that proves
+it. `ValidatingMessageComposer`'s three exits share one `CombinedSpend` helper for adding a
+discarded attempt's cost and retries to the outcome's own, where each exit had repeated the same
+two lines. `Scorecard.AppendUnprocessed`'s comment states its real cost, a full recompute of the
+p95 and the tallies, where it had said O(n + m). No archive entry was written when it landed; the
+step 92 audit of 2026-09-10 found the gap and this paragraph closes it.
+
+**Run and debug fact, Sprint 12's steps run at once (2026-09-10).** Playbook steps 90 (the
+README), 91 (DESIGN.md), 92 and 96 (an audit of the decision log and the instruction files) and
+95 (secrets, personal paths and material not the owner's) ran as four agents at the same time,
+at the owner's request. That departs from Phase First's step order, and was taken because the two
+editing agents wrote different files and the two auditing agents wrote none. Every change was then
+reviewed against the code and the committed evidence rather than against the agents' reports:
+the pipeline order against `LeasingMessageAgent` (select line 70, plan 89, compose 111, schedule
+147, validate 155); every decision number the rules table now cites against its heading; every
+test substitute in the new interface table against its class; every line citation
+(`BaselineNumbersTests` lines 27 and 33, the template scorecard's line 14, `NextActionPlanner`
+line 10, `CliRunner` line 54); and every model-path number against VARIANCE.md. Two findings, both
+in the README and both fixed: it said twenty-one assumptions after DESIGN.md had added A22 and
+A23, and it named no test command, because its agent was barred from running one. `.\test.ps1`
+exit 0 with 100 percent line, branch and method coverage; `check-instruction-files.ps1` exit 0.
+The README is 101 source lines, 15 of them the diagram; its height as rendered was not measured
+against step 90's two screens.
+
+**Run and debug fact, playbook step 95 (2026-09-10).** A read-only search of all 150 commits on
+every branch and the 214 tracked files found no secret (key, token, private key and
+connection-string shapes, and any key or token name given a quoted literal), no committed
+`.env`, `secrets.json` or `appsettings` file, no machine path or machine name, no email address or
+phone number, and no pay figure; every author uses GitHub's no-reply address, and the run outputs
+on disk are ignored and were never committed. `UserSecretsId` in `Agent.Cli.csproj` is an id, not
+a secret. It found the repository public, the assignment's text and data committed (D74), and
+low-severity mentions of the interview in `docs/RETROSPECTIVE_2026-09-06.md`, `TalkingPoints.md`,
+`AGENTS.md`, `README.md`'s history and two commit messages, which D74 keeps as they are.
+
+**D74. The assignment's own material in a public repository (2026-09-10).** Question: step 95
+removes material that is not the owner's to publish, and `AndrewVanDelden/RealPagesInterview` is
+public, carrying the assignment's text `problem_statement.txt` and its data `sample.jsonl` since
+commit 06c0ebd and `holdout_12.jsonl` since edf25c3 (D11). Options: make the repository private,
+instant and reversible; replace the three files with the project's own data and rewrite history,
+which breaks the eight source and test files that name them, force-pushes every branch, and
+still leaves the old commits under the 28 pull request refs GitHub keeps; or keep it public as it
+is. Recommendation: private. Taken 2026-09-10 by the owner: public as it is, the one exception
+step 95 records. Scopes: step 95; no file changes. Evidence: the step 95 run and debug fact above.
+Assumptions: none.
+
+**D75. The step 96 changes to the instruction files (2026-09-10).** Question: which of the
+step 96 audit's findings become changes. `AGENTS.md` is 150 lines, which the check script passes
+because it tests greater than 150, and step 96's "under 150" does not. Options: (a) trim the
+passages the code already states (the Layout folder list, the `AgentJsonOptions` sentence, the
+output array, `ReadAll`, the `ILogger` default, `CommunicationChannel`, `ActionCatalog.Create`, the
+`Scorecard` copy, the `CompositionNotes` shape) and move the `SlotResolution` note to
+`docs/CODE_REVIEW.md`; add two negative rules for mistakes that repeated, spend dropped on an exit
+that did not produce the message (the D28 addendum, D66, D67 and a run and debug fact of
+2026-09-10) and a rename or delete whose sweep missed prose or cited the wrong decision (three run
+and debug facts of 2026-09-09 and 2026-09-10); correct the two stale lines, "All work on `dev`,
+never `main`" while work lands on sprint branches merged into `dev`, and "four rules" followed by
+five; and have the script enforce the 120-word paragraph cap (D68), the four-line phase section of
+step 92, and under 150 lines; (b) the two rules and the corrections only; (c) none.
+Recommendation: (a). Taken 2026-09-10 by the owner: (c), none. `AGENTS.md` stays at 150 lines
+with the two stale lines as they are, and the script's limits stay as they are, so step 96's
+"under 150" is an exception on record rather than a pass. Scopes: Sprint 12, step 96. Evidence:
+the step 96 audit of 2026-09-10. Assumptions: none.
+
+**D76. What step 93's final diff is (2026-09-10).** Question: step 93 runs the automated review
+on "the final diff", and PRs #1 to #28 were each reviewed on their own. Options: this sprint's
+diff into `dev`, the one part of the release no review has read; or the whole release, `dev`
+against `main`, which `main`'s single README commit makes the entire project. Recommendation:
+the first, since a whole-project review is `/code-review ultra`, which only the owner can launch.
+Taken 2026-09-10 by Claude as the stated default when the owner said to go on to step 93.
+Scopes: step 93. Evidence: `gh pr view 28` shows four reviews posted from the owner's account and
+no bot; `.github/workflows/test.yml` is the only workflow. Assumptions: none.
+
+**Run and debug fact, playbook step 93 (2026-09-10).** The Claude Code review ran at high over
+`dev...sprint-12-documentation` and the working tree, a docs-only diff: `README.md`,
+`docs/DESIGN.md`, this log and this archive. Each claim the diff adds was traced to its source:
+D42's third brand rule is `SubjectMatchesChannel`; `ValidatingMessageComposer` retries only a
+safety rejection, with the violations fed back, sends any other failure straight to the fallback,
+and validates the fallback; `OpenAiCompletionClient` retries once on 408, 429, 500, 502, 503 or
+504 and never after a timeout; D70 leaves the judge out of every option and closes D36 for
+evaluation runs only; three hold-out records assert `renewal_offer_loaded`; `interface I` matches
+three files in `src/`; DESIGN.md section 9 records batch p95s of 19 to 22 ms. Findings: none.
+The second reviewer `docs/CODE_REVIEW.md` names, Gemini under Antigravity, is run by the owner
+on the Sprint 12 PR and has not run.
