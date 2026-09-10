@@ -358,4 +358,17 @@ public class TemplateMessageComposerTests
         Assert.StartsWith("Hi Taylor", result.Message.Body);
         Assert.True(result.Notes.LocaleApplied);
     }
+
+    // D62, the first state: this composer issues no request, so there is no measurement to
+    // report and the member is null. Null is the absence of a measurement; a zero would be one,
+    // and would read as a model call that cost nothing.
+    [Fact]
+    public async Task ComposeAsync_AnyRecord_NotesStateNoModelCallAtAll()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Null(outcome.ModelCost);
+    }
 }

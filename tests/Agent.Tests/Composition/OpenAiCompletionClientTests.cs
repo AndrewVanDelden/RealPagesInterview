@@ -17,6 +17,15 @@ public class OpenAiCompletionClientTests
          "choices":[{"index":0,"message":{"role":"assistant","content":"{\"body\":\"hi\"}"},"finish_reason":"stop"}]}
         """;
 
+    // The same completion with the vendor's usage block, which a real 200 always carries.
+    // CompletionJson deliberately keeps none, so the two together cover both answers the SDK
+    // can give for ChatCompletion.Usage.
+    private const string UsageCompletionJson = """
+        {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
+         "choices":[{"index":0,"message":{"role":"assistant","content":"{\"body\":\"hi\"}"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+        """;
+
     private const string EmptyContentJson = """
         {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
          "choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}]}
@@ -185,5 +194,40 @@ public class OpenAiCompletionClientTests
         ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync("system", "user"));
+    }
+
+    // D62: cost in the diagnostics is measured tokens, and the measurement is the vendor's own
+    // usage block on the completion. Confirmed by reflection over the restored OpenAI 2.13.0
+    // assembly on 2026-09-09: ChatCompletion.Usage is a ChatTokenUsage with int
+    // InputTokenCount, int OutputTokenCount and int TotalTokenCount, and the wire names it
+    // reads are prompt_tokens and completion_tokens.
+    [Fact]
+    public async Task CompleteAsync_ResponseCarriesUsage_ReportsTheVendorsTokenCounts()
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, UsageCompletionJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(11, completion.InputTokens);
+        Assert.Equal(7, completion.OutputTokens);
+    }
+
+    // A 200 whose body carries no usage block at all: the SDK leaves Usage null, so there is
+    // nothing measured and the counts are zero. The call still completed, and it is
+    // ModelCostNotes.CompletedCalls beside them, not the zeros, that says whether a bill
+    // exists (D62).
+    [Fact]
+    public async Task CompleteAsync_ResponseHasNoUsage_ReportsZeroTokens()
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(0, completion.InputTokens);
+        Assert.Equal(0, completion.OutputTokens);
     }
 }

@@ -1,8 +1,23 @@
+using Agent.Composition;
+
 namespace Agent.Evaluation;
 
 // The batch verdict. LatencyBudgetMs is the strictest p95_latency_ms any record states
 // (a p95 under the strictest budget is under every budget), null when none states one.
-public sealed record Scorecard(IReadOnlyList<RecordScore> RecordScores, int? LatencyBudgetMs)
+//
+// D61: BatchLatencyMs is one wall-clock elapsed around the whole record loop, not a sum or a
+// percentile of the per-record numbers, and it lives here rather than in the diagnostics file
+// because that file is one row per unit of work. Null on a run that executed no record loop,
+// which is --replay (D14), where nothing was timed.
+//
+// D62: BatchModelCost is the same arrangement for tokens. It is the sum of the model cost on
+// the diagnostics rows the batch wrote, so a reader who adds that column up gets this number,
+// and it is null when no record on the run went near a model.
+public sealed record Scorecard(
+    IReadOnlyList<RecordScore> RecordScores,
+    int? LatencyBudgetMs,
+    double? BatchLatencyMs = null,
+    ModelCostNotes? BatchModelCost = null)
 {
     // Computed once at construction, so a `with` copy that replaces RecordScores would carry
     // these numbers unchanged: build a new Scorecard instead (SemanticJudge does).

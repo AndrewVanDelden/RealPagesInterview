@@ -627,4 +627,75 @@ public class LeasingMessageAgentTests
             capturingLogger.Entries,
             entry => entry.Level == LogLevel.Warning && entry.Message.Contains("refused", StringComparison.OrdinalIgnoreCase));
     }
+
+    // D66, on the record it is about: D48's steering record, whose own city_interest is
+    // written into the body by the template fallback. Both model attempts were abandoned at
+    // their timeout, the fallback reproduced the steering language, and the loop refused its
+    // draft, so the record ships nothing and has no composition notes. The two calls the
+    // vendor billed for are still two calls this record made, and they now leave the agent on
+    // the row itself instead of vanishing with the notes.
+    [Fact]
+    public async Task RunAsync_ComposeLoopRefusesEveryDraft_StillReportsWhatTheRunSpent()
+    {
+        var abandoningComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
+        {
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)],
+        };
+        var templateComposer = new TemplateMessageComposer();
+        var agent = new LeasingMessageAgent(
+            new ChannelSelector(),
+            new ValidatingMessageComposer(abandoningComposer, new SafetyValidator(), templateComposer),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner());
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(cityInterest: "families only"), ReferenceTime);
+
+        Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
+        Assert.Null(result.Diagnostics.Composition);
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
+    }
+
+    // D66's other suppression with a cost: no draft anywhere, so the record is a composition
+    // failure and not a refusal. The suppressed row is built by a different code path from the
+    // one above and has to answer for the same spend.
+    [Fact]
+    public async Task RunAsync_CompositionFailedAfterAbandonedCalls_StillReportsWhatTheRunSpent()
+    {
+        var abandoningComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
+        {
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)],
+        };
+        var failingFallback = new SequenceMessageComposer(Result<NextMessage>.Failure("nothing composable"));
+        var agent = new LeasingMessageAgent(
+            new ChannelSelector(),
+            new ValidatingMessageComposer(abandoningComposer, new SafetyValidator(), failingFallback),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner());
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
+        Assert.Null(result.Diagnostics.Composition);
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
+    }
+
+    // The record that never reached a composer at all: no consented channel, so no call was
+    // made and there is nothing to report. Null is the absence of a measurement, and this is
+    // the case that keeps the two moved members from reading as a zero on every suppression.
+    [Fact]
+    public async Task RunAsync_NoConsentedChannel_ReportsNoSpendAtAll()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase prospectCase = SampleProspectCases.Minimal() with
+        {
+            Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
+        };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Null(result.Diagnostics.ModelCost);
+        Assert.Null(result.Diagnostics.NetworkRetries);
+    }
 }

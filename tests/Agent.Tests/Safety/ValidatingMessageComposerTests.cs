@@ -281,7 +281,7 @@ public class ValidatingMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(2, ComposedOf(outcome).Notes.NetworkRetries);
+        Assert.Equal(2, outcome.NetworkRetries);
     }
 
     // The fallback composer makes no network call of its own (NetworkRetries stays null),
@@ -300,6 +300,113 @@ public class ValidatingMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal(2, ComposedOf(outcome).Notes.NetworkRetries);
+        Assert.Equal(2, outcome.NetworkRetries);
+    }
+
+    // D62: this loop owns the per-record sum, for the reason it owns Attempts (D24 addendum).
+    // A composer knows what its own call cost and nothing about the calls the attempts beside
+    // it made, so a record's cost is a fact only the code that ran every attempt has.
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptCostsTokensThenFailsValidation_SumsTheModelCostOntoTheWinner()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Success(BadMessage()),
+            Result<NextMessage>.Success(CleanMessage()))
+        {
+            ModelCosts =
+            [
+                new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7),
+                new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 13, OutputTokens: 5),
+            ],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(
+            new ModelCostNotes(Calls: 2, CompletedCalls: 2, InputTokens: 24, OutputTokens: 12),
+            outcome.ModelCost);
+    }
+
+    // The 2026-09-08 live run, in the shape this loop sees it: both attempts abandoned at the
+    // timeout, the template fallback answers, and the record still states that two calls were
+    // made and no tokens came back. The fallback has no cost of its own, so without the
+    // accumulation the bill would vanish behind a clean-looking template row.
+    [Fact]
+    public async Task ComposeAsync_BothAttemptsAbandonedAtTheirTimeout_FallsBackAndKeepsTheCountedCalls()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
+        {
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(ComposerNames.Template, ComposedOf(outcome).Notes.Composer);
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), outcome.ModelCost);
+    }
+
+    // Nothing on the record's path made a model call, so there is no measurement to report and
+    // the sum stays null rather than becoming a zero nobody measured.
+    [Fact]
+    public async Task ComposeAsync_NoAttemptMadeAModelCall_LeavesTheModelCostUnmeasured()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(CleanMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Null(outcome.ModelCost);
+    }
+
+    // D66: the exit this loop had no way to report through. Both attempts were rejected on
+    // safety and the fallback's own draft was too, so nothing ships and the record carries no
+    // composition notes at all - and the two calls it made, and the retries under them, are
+    // still what this record spent. Reported on the outcome itself, which every case answers
+    // for, rather than on notes only a returned message has.
+    [Fact]
+    public async Task ComposeAsync_FallbackAlsoUnsafe_TheRefusalCarriesWhatTheAttemptsSpent()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()))
+        {
+            NetworkRetries = [1],
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7)],
+        };
+        var unsafeFallback = new SequenceMessageComposer(Result<NextMessage>.Success(BadMessage()));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, unsafeFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        var refused = Assert.IsType<ComposeOutcome.Refused>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 2, InputTokens: 22, OutputTokens: 14), refused.ModelCost);
+        Assert.Equal(2, refused.NetworkRetries);
+    }
+
+    // The other exit with no message: the fallback built none either, so the record is a
+    // composition failure rather than a refusal. Both attempts were abandoned at their
+    // timeout, and an abandoned call returns no completion to read a retry count off (D28's
+    // addendum), so the retries stay null - no measurement, not a measured zero - while the
+    // calls themselves are still counted.
+    [Fact]
+    public async Task ComposeAsync_FallbackProducesNoMessage_TheFailureCarriesWhatTheAttemptsSpent()
+    {
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
+        {
+            ModelCosts = [new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)],
+        };
+        var failingFallback = new SequenceMessageComposer(Result<NextMessage>.Failure("nothing composable"));
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, failingFallback);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        var failed = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), failed.ModelCost);
+        Assert.Null(failed.NetworkRetries);
     }
 }

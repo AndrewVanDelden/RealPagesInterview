@@ -2,7 +2,15 @@ using Agent.Composition;
 
 namespace Agent.Tests.TestSupport;
 
-internal sealed class FakeCompletionClient(string? response = null, Exception? throwException = null, int networkRetries = 0) : ICompletionClient
+// inputTokens and outputTokens are what the vendor's usage block would have said (D62). They
+// are stated per fake rather than defaulted to something plausible: a test that says nothing
+// about tokens is a test about something else, and zero is what an unmeasured call reports.
+internal sealed class FakeCompletionClient(
+    string? response = null,
+    Exception? throwException = null,
+    int networkRetries = 0,
+    int inputTokens = 0,
+    int outputTokens = 0) : ICompletionClient
 {
     public string? LastSystemPrompt { get; private set; }
 
@@ -25,6 +33,6 @@ internal sealed class FakeCompletionClient(string? response = null, Exception? t
             throw throwException;
         }
 
-        return Task.FromResult(new ModelCompletion(response!, networkRetries));
+        return Task.FromResult(new ModelCompletion(response!, networkRetries, inputTokens, outputTokens));
     }
 }

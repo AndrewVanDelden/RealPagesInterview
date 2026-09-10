@@ -76,7 +76,9 @@ public sealed class LeasingMessageAgent(
                 prospectCase,
                 SuppressionReason.NoContactConsent,
                 new NextAction(ActionTypes.NoOp, Reason: SuppressionReason.NoContactConsent.ToWireName()),
-                actionPlan: null);
+                actionPlan: null,
+                modelCost: null,
+                networkRetries: null);
         }
 
         CommunicationChannel channel = contactableChannel.Value;
@@ -108,6 +110,12 @@ public sealed class LeasingMessageAgent(
         // only one that short-circuits here, because there is nothing to validate.
         ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
+        // D66: what the run spent is read once, here, and reaches every diagnostics this method
+        // builds below. It is a fact about the record and not about a message, so unlike the
+        // composition notes it survives an outcome that ships nothing.
+        ModelCostNotes? modelCost = composeOutcome.ModelCost;
+        int? networkRetries = composeOutcome.NetworkRetries;
+
         NextMessage draft;
         CompositionNotes? compositionNotes;
 
@@ -130,7 +138,7 @@ public sealed class LeasingMessageAgent(
             default:
                 var failed = (ComposeOutcome.Failed)composeOutcome;
                 log.LogWarning("Suppressing message: composition failed ({Error}).", failed.Error);
-                return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan);
+                return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan, modelCost, networkRetries);
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
@@ -179,7 +187,9 @@ public sealed class LeasingMessageAgent(
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
             actionPlan,
             scheduleNotes,
-            compositionNotes);
+            compositionNotes,
+            modelCost,
+            networkRetries);
 
         if (hasViolations)
         {
@@ -215,11 +225,17 @@ public sealed class LeasingMessageAgent(
     // Neither the safety validator nor the brand-style validator ran on a suppressed record,
     // because it has no message: not evaluated is the honest answer, and it is not a pass
     // (A15).
+    // D66: what the record spent is a parameter rather than a constant here, because the two
+    // callers are different facts. A record with no consented channel never reached a composer
+    // and has nothing to report; a composition failure reached one, and its calls were billed
+    // for whether or not anything came back.
     private static AgentRunResult Suppressed(
         ProspectCase prospectCase,
         SuppressionReason reason,
         NextAction nextAction,
-        ActionPlanNotes? actionPlan)
+        ActionPlanNotes? actionPlan,
+        ModelCostNotes? modelCost,
+        int? networkRetries)
     {
         var diagnostics = new AgentDiagnostics(
             RequiredStateMap.For(
@@ -230,7 +246,11 @@ public sealed class LeasingMessageAgent(
             SafetyViolationCount: 0,
             BrandStyleFailures: null,
             reason,
-            actionPlan);
+            actionPlan,
+            Schedule: null,
+            Composition: null,
+            modelCost,
+            networkRetries);
 
         return new AgentRunResult(new AgentOutput(SuppressedMessage(), nextAction), diagnostics);
     }

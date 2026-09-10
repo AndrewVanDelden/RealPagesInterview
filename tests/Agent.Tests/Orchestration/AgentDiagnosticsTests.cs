@@ -160,7 +160,9 @@ public class AgentDiagnosticsTests
 
     // D24 and playbook step 57: the diagnostics name the implementation that wrote the
     // message and how many compose calls it took, so a run that quietly fell back to the
-    // offline composer reads differently from one the model answered first time.
+    // offline composer reads differently from one the model answered first time. D66 leaves
+    // these three here and moves nothing else in: they describe a returned message, and a
+    // record with no message has no answer to any of them.
     [Fact]
     public void Serializes_Composition_WithComposerAndAttempts()
     {
@@ -173,7 +175,64 @@ public class AgentDiagnosticsTests
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
-        Assert.Contains("\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true,\"network_retries\":null}", json);
+        Assert.Contains(
+            "\"composition\":{\"composer\":\"template\",\"attempts\":3,\"locale_applied\":true}",
+            json);
+    }
+
+    // D62's and D28's first state on the wire, at the level D66 moved them to: no model call
+    // was made, so both members are null and not a row of zeros. Null is the absence of a
+    // measurement; zero would be one.
+    [Fact]
+    public void Serializes_ARecordThatMadeNoModelCall_AsANullModelCostAndNullRetries()
+    {
+        var diagnostics = new AgentDiagnostics(
+            NoStates,
+            0,
+            Composition: new CompositionNotes(ComposerNames.Template, Attempts: 1, LocaleApplied: true));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"model_cost\":null,\"network_retries\":null}", json);
+    }
+
+    // D62's second and third states on the wire, in the shape a reader of the diagnostics file
+    // sees them: two calls, one of them abandoned at its timeout, and the tokens the one that
+    // completed reported. D66 puts both counts at the row's own level, after composition, so a
+    // suppressed record with no composition object still carries them.
+    [Fact]
+    public void Serializes_ModelCost_WithEveryCountItMeasured()
+    {
+        var diagnostics = new AgentDiagnostics(
+            NoStates,
+            0,
+            Composition: new CompositionNotes(ComposerNames.OpenAi, Attempts: 2, LocaleApplied: true),
+            ModelCost: new ModelCostNotes(Calls: 2, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7),
+            NetworkRetries: 1);
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains(
+            "\"model_cost\":{\"calls\":2,\"completed_calls\":1,\"input_tokens\":11,\"output_tokens\":7},\"network_retries\":1}",
+            json);
+    }
+
+    // The record D66 is about, on the wire: it made two calls and ships nothing, so it has no
+    // composition object and the two counts are still there beside it.
+    [Fact]
+    public void Serializes_ASuppressedRecordThatCalledTheModel_WithNoCompositionAndItsCostIntact()
+    {
+        var diagnostics = new AgentDiagnostics(
+            NoStates,
+            1,
+            SuppressionReason: SuppressionReason.SafetyViolation,
+            ModelCost: new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains(
+            "\"composition\":null,\"model_cost\":{\"calls\":2,\"completed_calls\":0,\"input_tokens\":0,\"output_tokens\":0},\"network_retries\":null}",
+            json);
     }
 
     // A record with no consented channel has no message, so no implementation wrote one.

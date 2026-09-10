@@ -107,8 +107,17 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             throw new InvalidOperationException("OpenAI response contained no completion choice.", ex);
         }
 
+        // D62: the measured cost of the call, read off the vendor's own usage block. Confirmed
+        // against the restored assembly on 2026-09-09, not from documentation, which does not
+        // list it (playbook step 50, SCS): ChatCompletion.Usage is an OpenAI.Chat.ChatTokenUsage
+        // with int InputTokenCount, int OutputTokenCount and int TotalTokenCount, and it is null
+        // when the response body carried no usage object. Read here, after the content, because
+        // a call that never got this far is an abandoned call the client cannot measure at all:
+        // the TimeoutException above is thrown before result.Value is ever read.
+        ChatTokenUsage? usage = result.Value.Usage;
+
         return content.Length > 0
-            ? new ModelCompletion(content, retries)
+            ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
             : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
 

@@ -61,6 +61,27 @@ public sealed class CliRunner(
         // chosen per run (playbook step 31).
         bool judgeRequested = args.Contains("--judge", StringComparer.Ordinal);
 
+        // D65: no argument of this program may be empty. An empty path throws
+        // ArgumentException, which is not the IOException filter every open guard here uses,
+        // so `--input ""`, `--output ""`, `--log-file ""` and `--eval-report ""` all ended the
+        // process unhandled. Closed here rather than by widening those filters, which would
+        // ask a guard to swallow an exception a bug in the same try block could also throw.
+        // One scan and no list of flags to keep in sync: every flag either takes a value or is
+        // a presence flag, and no value any of them takes has a meaning when empty.
+        // O(n) in the argument count.
+        for (int index = 0; index < args.Length; index++)
+        {
+            if (args[index].Length != 0)
+            {
+                continue;
+            }
+
+            error.WriteLine(index == 0
+                ? "Argument 1 is empty: no argument of this program may be empty."
+                : $"The argument after '{args[index - 1]}' is empty: no argument of this program may be empty.");
+            return CliExitCodes.UsageError;
+        }
+
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
             error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
@@ -137,7 +158,22 @@ public sealed class CliRunner(
             return await ReplayAsync(inputPath, replayPath, evalReportPath, judge, loggerFactory, log, cancellationToken);
         }
 
-        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
+        // D65: the input open is guarded here, where ReadInput was already called, which is
+        // before the composer is built - so a path that will not open still costs no time and
+        // no money (playbook step 77).
+        Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
+        if (!inputOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, inputOpen.Error);
+            return CliExitCodes.UsageError;
+        }
+
+        List<ProspectCase> cases;
+        int failureCount;
+        using (StreamReader inputReader = inputOpen.Value)
+        {
+            (cases, failureCount) = ReadInput(inputReader, log);
+        }
 
         // D28: the model call is bounded by the strictest latency budget the batch states, so
         // the composer is built after the records are read. Nothing that costs time or money
@@ -190,11 +226,38 @@ public sealed class CliRunner(
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output/diagnostics path (bad directory, no write permission) must fail immediately,
         // not after every record has already run through the composer and any LLM calls.
+        // D64 gives each of the three the guard --log-file already has, so an unwritable path
+        // is one stderr line naming its own flag and exit code 1 (playbook steps 77 and 79)
+        // rather than an unhandled exception and an exit code that is none of the documented
+        // three. A stream already opened is disposed by its own `await using` on the way out.
         // outputPath is non-null here: the usage check above requires it when there is no
-        // --replay, and the replay path has already returned.
-        await using var outputStream = new StreamWriter(outputPath!);
-        await using StreamWriter? diagnosticsStream = diagnosticsPath is not null ? new StreamWriter(diagnosticsPath) : null;
-        await using StreamWriter? reviewQueueStream = reviewQueuePath is not null ? new StreamWriter(reviewQueuePath) : null;
+        // --replay, and the replay path has already returned, so the open cannot return null.
+        Result<StreamWriter?> outputOpen = OpenOutputStream("--output", outputPath);
+        if (!outputOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, outputOpen.Error);
+            return CliExitCodes.UsageError;
+        }
+
+        await using StreamWriter outputStream = outputOpen.Value!;
+
+        Result<StreamWriter?> diagnosticsOpen = OpenOutputStream("--diagnostics", diagnosticsPath);
+        if (!diagnosticsOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, diagnosticsOpen.Error);
+            return CliExitCodes.UsageError;
+        }
+
+        await using StreamWriter? diagnosticsStream = diagnosticsOpen.Value;
+
+        Result<StreamWriter?> reviewQueueOpen = OpenOutputStream("--review-queue", reviewQueuePath);
+        if (!reviewQueueOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, reviewQueueOpen.Error);
+            return CliExitCodes.UsageError;
+        }
+
+        await using StreamWriter? reviewQueueStream = reviewQueueOpen.Value;
 
         log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
 
@@ -202,6 +265,15 @@ public sealed class CliRunner(
         var diagnosticsRecords = new List<TaskDiagnostics>();
         var reviewQueue = new List<ReviewQueueEntry>();
         var scoredRuns = new List<ScoredRun>();
+
+        // D61, per batch: one wall-clock elapsed around the record loop, reported on the two
+        // artifacts that are already per batch and never as a row in the diagnostics array.
+        Stopwatch batchStopwatch = Stopwatch.StartNew();
+
+        // D62, per batch: the same arrangement for tokens. Summed off the rows this loop writes,
+        // so the number the scorecard prints is the number a reader adding up the diagnostics
+        // file's model_cost column gets, and null while no record has gone near a model.
+        ModelCostNotes? batchModelCost = null;
 
         foreach (ProspectCase prospectCase in cases)
         {
@@ -244,9 +316,16 @@ public sealed class CliRunner(
             }
 
             stopwatch.Stop();
-            log.LogInformation("Record processed in {ElapsedMs}ms.", stopwatch.Elapsed.TotalMilliseconds);
+
+            // D61 option (c): one measurement, three readers. The log line, the diagnostics row
+            // and the scored run are handed this one variable, so no two of them can state a
+            // different latency for the same record.
+            double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
+
+            log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
             outputs.Add(result.Output);
-            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes));
+            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes, latencyMs));
+            batchModelCost = ModelCostNotes.Add(batchModelCost, result.Diagnostics.ModelCost);
 
             // D43: one row per record the safety gate suppressed, and nothing else. A record
             // with no consented channel is not here (not contactable is the correct decision,
@@ -257,10 +336,18 @@ public sealed class CliRunner(
                 reviewQueue.Add(new ReviewQueueEntry(prospectCase.TaskId, rejectedDraft.Violations, rejectedDraft.Message));
             }
 
-            scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, stopwatch.Elapsed.TotalMilliseconds));
+            scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs));
         }
 
-        log.LogInformation("Batch complete: {Total} record(s), {Failures} failure(s).", recordsRead, failureCount);
+        batchStopwatch.Stop();
+        double batchLatencyMs = batchStopwatch.Elapsed.TotalMilliseconds;
+
+        log.LogInformation(
+            "Batch complete: {Total} record(s), {Failures} failure(s), {ElapsedMs}ms elapsed, model cost {ModelCost}.",
+            recordsRead,
+            failureCount,
+            batchLatencyMs,
+            ModelCostNotes.Describe(batchModelCost));
 
         var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
         await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
@@ -284,8 +371,11 @@ public sealed class CliRunner(
             // Scores the results already captured above - never re-runs the agent, so the
             // report describes exactly what was persisted to --output, not a second,
             // possibly different sample (this matters for non-deterministic composers).
-            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, cancellationToken);
-            await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken);
+            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, cancellationToken);
+            if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
+            {
+                return CliExitCodes.UsageError;
+            }
         }
 
         // A queued record leaves at exit 0 (D43): suppression is a correct pipeline outcome
@@ -305,10 +395,30 @@ public sealed class CliRunner(
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
     {
-        (List<ProspectCase> cases, int failureCount) = ReadInput(inputPath, log);
+        // D65: both reader paths get the guard, in the order they are read.
+        Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
+        if (!inputOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, inputOpen.Error);
+            return CliExitCodes.UsageError;
+        }
+
+        List<ProspectCase> cases;
+        int failureCount;
+        using (StreamReader inputReader = inputOpen.Value)
+        {
+            (cases, failureCount) = ReadInput(inputReader, log);
+        }
+
+        Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
+        if (!replayOpen.IsSuccess)
+        {
+            ReportFailure(log, LogLevel.Error, replayOpen.Error);
+            return CliExitCodes.UsageError;
+        }
 
         Result<IReadOnlyList<AgentOutput>> outputs;
-        using (var replayReader = new StreamReader(replayPath))
+        using (StreamReader replayReader = replayOpen.Value)
         {
             outputs = new JsonArrayRecordReader<AgentOutput>().ReadAll(replayReader);
         }
@@ -324,8 +434,11 @@ public sealed class CliRunner(
         }
 
         log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
-        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, cancellationToken);
-        await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken);
+        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, cancellationToken);
+        if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
+        {
+            return CliExitCodes.UsageError;
+        }
 
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
@@ -333,13 +446,9 @@ public sealed class CliRunner(
     // A line that did not parse is one failure row with its line number; there is no task
     // id to scope the log line on, so the line number is the only identity it has.
     // O(n) in the file size: one line parsed, and on failure reported, per iteration.
-    private (List<ProspectCase> Cases, int FailureCount) ReadInput(string inputPath, ILogger<CliRunner> log)
+    private (List<ProspectCase> Cases, int FailureCount) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
     {
-        IReadOnlyList<Result<ProspectCase>> readResults;
-        using (var inputReader = new StreamReader(inputPath))
-        {
-            readResults = new JsonlRecordReader().ReadAll(inputReader);
-        }
+        IReadOnlyList<Result<ProspectCase>> readResults = new JsonlRecordReader().ReadAll(inputReader);
 
         var cases = new List<ProspectCase>(readResults.Count);
         int failureCount = 0;
@@ -363,7 +472,10 @@ public sealed class CliRunner(
     // than aborting the whole report. The report always goes to the console; the file is
     // optional. O(n) in the batch size: one record's scoring error reported per iteration,
     // plus one file write.
-    private async Task WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
+    // Returns false only when --eval-report was passed and could not be written (D64). The
+    // console report is already out by then, so the caller turns that into exit code 1 and
+    // nothing else: the batch's own files are written and correct.
+    private async Task<bool> WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
     {
         foreach (RecordScore score in scorecard.RecordScores)
         {
@@ -378,8 +490,21 @@ public sealed class CliRunner(
 
         if (evalReportPath is not null)
         {
-            await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
+            // D64: the same guard the three batch output streams get, at the write instead of
+            // before the loop. The report is a report on the batch, so there is no earlier
+            // moment at which it could be written.
+            try
+            {
+                await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFailure(log, LogLevel.Error, $"Could not open --eval-report '{evalReportPath}': {ex.ToDiagnosticString()}");
+                return false;
+            }
         }
+
+        return true;
     }
 
     // The log line and the stderr line always carry the same text: one failure, reported
@@ -388,6 +513,48 @@ public sealed class CliRunner(
     {
         log.Log(level, message);
         error.WriteLine(message);
+    }
+
+    // D64: one guard for every output file the batch writes, so all three fail the same way
+    // and each names the flag the caller passed. A null path is the flag not being passed at
+    // all, which is a success carrying no stream, not a failure. The filter is the one
+    // --log-file uses: a path the caller can fix (missing directory, no permission, a locked
+    // or full volume) is an expected failure, and anything else stays a bug and keeps
+    // throwing.
+    private static Result<StreamWriter?> OpenOutputStream(string flag, string? path)
+    {
+        if (path is null)
+        {
+            return Result<StreamWriter?>.Success(null);
+        }
+
+        try
+        {
+            return Result<StreamWriter?>.Success(new StreamWriter(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<StreamWriter?>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
+        }
+    }
+
+    // D65: the mirror of OpenOutputStream for the two paths a run reads, --input and --replay.
+    // Same filter and same wording deliberately: a path the caller can fix is one class of
+    // failure whichever direction the bytes go, and a wider filter here than there would make
+    // one program say two things about one operating-system fact. Exit code 1 rather than 2 is
+    // the caller's half of that: 2 means some records were processed and some were not, and a
+    // file that never opened has no records at all. No null path to answer for, unlike the
+    // output flags: both callers reach this only with a path the usage check required.
+    private static Result<StreamReader> OpenInputReader(string flag, string path)
+    {
+        try
+        {
+            return Result<StreamReader>.Success(new StreamReader(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<StreamReader>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
+        }
     }
 
     private static string? GetOption(string[] cliArgs, string name)
@@ -412,14 +579,18 @@ public sealed class CliRunner(
     // The scorecard, and the judge's two verdicts on top of it when the run asked for them.
     // Both paths score the same way; the judge is one signal beside the deterministic checks
     // and never replaces one (D30).
+    // Both batch numbers are null on the replay path (D14): no record loop ran there, so nothing
+    // was timed and nothing was spent, and the scorecard says so rather than printing zeros.
     private static async Task<Scorecard> ScoreAsync(
         IReadOnlyList<ScoredRun> runs,
         SemanticJudge? judge,
         ILoggerFactory loggerFactory,
+        double? batchLatencyMs,
+        ModelCostNotes? batchModelCost,
         CancellationToken cancellationToken)
     {
         var evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
-        Scorecard scorecard = evaluator.Evaluate(runs);
+        Scorecard scorecard = evaluator.Evaluate(runs, batchLatencyMs, batchModelCost);
 
         return judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
     }

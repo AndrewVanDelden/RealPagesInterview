@@ -68,7 +68,7 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
         // tallies and its p95 once at construction, and a copy would carry the unjudged
         // numbers into a report whose rows say otherwise. The per-check line is where the
         // reported numbers come from.
-        return new Scorecard(judged, scorecard.LatencyBudgetMs);
+        return new Scorecard(judged, scorecard.LatencyBudgetMs, scorecard.BatchLatencyMs, scorecard.BatchModelCost);
     }
 
     private async Task<(CheckResult Action, CheckResult Body)> GradeAsync(ScoredRun run, CancellationToken cancellationToken)

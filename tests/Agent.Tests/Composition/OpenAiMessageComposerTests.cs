@@ -700,4 +700,51 @@ public class OpenAiMessageComposerTests
 
         Assert.Equal(["Thu", "Fri"], result.Message.Cta!.Options);
     }
+
+    // D62, the third state: a call that completed carries that call's real input and output
+    // token counts, and the call is counted beside them so a reader can tell a measured zero
+    // from an unmeasured one.
+    [Fact]
+    public async Task ComposeAsync_CallCompletes_NotesCarryTheCountedCallAndItsTokens()
+    {
+        const string json = """{"subject":"Tour Oak Ridge","body":"Hi Taylor, book a tour!","cta_type":"schedule_tour","cta_options":["Thu","Fri"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json, inputTokens: 11, outputTokens: 7));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), outcome.ModelCost);
+    }
+
+    // D62, the second state: the client throws its TimeoutException before it can read
+    // result.Value, so there is no usage to read and the tokens are zero. The call is still
+    // counted, because the vendor billed roughly a third of the abandoned attempts of the
+    // 2026-09-08 run (DESIGN.md section 9) and a zero with no call beside it would read as
+    // free.
+    [Fact]
+    public async Task ComposeAsync_CallAbandonedAtItsTimeout_FailureCountsTheCallAndMeasuresNoTokens()
+    {
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(throwException: new TimeoutException("budget exceeded")));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.ModelCost);
+    }
+
+    // A call that completed and came back unusable is still a call the vendor billed for: the
+    // completed count and the tokens are what it measured, and the record's message came from
+    // the fallback instead.
+    [Fact]
+    public async Task ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletedCallAndItsTokens()
+    {
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json", inputTokens: 9, outputTokens: 3));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 9, OutputTokens: 3), result.ModelCost);
+    }
 }

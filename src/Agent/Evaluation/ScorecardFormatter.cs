@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Agent.Composition;
 
 namespace Agent.Evaluation;
 
@@ -44,6 +45,12 @@ public static class ScorecardFormatter
         builder.AppendLine("Checks: " + string.Join(", ", Columns.Select(column =>
             $"{column.Label} {scorecard.PassedCountOf(column.Check)}/{scorecard.MeasuredCountOf(column.Check)}")));
         builder.AppendLine($"Latency p95: {Milliseconds(scorecard.LatencyP95Ms)}, budget {Milliseconds(scorecard.LatencyBudgetMs)}: {Symbol(scorecard.LatencyP95)}");
+
+        // D61 and D62, per batch: beside the p95 it already prints, because the p95 is computed
+        // from the same per-record numbers and these two are the numbers they are not. Cost is
+        // tokens, never money: the dated dollar figure lives in DESIGN.md section 9 and README.
+        builder.AppendLine($"Batch latency: {Milliseconds(scorecard.BatchLatencyMs)}");
+        builder.AppendLine($"Batch model cost: {ModelCostNotes.Describe(scorecard.BatchModelCost)}");
         builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
 
         return builder.ToString();
