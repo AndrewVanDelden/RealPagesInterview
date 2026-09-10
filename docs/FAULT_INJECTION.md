@@ -2,9 +2,10 @@
 
 Six faults, one section each: how the fault is injected, what the product does, what the
 diagnostics say, the exit code where one applies, and the tests that prove it by file and test
-name. The audit behind this file is D64 in [DECISION_LOG.md](DECISION_LOG.md), which found five
-of the six already proved by the suite and a real gap behind the sixth. Every test named below
-was checked against the suite on 2026-09-09 and exists.
+name. The audit behind this file is D64 in
+[DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md), which found five of the six already proved by the
+suite and a real gap behind the sixth. Every test named below was checked against the suite on
+2026-09-09 and exists.
 
 Two things this file is not. It is not a tally: what a documented run measures is in
 [DESIGN.md](DESIGN.md) section 9, and what a fault does is here. And it is not written at the

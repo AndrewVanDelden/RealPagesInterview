@@ -145,7 +145,7 @@ public class JsonlRecordReaderTests
         Assert.Contains("Line 1", result.Error);
     }
 
-    // D1 (DECISION_LOG.md): every member is optional except task_id, consent, and
+    // D1 (DECISIONS_ARCHIVE.md): every member is optional except task_id, consent, and
     // channel_preferences. An absent optional value type is null, never a silent default
     // (the year-0001 dates of retrospective finding 4), and never an error row.
     [Fact]

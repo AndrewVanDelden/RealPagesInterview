@@ -1,0 +1,1950 @@
+# Decisions archive
+
+Every decision paragraph this project has taken, in full and verbatim as it was written on the
+day it was taken. `DECISION_LOG.md` carries the current phase and one paragraph per sprint; the
+paragraphs those summaries stand for are here. A citation of the form D followed by a number
+resolves here by searching for its bold heading, and an addendum sits with the paragraph it
+amends rather than in the order it was written, so one search finds a decision and everything
+that has amended it. Paragraphs arrive here as written and are not rewritten (D68).
+
+One paragraph per decision, in the recording form of `~/.agent-rules/ARCHITECTURE.md`: the
+question, the options, the recommendation, what it scopes, the evidence, the numbered assumption
+it depends on (assumptions are the table in [DESIGN.md](DESIGN.md) section 7). A task that
+cannot cite a paragraph here is not scheduled. Dates are when the decision was taken; D1 to D8
+were first written in the retrospective of 2026-09-06 and are restated here under the frame D9
+sets.
+
+## Starting decisions (2026-09-07)
+
+**S1. What runs.** Question: the shape of the deployable. Options: the default, a library plus
+a thin command-line entry point; an API or a worker. Recommendation: the default. Scopes: the
+entry point parses arguments, wires the composition root, runs the per-record loop, and holds
+no rules. Evidence: the statement's verbs, "reads the input record" and "produces output"; a
+file arrives, a file leaves. Assumption: none.
+
+**S2. What code decides and what is delegated.** Question: the boundary between deterministic
+code and the model. Options: the default, code owns every reproducible decision and the model
+writes prose and picks from a code-owned catalog under constrained decoding; the alternative,
+the model decides actions. Recommendation: the default. Scopes: the policy catalog, the
+composer prompt, the evaluator's semantic checks. Evidence: the statement asks for an
+autonomous agent whose behavior is auditable against thresholds; a model choosing actions
+cannot be replayed or proven. Assumption: A18.
+
+**S3. Where the seams are.** Question: where interfaces exist. Options: the default, one seam
+per external or non-deterministic dependency with a real and an offline implementation on the
+day it is created; the alternative, an interface per component. Recommendation: the default.
+Scopes: three interfaces stay (composer, completion client, safety validator); every other
+interface goes as the sprint that touches it lands (D7); time is a value passed in (D10).
+Evidence: at the retrospective eleven interfaces existed and eight had one implementation and
+no test substitute. Assumption: none.
+
+**S4. How done is measured.** Question: whether evaluation is part of the deliverable.
+Options: the default, an evaluator built before the product and proven able to fail; the
+alternative, none. Recommendation: the default. Scopes: Sprint 2 precedes every decision-code
+sprint; the definition of complete in D6. Evidence: the retrospective's finding 5, a scorer
+that could not fail on two of its own fields. Assumption: none.
+
+## Decisions
+
+**D1. Input contract (revised 2026-09-07).** Question: what the reader accepts, reports, and
+refuses. Options: a hand list of required fields fitted to the files seen; or three required
+members and everything else optional with a named default. Recommendation: the second.
+`task_id`, `consent`, and `channel_preferences` are required and a line missing one is an
+error row naming the member; every other member is optional, its absence gets a default and a
+diagnostics line naming the field; members the record types do not declare are kept as
+extension data, listed in diagnostics, and logged per record; a value-type property on an input
+record is either required or nullable, enforced by a reflection test over every record type.
+Scopes: D2, D4, D5, Sprint 2. Evidence: DESIGN.md section 2; the statement promises cases the
+samples do not show; the retrospective's finding 4 (silent year-0001 dates). Assumptions: A16,
+A17. Landed 2026-09-08 in Sprint 2, with one difference from the paragraph above: the
+reflection test over the record types is not written, because every value-type member is now
+nullable by construction and the reader test over `holdout_12.jsonl` (12 of 12 rows) is the
+check that holds; the test returns to scope if a non-nullable value-type member is ever added.
+
+**D2. Decision model (revised 2026-09-07).** Question: how `next_action` is chosen. Options: a
+policy table with one row per stage observed in the twelve; or a catalog with the rows the
+two samples justify plus one generic row, and a semantic score for what the catalog cannot
+name. Recommendation: the second, under D9. Consent first: not contactable gives `no_op` with
+reason `no_contact_consent` and nothing else runs. The catalog is one data file keyed on
+persona and stage, carrying the action template and the default call to action; the rows are
+prospect `new` and prospect `open` from the samples and the generic row; the horizon rule of A7
+picks the template's branch; a persona or stage with no row uses the generic row and the
+diagnostics name the fallback; the planner returns a `Result` and never applies the nearest
+rule to a record it cannot classify. `NextAction` is one record with `Type` and nullable
+`Name`, `Value`, `Reason`, nulls omitted on the wire. Scopes: Sprint 4, the orchestrator order.
+Evidence: section 3 of DESIGN.md; playbook steps 41 to 43. Assumptions: A7, A8. Landed early,
+2026-09-08 in Sprint 2: consent first with `no_op` and its reason, and the `NextAction` shape.
+The catalog, the generic row, and the `Result` from the planner remain Sprint 4.
+
+**D3. Output contract.** Question: what suppression looks like and what diagnostics carry.
+Options: a null `next_message`; or an object with channel `none` and null fields.
+Recommendation: the object, since the output always has both members; the evaluator treats
+both spellings and a null channel as one value. Diagnostics carry `suppression_reason`
+(`none`, `no_contact_consent`, `composition_failed`, `safety_violation`), the decision inputs,
+every defaulted field, every fallback, and the earned states: `consent_verified` only when the
+selector ran, `fair_housing_check_passed` as the validator's verdict, `brand_style_applied` as a
+check that can fail, any other name as not earned. Scopes: Sprint 2, Sprint 7. Evidence: the
+statement's "(or not sent)"; A2, A14. Landed 2026-09-08 in Sprint 2: the object with channel
+`none`, `suppression_reason` in diagnostics, and the ingest notes (defaulted fields, unknown
+members) on every diagnostics row. The earned states remain Sprint 7.
+
+**D3 addendum, PR #21 review (2026-09-08).** D3's rule that a suppressed record's diagnostics
+carry no composer identity had a third case unhandled: `AgentDiagnostics` is built from the
+compose step's notes before the final safety check runs, and the final-safety-suppression
+branch returned that same object unchanged, so a record with no message on the wire could
+still carry a non-null `composition`, naming a composer as if its draft had shipped. The other
+two suppression cases (consent, composition failure) already null the field. Fixed by nulling
+`Composition` on that branch too. A test asserting the null now sits beside the existing
+assertions on `RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage`, confirmed to
+fail against the prior code.
+
+**D4. Scheduling (revised 2026-09-07).** Question: what `send_at` is a function of. Options:
+per-stage day offsets and minutes fitted to the twelve; or the channel slot on the first day at
+or after max(reference time, `last_interaction`) in the record's timezone, minutes not modeled.
+Recommendation: the second, under D9. Scored to the day and to the hour. Unknown timezone is
+UTC plus a diagnostic; daylight-saving transitions get property tests. Scopes: Sprint 5, D6's
+`send_at` rule. Evidence: section 3; the two samples fix the hour by channel and nothing else.
+Assumptions: A4, A5, A6.
+
+**D5. Composition (revised 2026-09-07).** Question: what the message is a function of.
+Options: templates per stage fitted to the twelve, Spanish included; or templates keyed on
+persona and channel built from the facts the record carries, in English, with any other
+language delegated to the model composer and reported in template mode. Recommendation: the
+second, under D9. The call-to-action type comes from `primary_cta` through the vocabulary
+table, unknown values pass through, absent means the generic `reply`; sms carries numbered
+options, email carries a link built from the property slug; the model prompt carries persona,
+stage, language, every date the record has, the stated interests, and the catalog's call to
+action, with structured output constraining the type. Body semantics are scored by the judge,
+not asserted. Scopes: Sprint 6. Evidence: section 3; A9 to A13.
+
+**D6. Evaluation contract (revised 2026-09-07).** Question: what is scored and against which
+data. Options: score the twelve as a training set; or score both the twelve and a synthetic
+set as evaluation sets, never fitted to. Recommendation: the second, under D9. Fields and
+granularity are DESIGN.md section 6. The scorer proof runs in the suite. Definition of
+complete: every record in both sets produces a valid output row with diagnostics that explain
+it; the deterministic checks the input can decide (channel, consent, language, opt-out, safety,
+payload shape) pass on every record; the honest numbers for `send_at` and `next_action.type`
+are reported in the README and never targeted. Scopes: Sprint 2, the README. Evidence: S4; the
+requester's answer, D9. Assumption: A19. Landed 2026-09-08 in Sprint 3: every field of
+DESIGN.md section 6 with a three-way verdict, the scorer proof on three sets in the suite,
+`synthetic_12.jsonl`, `--replay`, and the baseline numbers pinned by `BaselineNumbersTests`.
+One difference from the paragraph above: the semantic judge is deferred to Sprint 6 (D15).
+
+**D7. Structure.** Question: what stays, what goes, what the orchestrator reads like. Options:
+collapse interfaces up front; or let each sprint delete the interface it touches.
+Recommendation: the second. Kept: composer, completion client, safety validator. Removed as
+touched: consent gate, channel selector (merged into one `Select` returning an option),
+scheduler, planner, agent, evaluator, record writer; the record reader is already concrete.
+The orchestrator has six numbered steps, one comment each, matching the DESIGN.md diagram.
+Scopes: Sprint 8. Evidence: S3. Assumption: none.
+
+**D8. Gates.** Question: what runs without a person remembering. Options: the default,
+`.github/workflows/test.yml` running `dotnet build` and `.\test.ps1` on every push and pull
+request with branch protection on `dev` requiring the `test` check; or none. Recommendation:
+the default, taken 2026-09-07. `test.ps1` exits with the `dotnet test` exit code so the check
+can go red. Applied 2026-09-07 after the first green run on PR #16: `dev` requires the `test`
+context, refuses force pushes and deletion, and does not enforce on admins, so the owner can
+override in an emergency. Scopes: Sprint 1; every later PR. Evidence: the retrospective's finding that
+nothing governed truth against data between sprints. Assumption: none.
+
+**D9. What the twelve-record file is (2026-09-07).** Question: whether rules may be fitted to
+`holdout_12.jsonl`. Options: treat it as the training set and fit a per-stage table; or treat
+it as unknown, build from the two-record file, and use its curveball categories only to shape
+the risk register. Recommendation: the second, on the requester's answer that the twelve are
+unknown to the design and future sets may be harder. Scopes: D2, D4, D5, D6, the definition of
+complete. Evidence: the requester, 2026-09-07; the statement, "learns what to do only from
+input data." Assumption: A19.
+
+**D10. Reference time (2026-09-07).** Question: how a run learns the date its send times are
+relative to. Options: a `--now` flag with the current UTC time as default; or a default derived
+from the latest `last_interaction` in the batch. Recommendation: the flag, on the requester's
+answer. The `--now` flag does not exist yet; it lands with the CLI contract work in Sprint 3.
+The documented run against the twelve passes `--now 2025-12-09T00:00:00-06:00`, and the
+README records that command. Scopes: D4, the CLI, Sprint 2. Evidence: section 3, the send-day
+row; the field is absent from most records. Assumption: A4. Landed 2026-09-08 in Sprint 2:
+`--now` on the CLI, logged once per run, passed as a value to the agent, the planner, and
+the scheduler.
+
+**D11. Where the twelve-record file lives (2026-09-07).** Question: whether CI can read the
+evaluation set. Options: in the repo beside `sample.jsonl`, linked into the test output; or
+outside the repo, scored by hand. Recommendation: in the repo, on the requester's answer.
+Scopes: Sprint 2's fixtures, D8's check. Evidence: a file only two session scratchpads held
+would have been lost. Assumption: none.
+
+**D12. Phase 0 restart (2026-09-07).** Question: whether Phase 0 restarts at step 1 or
+continues at step 4. Options: either. Recommendation: restart, on the requester's answer;
+DESIGN.md is rewritten from step 1 and the retrospective's section 7 plan is superseded by
+DESIGN.md section 9. Scopes: everything after. Evidence: the retrospective's section 9.
+Assumption: none.
+
+**D13. Scorer proof against the labels (2026-09-08).** Question: what to do when a scorer
+proxy fails the oracle's own label (playbook step 33: the labels passed as actuals must
+score 100 percent). Options: keep the proxy and report the oracle as failing; or treat a
+proxy that fails a label as a wrong proxy, correct the scorer, and record the record that
+forced each correction. Recommendation: the second. The scorer is the measuring instrument,
+not a product rule: D9 keeps every product rule fitted to the two samples, and validating
+the metric against every label is what an evaluation set is for. Every correction is listed
+here with its record, so the proxy's evidence is auditable. Corrections: (a) personalization
+facts are the first name and the property name, searched over subject plus body; city and
+amenities are not counted (sample 1's body omits the city at threshold 0.85; hold-out 11's
+body omits both amenities at 0.8; hold-out 6 names the property only in the subject); a
+multi-word fact is covered when at least half its words appear as whole words (every label
+says "Oak Ridge" for "Oak Ridge Apartments"). (b) the opt-out instruction is the whole word
+STOP in capitals, or opt out, opt-out, unsubscribe, after the unicode hyphens U+2010, U+2011,
+U+2013 and U+2014 are folded to a hyphen (hold-out 6 carries only "Opt‑out" spelled with
+U+2011; hold-out 11 carries "Responde STOP"); one list, shared by the validator and the
+scorer, so the agent can never emit what the scorer rejects. (c) the body language is
+detected by a stop-word count over subject plus body for the languages the sets contain,
+English and Spanish; a stated language the detector does not know is reported as not
+measured. (d) the call-to-action type is scored against the label's own `cta.type`, never
+against the product's vocabulary table (hold-out 3 labels `reschedule` for the constraint
+`reschedule_tour`, hold-out 7 labels `intent_capture` for `reply_intent`; a scorer that
+consulted the table passed the product's own guess back to itself, the retrospective's
+finding on the CTA field). Scopes: Sprint 3; A12, A15; the validator's opt-out check. Evidence: the proof
+runs recorded in DESIGN.md section 9 under "Numbers after Sprint 3". Assumption: A15.
+
+**D14. Replay alignment (2026-09-08).** Question: how `--replay` matches the rows of an
+output file to the records of `--input` when the output carries no task id (playbook step
+27: nothing extra in the graded output). Options: add `task_id` to the output; or align by
+position over the records that parsed, and refuse with a usage error naming both counts when
+they differ. Recommendation: the second. A safety violation count and a latency exist only
+in the run that produced the file, so replay reports both as not measured. Scopes: the
+`--replay` flag, OPERATIONS.md. Evidence: D3; the output writer appends one row per record
+that ran, in input order. Assumption: none.
+
+**D15. Judge deferred to Sprint 6 (2026-09-08).** Question: whether the semantic judge for
+`next_action.type` (DESIGN.md section 6) lands in Sprint 3 or with the body judge in Sprint
+6. Options: build the judge seam now, off by default; or defer it to Sprint 6, where D5
+already places judge-scored body semantics, so one pinned model and one rubric have one
+owner. Recommendation: the second; Sprint 3 scores every deterministic field of section 6
+and reports the exact-match number for the action type. Scopes: Sprint 3, Sprint 6.
+Evidence: playbook step 31, the judge is one signal beside the deterministic checks; D5.
+Assumption: A8.
+
+**D16. One log scope owner (2026-09-08).** Question: which of `CliRunner`,
+`LeasingMessageAgent`, and `Evaluator` opens the `TaskId` log scope. Options: the CLI's
+batch loop; or the agent, so any caller gets the scope for free. Recommendation: the CLI. It
+is the one place that knows both the task id and the batch position, the evaluator runs
+inside its loop, and the agent's own scope produced the duplicated `TaskId=x TaskId=x` on
+every line (the retrospective's logging defect 1). A library caller that wants correlation
+opens its own scope the way the CLI does. Scopes: Sprint 3, OPERATIONS.md section 3.
+Evidence: the retrospective's logging defect 1 and Fix 8. Assumption: none.
+
+**D17. Catalog storage (2026-09-07).** Question: whether the action catalog D2 calls "one data
+file" is a data file at run time or a table compiled into one source file. Options: an
+external JSON file behind a flag; an embedded JSON resource parsed at startup; or a table in
+one source file, `src/Agent/Decisions/ActionCatalog.cs`. Recommendation: the third. Playbook
+step 38 says a decision unit takes its inputs and returns a decision with no I/O, and the
+catalog holds three rows that nothing has asked to change without a rebuild, so a file format
+is not earned (LC, step 41). A8's "configurable: the catalog file" is met by one file to edit,
+and the compiler checks the rows. The failures a parser would have caught are checked instead
+by `ActionCatalog.Create`, which every construction goes through, including `Default`. Scopes:
+Sprint 4, A8's configurable column. Evidence: playbook steps 38, 41, 42; three rows in
+DESIGN.md section 3. Assumption: A8. Revises D2's wording, which said "data file".
+
+**D18. Where the planner's failure lives, and what the planner returns (2026-09-07).**
+Question: D2 says the planner "returns a `Result` and never applies the nearest rule to a
+record it cannot classify", but A8 gives every unmatched record the generic row, so no record
+is unclassifiable and `Plan` has no reachable failure. Options: `Plan` returns
+`Result<PlannedAction>` and fails when the catalog cannot classify; or the `Result` moves to
+`ActionCatalog.Create` and `Plan` returns the decision object directly. Recommendation: the
+second. The first is either a branch no honest test can reach under the 100 percent gate, or
+it forces the planner to take an unvalidated catalog and re-check it once per record. D2's
+guarantee becomes structural instead: the lookup is exact key, then the generic row, and there
+is no nearest-match path in the code to disable. `ActionCatalog.Create` returns
+`Result<ActionCatalog>` and fails on a row with a blank persona or a blank lifecycle stage, on
+two rows with the same key (compared case-insensitively, the way the lookup compares), and on
+an action type outside `ActionTypes.All`. All three are reachable from a test that builds a
+catalog. `Plan` returns `PlannedAction`, which carries the `NextAction` and the why that
+playbook step 39 asks for: the horizon branch, the horizon in days (null when the record
+states no move date), and which row supplied the action. Scopes: Sprint 4, `AgentDiagnostics`,
+the Phase 3 check that diagnostics explain every decision. Evidence: playbook steps 39, 43;
+A7, A8; the coverage gate in AGENTS.md. Assumptions: A7, A8. Revises D2's `Result` clause.
+
+**D19. Default call to action deferred to Sprint 6 (2026-09-07).** Question: whether the
+catalog row carries D2's default call to action in Sprint 4 or in Sprint 6. Options: add the
+column and wire the composers to it now; add the column unread; or defer the column. Wiring it
+now pulls Sprint 6's catalog-driven call to action into Sprint 4 and edits both composers.
+Adding it unread leaves a property no code reads, and the coverage gate would then need a test
+written only to touch it, which AGENTS.md forbids. Recommendation: defer. Sprint 4 ships
+persona and stage to an action template plus the fallback; Sprint 6 adds the column and moves
+`PrimaryCtaVocabulary.GenericCtaType` onto it, at the point where a composer reads it. Scopes:
+Sprint 4, Sprint 6, A9. Evidence: DESIGN.md section 9, the Sprint 6 row; LC. Assumption: A9.
+
+**D20. `NextActionPlannerOptions` deleted (2026-09-07).** Question: what happens to the
+planner's settings record once catalog rows carry the cadence name and the follow-up days.
+Options: keep it holding only the short-horizon threshold; or delete it and name the threshold
+as a constant. Recommendation: delete. A7 marks the threshold not configurable, and playbook
+step 41 earns a setting with a second known value, of which there is none; keeping it leaves a
+settings record with one member that the design says is not a setting, plus two guard-clause
+tests for a value nothing configures. The 45 days become
+`NextActionPlanner.ShortHorizonThresholdDays`, cited to A7 where it is defined. Removes
+`src/Agent/Decisions/NextActionPlannerOptions.cs` and
+`tests/Agent.Tests/Decisions/NextActionPlannerOptionsTests.cs`. Scopes: Sprint 4. Evidence:
+A7's configurable column; playbook step 41. Assumption: A7.
+
+**D21. The slot on a transition day (2026-09-08).** Question: what instant `send_at` names when
+the channel's local slot (A5) does not exist on the send day, because the zone springs forward
+across it, or occurs twice, because the zone falls back across it. Options: keep the current
+arithmetic, which stamps `TimeZoneInfo.GetUtcOffset(wall time)` on the wall time and so emits,
+for a slot inside a gap, an offset the zone never had at that instant, and picks the second of
+two occurrences for an ambiguous slot without saying so; or resolve a nonexistent slot to the
+first instant that exists at or after it, which is the transition instant, and an ambiguous
+slot to the earlier of its two instants; or skip the day and take the next day's slot.
+Recommendation: the second. `send_at` is an instant, and an instant the zone never had is
+wrong in a way no downstream reader can detect, since the offset travels with the value. The
+earliest valid instant at or after the stated slot keeps A4's floor property, that the send is
+never earlier than max(reference time, `last_interaction`), and stays closest to A5's hour;
+skipping the day moves the send day, which A4 fixes independently of the hour. The resolution
+is a value in the diagnostics (D22), not a silent correction. Scopes: Sprint 5,
+`Agent.Common.TimeZones`, `SendScheduler`, `AgentDiagnostics`. Evidence: none in the data.
+Both samples are `America/Chicago` at 09:00 and 10:00, and no transition in the current zone
+database covers those hours, so no record observed or synthetic reaches either branch. The
+rule is stated over a zone's adjustment rules, not over today's zone database, and is proved
+against custom zones built in the test whose transitions do cover the slot, plus a sweep over
+every system zone's real transitions. Assumption: A20.
+
+**D21 addendum, PR #20 review (2026-09-08).** The first implementation did not match this
+decision: `ResolveSlot`'s gap branch shifted the wall time forward by the gap's own width
+(`GetUtcOffset` before the transition, re-stamped after) rather than landing on the transition
+instant. The two agree only when the requested slot falls exactly at the gap's start; for any
+slot farther into the gap, the shift overshoots past the transition instant by however far into
+the gap the slot fell, which contradicts the "stays closest to A5's hour" reasoning above.
+Flagged in PR #20 by a Claude review and independently by an Antigravity (Gemini 3.8 Flash)
+review comment on the same line. Fixed by having `ResolveSlot` binary-search
+`TimeZoneInfo.IsInvalidTime` for the earliest valid instant instead of computing an offset
+shift, since the zone's own transition boundary is not exposed by public `TimeZoneInfo` API.
+No tally on any of the three sets moved: no zone in the current database reaches this branch
+(A20), so the bug was invisible to every check the product runs, only to the property tests
+built to cover it, and to review.
+
+**D22. What the diagnostics say about `send_at` (2026-09-08).** Question: whether the schedule
+decision gets the account D18 gave the action plan, and what is in it. Options: leave `send_at`
+unexplained, since the ingest notes already name an unrecognized timezone; log the transition
+branch only when it fires, as playbook step 43 asks; or carry a `ScheduleNotes` object beside
+`ActionPlanNotes`, naming which input was the floor, the zone the send was computed in, and how
+the slot resolved. Recommendation: the third. The Phase 3 check is that the diagnostics explain
+every decision, `send_at` is a decision with three inputs (A4's floor, A6's zone, A5's hour),
+and a log line only reaches a reader who kept the log. The object is null on a record the
+scheduler never ran for, the same rule `ActionPlanNotes` follows for a record the planner
+never ran for: consent suppression, or a composer that produced no message to schedule. A
+record the final safety check suppressed keeps both.
+Scopes: Sprint 5, `AgentDiagnostics`, `LeasingMessageAgent`, `SendScheduler`'s return type.
+Evidence: the Phase 3 check in AGENTS.md; D18's precedent; playbook step 43. Assumptions: A4,
+A5, A6, A20.
+
+**D23. The channel decision gets no diagnostics object (2026-09-08).** Question: the Phase 3
+check is that the diagnostics explain every decision, and after D18 and D22 the consent gate,
+the planner and the scheduler each have an account while the channel selector has none; whether
+that closes the check. Options: add a `ChannelNotes` object naming which entry of
+`channel_preferences` won and which entries consent ruled out, and hold Phase 3 open until it
+lands; or state the rule that earns an account and close the check under it. Recommendation:
+the second, and Phase 3 is passed. The rule: a decision earns a diagnostics object when its
+working cannot be read off the input and the output. The horizon branch, the horizon in days
+and the row that answered are internal to the planner (D18); the floor, the zone and the slot
+are internal to the scheduler (D22); the channel's working is not internal at all. It is
+`channel_preferences` in the record's stated order intersected with `consent`, both of which
+the input carries, and `next_message.channel` is the answer, so a reader with the record and
+the row can reproduce the selection exactly, and `consent_verified` and `suppression_reason`
+already say when the intersection was empty. An object restating those two fields would be the
+only diagnostics member that tells a reader nothing the two files in front of them do not.
+Scopes: the Phase 3 check in AGENTS.md, Sprint 5, any later sprint tempted to add the object.
+Evidence: A1 and A3, which state the rule entirely in input fields; DESIGN.md section 3's
+channel row; LC. Assumptions: A1, A3. Confirmed by the requester on 2026-09-08.
+
+**D24. The composer's identity in the diagnostics (2026-09-08).** Question: playbook step 57
+says the diagnostics record which implementation produced each result, and the Phase 4 check
+says the diagnostics say so on every record; nothing in the output or the diagnostics names the
+composer today. Options: log the composer once per record and leave the diagnostics alone; add a
+string member to `AgentDiagnostics`; or have the composer return its working beside the message,
+the way `SendScheduler` returns `ScheduledSend` (D22), and carry it as a `CompositionNotes`
+object. Recommendation: the third. A log line only reaches a reader who kept the log, and the
+composer's identity is exactly the kind of working D23 says earns an object: it cannot be read
+off the input and the output. `IMessageComposer` returns `Result<ComposedMessage>`, where
+`ComposedMessage` is the `NextMessage` plus `CompositionNotes(Composer, Attempts,
+NetworkRetries)`: which implementation produced the text, how many compose calls the
+compose-validate loop made, and how many transport retries the call underneath spent (null for a
+composer that makes no network call). `ValidatingMessageComposer` returns the notes of the
+attempt that answered, with its own total attempt count. Silent degradation is visible without a
+boolean: the run states the composer it asked for (`--composer`), and a record whose notes say
+`template` on an `openai` run is one the fallback answered. Scopes: Sprint 6, `IMessageComposer`,
+both composers, `ValidatingMessageComposer`, `AgentDiagnostics`, the Phase 4 check. Evidence:
+playbook steps 49 and 57; D22's precedent; D23's rule for what earns an object. Assumption: A18.
+
+**D24 addendum, PR #21 review (2026-09-08).** A recall-biased review of PR #21's diff found
+three defects under D24's own subject, the composer's identity and its notes. (a) The email
+link for a call to action was built from `CallToActionCatalog.Resolve(primaryCta)`, the
+record's stated constraint, rather than from `payload.CtaType`, the type actually placed on
+the outgoing message; the two are only guaranteed equal when `primary_cta` is present, so an
+absent constraint (the schema leaves `cta_type` unconstrained in that case, see D5) let the
+model choose a specific type while the link still pointed at the generic path. Fixed by
+`CallToActionCatalog.LinkPathForType(ctaType)`, a reverse lookup from the type actually on the
+wire, called with `payload.CtaType` rather than the input constraint. (b) The same site
+resolved the catalog twice on one unmodified input, once for the required type and again for
+the link path; `TemplateMessageComposer` already resolved once and reused both fields.
+`OpenAiMessageComposer` now does too, since the type it enforces (`requiredCtaType`, from the
+constraint) and the type it links (`payload.CtaType`, from the model) are different resolves
+by design after (a), not the same call repeated. (c) Both composers hardcoded `Attempts: 1` on
+the `CompositionNotes` they built, a value `ValidatingMessageComposer.WithAttempts`
+unconditionally overwrites on every production path; `CompositionNotes.ForComposer` states the
+placeholder once instead of once per composer. Each fix carries a test that fails against the
+prior code, confirmed by reverting the fix and re-running it. Tallies on all three sets: no
+tally moved, since `--composer openai` still falls back to the template composer under D31's
+timeout math on these sets, so the OpenAI composer's own output has never been measured
+against a label.
+
+**D25. The call-to-action payload and the link host (2026-09-08).** Question: A10 says sms
+carries numbered reply options and email carries a link, and the payload check has been 0 of 10
+on every set since Sprint 3 because the template composer emits neither. Where do the options and
+the link come from, given no input field states either. Options: hard-code one pair of options
+and one link in the template composer; or put both on the catalog row D19 deferred, keyed on the
+call-to-action type, so the vocabulary lives in the one table playbook step 42 asks for.
+Recommendation: the second. `ActionCatalog` gains the call-to-action column D2 named and D19
+deferred: per call-to-action type, the sms reply options and the email link path. The link is
+`https://{slug}.example/{path}` (A10), and the slug rule is A21. A record with no property name
+has no host, so it gets no link and the payload check fails honestly rather than being fed an
+invented host. `PrimaryCtaVocabulary.GenericCtaType` moves onto that column, which is what D19
+said Sprint 6 would do. Scopes: Sprint 6, `ActionCatalog`, both composers, A9, A10, A21.
+Evidence: sample 1's `options` ["Thu","Fri"] and sample 2's `link`
+`https://oakridge.example/tour`; playbook step 42; D19. Assumptions: A9, A10, A21.
+
+**D25 addendum, PR review (2026-09-08).** The catalog shipped with an sms option list on
+every row, and after D26 moved the prose into the language sets nothing read it: the option
+text a message carries comes from `MessageTemplates.SmsOptions`, keyed on the call-to-action
+type, while the catalog's copy was keyed on `primary_cta` and could drift from it with nothing
+to catch the drift. Flagged in a cold-context review of the sprint diff. The column is removed;
+`CallToAction` is now the type and the link path, and the header comment no longer claims to
+own an option list it does not. The rule that survives: the catalog owns what a call to action
+is and where its link points, and the language sets own every word a person reads (LC, HSC).
+
+**D26. Language is passed through, never gated (2026-09-08).** Question: A13 says the template
+set ships English and any other language goes to the model composer, which leaves every
+non-English record failing the language check on the offline path the Phase 4 check runs.
+Options: keep A13 as written; add a language allowlist and refuse anything outside it; or state
+that no component gates on a language allowlist, ship the offline template sets for the languages
+there is evidence for, and name the fallback when a record's language has no set. Recommendation:
+the third, on the requester's answer of 2026-09-08: nothing in the problem statement makes
+English a rule, `input.language` is a free tag, and a model composer is not English-only either.
+The model path passes the record's language to the model with no allowlist and no list of
+supported tags anywhere in the code. The template composer holds one template set per language it
+can serve, English and Spanish today, keyed on the parsed tag; a tag with no set is served in
+English with the `locale_not_applied` diagnostic A13 names, which is a stated limit of a template
+file, not a rule about which languages a prospect may use. Spanish is earned by the synthetic
+set, which section 4 item 4 put there before any decision code existed, so D9 is not touched.
+Scopes: Sprint 6, `TemplateMessageComposer`, `OpenAiMessageComposer`, A13. Evidence: the
+requester, 2026-09-08; playbook step 59; DESIGN.md section 4 item 4. Assumption: A13, revised.
+
+**D26 addendum, PR #21 review (2026-09-08).** `MessageTemplateCatalog.Resolve`, D26's own
+mechanism, restated the BCP-47 primary-subtag split `LanguageDetector.TryParseTag` (D13 c)
+already implements, independently, in a different namespace. Fixed by extracting the split
+into `Agent.Common.Bcp47.PrimarySubtag`, called from both; no behavior changed, since both
+sites matched the same two tags the same way, only the split itself moved to one place.
+
+**D27. The real client goes through the official SDK (2026-09-08).** Question: playbook step 49
+and the SCS pillar both say the real client is written against the official SDK when one exists,
+and `OpenAiCompletionClient` is a hand-rolled `HttpClient` call against
+`/v1/chat/completions`. Options, and when each wins: (a) raw HTTP, which wins only when no
+official SDK exists or the deployment forbids the dependency, and costs you the request and
+response shapes, the retry policy, and the structured-output plumbing by hand; (b) the official
+`OpenAI` package, which wins when the product calls OpenAI itself and wants the vendor's own
+model of the API surface, its structured-output types and its retry policy, at the price of one
+vendor dependency; (c) `Microsoft.Extensions.AI` `IChatClient`, which is Microsoft's recommended
+abstraction and wins when the application wants provider portability plus middleware for
+telemetry, caching and function calling, and which sits on top of (b) rather than replacing it;
+(d) an agent framework such as Semantic Kernel or Azure.AI.OpenAI, which wins when you want
+planners, memory and connectors, or an Azure-hosted deployment and its auth. Recommendation: (b),
+on the requester's answer of 2026-09-08. This product already owns the portability seam that (c)
+would sell it: `ICompletionClient` is one method with a real and a fake implementation (S3), so
+`IChatClient` would be a second abstraction over the first, which EA refuses. (d) brings an
+orchestration layer for a program whose whole point is that code owns every decision (S2). The
+`OpenAI` package is pinned at an exact version in `Directory.Packages.props`, and every type,
+parameter and flag used is confirmed against that restored assembly, not against documentation
+or memory (step 50). Scopes: Sprint 6, `OpenAiCompletionClient`, its tests, D28. Evidence: SCS;
+playbook steps 49 and 50; S3. Assumption: none.
+
+**D28. What a model call is bounded by (2026-09-08).** Question: playbook step 49 asks for a
+per-call timeout below the latency budget, bounded retry with backoff on transient failures, and
+the retry count in the diagnostics; the hand-rolled client had none of the three. Options: rely
+on the SDK's defaults, which are three retries with exponential backoff and its own network
+timeout; or state each bound in the composition root and count the retries. Recommendation: the
+second. The strictest `p95_latency_ms` any record states is the budget the run is measured
+against, so the timeout is a stated value rather than a default, and a retry count nobody can
+see is the silent degradation step 57 exists to expose. The temperature is set low and
+reproducibility is never claimed from it (step 52); variance is measured in Phase 7 step 83.
+Scopes: Sprint 6, `OpenAiCompletionClient`, `CompositionNotes.NetworkRetries`, D24. Evidence:
+playbook steps 49 and 52. Assumption: A15.
+
+**D28 addendum, PR review (2026-09-08).** The paragraph above says the per-call timeout comes
+from the strictest stated `p95_latency_ms`, and the first implementation handed that number
+straight to `NetworkTimeout`, which bounds one attempt. With `MaxRetries = 1` beside it, a
+2000 ms budget was measured taking 4828 ms over two attempts, and the compose-validate loop's
+second call can double that again, so the bound the code and the docs stated was not the bound
+the code enforced. Flagged in a cold-context review of the sprint diff, measured against a hung
+transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the budget over
+`1 + MaxRetries`, so one call and its retry fit inside the number the record stated. What is
+still not bounded is stated rather than hidden: after a failed call the compose-validate loop
+composes once more before falling back, so a record that fails composition can spend up to
+twice its budget before the template composer answers, and the p95 check measures that.
+
+**D28 addendum, PR #21 review, part two (2026-09-08).** `CompositionNotes.NetworkRetries` read
+only the winning compose attempt's own count; a retry spent on an attempt
+`ValidatingMessageComposer` rejected for a safety violation and discarded was lost, so a
+record whose first attempt retried once and second attempt succeeded cleanly reported zero
+retries despite three HTTP requests. Fixed by summing a discarded attempt's
+`NetworkRetries` (when the attempt built a `ComposedMessage` at all; a `Result.Failure`
+attempt carries none, since the failing composer never built one, and that gap is stated
+rather than closed here) into the winning attempt's own count in `WithAttempts`, preserving
+null when neither the winner nor any discarded attempt made a network call. Two tests cover
+the sum (a discarded attempt then a clean winner) and the null-to-real transition (every
+attempt discarded, the fallback answers with retries carried in from before it).
+
+**D29. What the model is told, and what it is told to ignore (2026-09-08).** Question: step 55
+says every field that changes what the message should say reaches the model, and the prompt
+carries four; D5 names persona, stage, language, every date the record has, the stated interests
+and the catalog's call to action. Options: add the fields to the existing block; or add them and
+pin the result. Recommendation: the second. Every record-derived value goes inside
+`<prospect_data>`, every instruction stays outside it, and both are pinned by golden tests over
+the built prompt and the serialized request (step 58) so a wording change is a reviewed diff
+rather than a silent one. The boundary is tested with records carrying an instruction in a name
+field and in a free-text field, and the assertion is that the produced message does not follow
+it (step 54). Scopes: Sprint 6, `OpenAiMessageComposer`, its tests. Evidence: playbook steps 53
+to 55 and 58; D5. Assumptions: A9, A12, A13.
+
+**D30. The judge (2026-09-08).** Question: D15 deferred the semantic judge for
+`next_action.type` to Sprint 6, where D5 also puts body semantics; a judge is a network call and
+the Phase 4 check runs offline. Options: defer it again; drop it and let exact match be the whole
+contract; or build it behind a flag, reference-based, pinned. Recommendation: the third, taken
+after reading the current guidance on judges. Three properties follow from what makes judges
+unreliable. It is reference-based: the rubric asks whether the produced message conveys the
+label's own offer, call to action and facts, never whether the message is good, because a judge
+scoring quality with no reference is the setting where position, verbosity and self-preference
+bias have been measured. It is one signal beside the deterministic checks and can never overturn
+one, which is step 31. It is off unless `--judge` is passed, and its two checks read as not
+measured on every offline run, so the Phase 4 check and every pinned baseline are untouched by
+it. The judge model is pinned separately from the composer model and named in the report. The
+known limitation, recorded rather than papered over: with one vendor key the judge and the
+composer can be the same family, which is the self-preference setting; on the template path the
+text being judged is not model-written at all, and on the model path the label is the reference,
+which is the mitigation the literature gives. No new interface: the judge is a class over the
+existing `ICompletionClient` seam, whose fake already exists (EA). Scopes: Sprint 6,
+`Agent.Evaluation`, the CLI, DESIGN.md section 6, D5, D6, D15. Evidence: playbook step 31; the
+judge-bias guidance summarized above; S4. Assumptions: A8, A15.
+
+**D30 addendum, PR #21 review (2026-09-08).** Two findings under D30's subject, the judge.
+(a) `SemanticJudge.BodyOf` restated `Evaluator.AsPresent`'s "null message and a channel-none
+message are one value" rule (D3) inline instead of calling it; fixed by making `AsPresent` and
+`EffectiveChannel` internal rather than private, so `BodyOf` shares the one definition.
+(b) `CliRunner.BuildJudge` had no override seam of its own, unlike the composer path's
+`composerOverride`, so `--judge` against a non-empty batch was never exercised at the
+`CliRunner` level, only through `SemanticJudgeTests` in isolation with hand-built fixtures.
+Fixed by adding `judgeOverride`, mirroring `composerOverride`'s existing shape, and a
+`CliRunnerTests` case that drives a real record through `--judge` with a controlled completion
+client and asserts the eval report's `ActionSem`/`BodySem` tallies reflect the grade.
+
+**D31. Which implementation the product uses on these sets (2026-09-08).** Question: playbook
+step 60 says to run the real implementation against the examples, compare its score to the
+offline one, record both per case type, and choose with a stated reason. Options: the model
+composer, the template composer, or a mix per case type. Recommendation: the template
+composer, on the measurement rather than on preference. The run was made on 2026-09-08 with
+`--composer openai` against all three sets, and the model answered no record at all: every
+record's `composition` reads `template` with `attempts` 3, which is two model attempts and the
+fallback. The cause is stated in D28 and was predicted before the run: the strictest stated
+`p95_latency_ms` on these sets is 2000 ms, the client divides that into two 1000 ms attempts,
+and a `gpt-4o-mini` completion of this size does not return in 1000 ms. So the comparison step
+60 asks for is degenerate on this data: both paths score identically because the same composer
+wrote every message. What the run does measure is the degradation path end to end, on real
+network calls: 23 records, 46 model calls, 92 HTTP requests, every one abandoned at its
+timeout, no record lost, no output row missing, and the diagnostics naming the fallback on
+every record. The p95 check, which passes at 18 ms offline, fails at about 5700 ms here, which
+is the honest cost of trying. Scopes: DESIGN.md section 9, the Phase 4 close, any future
+comparison run. Evidence: the run recorded in DESIGN.md section 9 under "Numbers after the step
+60 run". Assumptions: A15, A18.
+
+**D31 open question, for the requester.** A real model-versus-template comparison needs the
+model to answer at least once, and on these sets it cannot while the timeout is derived from
+the records' own stated budget. Three ways out, none taken without a decision: state that the
+stated budget and a live model are incompatible and leave the offline path as the answer, which
+is what this paragraph does today; add a documented override flag so a comparison run can raise
+the budget without editing the evaluation data, which is a product change earned only by this
+need; or treat `p95_latency_ms` as a reporting threshold rather than a call timeout, which
+contradicts playbook step 49 and D28. The first is free and honest, the second costs a flag and
+another live run, the third reopens a decision.
+
+**D31 addendum, the measured cost (2026-09-08).** The run cost about $0.004, read from the
+vendor's usage page: `gpt-4o-mini` input $0.002 and output $0.002 over roughly 12,100 tokens.
+The client made 92 HTTP attempts and the vendor recorded about 30 requests, so a call abandoned
+at its timeout usually never becomes a billable request, and sometimes does: the third that
+completed server-side were billed with their output tokens. That is worth knowing before
+choosing among this decision's three ways out, because the option that raises the budget to get
+a real comparison would pay for every call in full rather than for a third of them.
+
+**D31 addendum, scoped out of the PR #21 review (2026-09-08).** The review's remaining finding
+was that `CliRunner`'s per-record batch loop processes independent records sequentially, and
+D31's own numbers (92 HTTP requests, batch p95 ~5700 ms against an 18 ms offline baseline) are
+the measured cost of a real network call sitting behind that loop. Not fixed: `CountingRetryPolicy`
+attributes one call's retries by diffing a single shared counter before and after that call, and
+its own comment already states the limit this implies ("a concurrent caller would see another
+call's retries mixed in"). Parallelizing the loop before that attribution is made safe under
+concurrency would corrupt `CompositionNotes.NetworkRetries` rather than only speed up the
+batch, so this is a design change ahead of a review-fix round, not a matter of confidence in
+the finding. Scopes: any future concurrency work on the batch loop, which opens by replacing
+the shared-counter retry attribution.
+
+**Evidence, PR #21 review round (2026-09-08).** `.\test.ps1`: 443 tests in `Agent.Tests`, 49 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method on both modules. Four of
+the nine fixes above were additionally verified by reverting each one in isolation and
+confirming its new test goes red before reapplying it.
+
+## Latency decisions, proposed for Sprint 7 (2026-09-08)
+
+Written after the step 60 run, from its measurements rather than from preference. One scope
+note before them: DESIGN.md section 9 gives Sprint 7 to safety and states (D3). These are
+latency, so scheduling them means widening that row or giving them a sprint of their own, and
+that scheduling call is not taken here. A task citing any of these is not scheduled until it is.
+
+**D32. Measure a successful call before tuning anything (2026-09-08).** Question: which of the
+levers below is worth pulling, given that this project has never observed a successful model
+call. Options: tune from the failure path's arithmetic alone; or measure what one successful
+completion costs in wall-clock first, and tune against that number. Recommendation: measure
+first. The 5.7 seconds a record spends on the model path is entirely failure cost, four attempts
+capped at 1000 ms plus two backoffs, and every threshold below is arithmetic about a number
+nobody in this project has: how long a completion of this size actually takes. A tuning decision
+taken without it is a guess with a decimal point. Scopes: D33 to D36; any Sprint 7 latency task.
+Evidence: the step 60 run in DESIGN.md section 9, 23 records, 46 model calls, 92 HTTP attempts,
+zero successes. Assumption: A15.
+
+**D33. What a timeout is allowed to cost (2026-09-08).** Question: the SDK's retry policy treats
+a timeout as transient and retries it, so a call that was too slow is made a second time inside
+the same budget. Options: keep the default; or retry only the transient statuses the vendor
+names (408, 429, 5xx) and never a timeout. Recommendation: the second, on two measurements. A
+timeout says the completion did not fit the budget, and an identical second call inside the same
+budget has no mechanism by which it would fit; it costs one attempt plus one backoff, about 2.8
+of the 5.7 seconds. And it is not free: D31's addendum measured that about a third of abandoned
+attempts complete server-side and are billed in full, so a futile retry is a paid futile retry.
+Scopes: `OpenAiCompletionClient`'s retry policy, `CountingRetryPolicy`, and D35, which only
+exists because retries are counted into the budget. Evidence: the step 60 logs, four
+timeout-terminated attempts per record; the usage page, about 30 billable requests from 92
+attempts. Assumption: A15.
+
+**D34. What the compose-validate loop retries (2026-09-08).** Question: `ValidatingMessageComposer`
+composes a second time after any failure, including a transport failure. Options: keep it; or
+retry only a safety rejection, where the second attempt carries the rejection reason and can
+plausibly do better, and go straight to the fallback on a transport failure. Recommendation: the
+second. The corrective retry exists to feed a violation reason back into the prompt (playbook
+step 56); a timeout is not a content problem, so re-prompting is delay with no mechanism behind
+it, and it is the other half of the 5.7 seconds. The fallback composer is deterministic and
+always available, so the record still gets a message either way. Scopes:
+`ValidatingMessageComposer`, and `CompositionNotes.Attempts`, which would read 2 rather than 3
+on a transport-failed record; that changes a pinned test and how a diagnostics row reads.
+Evidence: the step 60 run, `attempts` 3 on every one of 23 records, two of the three failing for
+transport reasons. Assumption: A18.
+
+**D35. What one attempt is allowed to take, once a timeout is not retried (2026-09-08).**
+Question: D28 divides the stated budget by 1 + `MaxRetries` so that a call and its retry both
+fit inside it. If timeouts are not retried (D33), that division buys nothing for the case that
+actually happens, and it halves the time the one attempt that matters is given. Options: keep
+dividing; give one attempt the whole budget and let the transient-status retry path exceed it,
+stated rather than hidden; or divide only for the failure classes that are retried.
+Recommendation: none taken, because it needs D32's measurement. If a successful completion lands
+under 2000 ms, the second option roughly doubles the chance of success at no cost to the common
+path; if it lands over 2000 ms, no division scheme helps and D36 is the real question. Scopes:
+`OpenAiCompletionClient.PerAttemptTimeout`, D28 and its addendum. Evidence: none yet, which is
+the point of D32.
+
+**D36. What `p95_latency_ms` is (2026-09-08).** Question: D28 reads the records' stated threshold
+as a bound on the model call; D31's third way out reads it as a reporting threshold that the
+scorer measures and nothing enforces. Options: a bound, as today; a reporting threshold, with the
+call timeout configured separately; or a bound with a documented override for comparison runs,
+which is D31's second way out. Recommendation: not taken here. It needs D32 and the requester,
+because it decides whether this product can use a model at all on these records, and each option
+costs something different: as a bound with these thresholds the model answers nothing, which the
+step 60 run measured at 0 of 23; as a reporting threshold the product can use the model and the
+p95 check simply fails and says so, which is honest but means shipping a configuration that
+misses a stated threshold on purpose; the override keeps both and adds a flag whose only user is
+an evaluation run. Scopes: D28, D31, `ModelCallBudget`, the CLI. Evidence: the step 60 run.
+
+**D37. Batch concurrency (2026-09-08).** Question: `CliRunner`'s batch loop is sequential, so a
+batch's wall-clock is the sum of its per-record latencies, and with a model in the path that is
+seconds per record rather than milliseconds. Options: keep it sequential; or run records under
+bounded concurrency. Recommendation: worth doing, after D32, and the first prerequisite is
+already stated in the D31 addendum, which scoped this same finding out of the PR #21 review:
+the retry attribution has to stop diffing one shared counter before it can be made concurrent.
+This decision adds a second prerequisite that addendum does not name: D14 pairs output rows to
+input records by position, and the per-record log scope assumes one record at a time, so both
+have to survive out-of-order completion. Scopes: `CliRunner`'s batch loop, `CountingRetryPolicy`,
+D14. Evidence: the D31 addendum's measurement of retries reported as 2 and 0 for two concurrent
+calls; the step 60 run's 63 seconds of wall-clock for 12 records.
+
+**Not a lever, recorded so it is not proposed again.** Prompt caching does not apply here.
+Automatic caching engages above a prompt-prefix threshold these prompts do not reach, about 430
+tokens against roughly 1024, and the vendor's usage page reports a 0 percent hit rate for this
+project. The system prompt being identical on every record is what makes it look promising, and
+the length is what rules it out. If prompts grow past the threshold, this becomes a real lever
+and the numbers should be checked again.
+
+## Sprint 7 decisions, safety and states (2026-09-09)
+
+Playbook steps 61 to 71. The latency decisions above (D32 to D37) keep their numbers and their
+scheduling call is still not taken; these are the decisions Sprint 7 actually implements.
+
+**D38. One result per check, never one boolean (2026-09-09).** Question: step 61 says every
+constraint the domain imposes becomes its own validator with its own result, never one boolean.
+`SafetyValidationResult` is a flat `IReadOnlyList<string>` plus `FairHousingCheckPassed`, and
+that flag is computed as `violations.Count == 0`. Options: keep the flat list and let each call
+site re-derive what failed by reading the strings; or return one named result per check.
+Recommendation: one named result per check. The current derivation is not merely coarse, it is
+wrong, and nothing in the suite catches it: a message that merely omits its opt-out line reports
+`fair_housing_check_passed: false`, so the diagnostics record a fair-housing failure that never
+happened, and A14 says a state is earned by the step that proves it. A second defect the flat
+list hides: `FindWholeWord` is `FirstOrDefault`, so a message matching six protected-class terms
+emits exactly one violation, and `safety_violations_max` is scored against that count. Scopes:
+`SafetyValidationResult`, `SafetyValidator`, `AgentDiagnostics.FairHousingCheckPassed`,
+`ValidatingMessageComposer`'s rejection feedback, the review queue of D43, and the evaluator's
+Safety check, which reads only the count and so changes verdict on any message with more than
+one match. Shape: four checks, `SafetyCheck.OptOutInstructions`, `SafetyCheck.SocialSecurityNumber`,
+`SafetyCheck.LongDigitRun` and `SafetyCheck.FairHousing`, each carrying a verdict of `Passed`,
+`Failed` or `NotApplicable` and its own detail lines; `NotApplicable` is a check the record did
+not require, which is not a pass, the same rule A15 states for the scorer. The names are the
+checks themselves rather than one PII check, because D40 gives two of them different answers to
+the question of whether a record may switch them off. Evidence: the probe run recorded under
+D41. Assumptions: A14, A15.
+
+**D39. Which checks gate and which only report (2026-09-09).** Question: step 62 asks, for each
+validator, whether it is a hard gate, a soft flag for review, or a diagnostic, with the reason
+written down. Options: classify per check in code, with a disposition field on the result; or
+classify in this paragraph and let the structure carry it. Recommendation: the second. All four
+safety checks of D38 are hard gates: a failure suppresses the message, which is today's
+behavior and stays it, because each maps to legal exposure rather than to taste. Fair housing is
+the Fair Housing Act; the opt-out instruction is the revocation-of-consent requirement that
+makes a message lawful to send; both identifier checks are a data leak into a channel the
+recipient does not control. Brand style (D42) is the one check that is a diagnostic and never
+suppresses, because an off-voice message is off-voice, not unlawful. Because every safety check
+is a gate and the one non-gate is a different component, the result carries no disposition
+field: a field with one inhabited value is speculative code (LC), and the classification lives
+here where step 62 asks for it. Scopes: `SafetyValidator`, `BrandStyleValidator`,
+`LeasingMessageAgent`'s suppression branch. Evidence: step 62; the four checks of D38.
+
+**D40. Which checks a record cannot switch off (2026-09-09).** Question: step 65 says never let
+a per-record flag disable a check that the law or the domain does not allow to be disabled, and
+document which checks are unconditional and why. Today `no_pii_leak: false`, or its absence
+under D1, turns off both identifier patterns, so a message carrying a literal Social Security
+number validates clean. Options: leave both gated and write down why that is acceptable; make
+both unconditional; or split them. Recommendation: split them, confirmed by the requester on
+2026-09-09. `SocialSecurityNumber` becomes unconditional: no leasing message legitimately
+carries one, so there is no case the flag would be protecting, and a record that says
+`no_pii_leak: false` is saying it does not need the heuristic, not that it consents to a leak.
+`LongDigitRun` stays gated, because it is a proxy that also matches a confirmation number or a
+tour reference (D41, case 26), and a record with a legitimate long identifier needs a way to say
+so. `FairHousing` was already unconditional and stays it, for the reason already on
+`SafetyValidator`: fair housing law has no per-case opt-out. `OptOutInstructions` stays gated on
+`include_opt_out_instructions`, because transactional exemptions are real and the record is the
+only thing that knows whether this message is one. Scopes: `SafetyValidator`,
+`CaseConstraintsExtensions`. This reverses one recorded behavior:
+`Validate_PiiCheckNotRequired_LeakedIdentifierIsNotAViolation` asserted that a Social Security
+number passes when the flag is off, and that test is inverted here deliberately rather than
+deleted, so the contract change is visible in the diff. Assumption: A1 is not involved; this
+depends on A17 only for what an absent constraint means. Evidence: step 65; D1.
+
+**D41. What the proxy normalizes and what it exempts (2026-09-09).** Question: step 63 says
+keyword and pattern validators are proxies, say so in the code, add an allow-list for the
+legitimate uses the pattern would catch, and test both directions. Options: leave the patterns
+as they are and widen the scope-out in CODE_REVIEW.md; or fix the cases a run proves are wrong
+and scope out the rest with the run as evidence. Recommendation: the second, on a probe that
+executed all 37 candidate inputs through the exact patterns as written, on the same .NET regex
+engine. What it found, and what is fixed here:
+
+- The Equal Housing Opportunity disclosure, the sentence a compliant leasing message is
+  expected to carry, matches six terms and is suppressed. That is the proxy blocking the
+  compliant message and passing nothing in its place, and it is the single most important
+  finding of the run. Fixed by an exempt-span list.
+- `families-only` with a hyphen, and `families  only` with two spaces, both miss. Neither needs
+  an adversary: a model composer writes both as ordinary prose. Fixed by normalization.
+- A zero-width space inside a term makes it miss. Fixed by stripping format characters, which
+  arrive by copy and paste, not only by attack.
+- `STOP` inside a URL path satisfies the opt-out check, so a message with no opt-out instruction
+  a recipient can act on certifies as having one, and because `OptOutInstructions` is the one
+  definition the scorer uses too (D13 b), the false pass propagates into the scorecard. Fixed by
+  removing URL spans before the keyword scan.
+- A 14-digit confirmation number matches the long-digit run. Fixed by an exempt span, not by
+  loosening the pattern.
+- A Social Security number written with spaces, and one written bare as nine digits, both miss.
+  Fixed by widening that one pattern.
+
+Normalization is applied to a copy of the text used for term matching only: strip U+200B,
+U+200C, U+200D and U+FEFF; fold the four unicode hyphens the way `OptOutInstructions` already
+folds them; then replace hyphens with spaces and collapse whitespace runs. The allow-list is a
+span list, never a term list, so `disability` and `color` stay live terms that still fire
+elsewhere in the same message; both directions are tested per row. Deliberately not fixed, with
+the run as the evidence rather than an opinion: semantic paraphrase, which is the scope-out
+already recorded in CODE_REVIEW.md and needs understanding rather than a pattern; letter spacing
+and interior punctuation, because matching across arbitrary separators would make `color` fire
+on unrelated letter sequences and trades these misses for a larger false-positive class; and
+Cyrillic homoglyphs, because the text under validation is written by this system's own composer,
+not by an adversary who controls the bytes. Scopes: `SafetyValidator`, `OptOutInstructions`, a
+new normalization helper, CODE_REVIEW.md. Evidence: the probe run of 2026-09-09, 37 inputs,
+executed rather than reasoned about. Assumption: A18 for the threat model of the last item.
+
+**D42. What earns a state, and what brand style is (2026-09-09).** Question: step 66 says earn
+every state the output claims, nothing hardcoded true, and if a claimed state has no check
+behind it, delete the claim or build the check. `brand_style_applied` is the literal `true` in
+`LeasingMessageAgent`, and `assertions.required_states` is parsed and then read by nothing at
+all, so a record asserting a state this program has never heard of is answered with silence.
+Options: delete the claim, since no sample proves what brand style is; or build a check from
+what the two samples do prove and record the rest as not earned. Recommendation: build the
+check, because `required_states` names `brand_style_applied` in both samples and deleting a
+state the input asks for answers the record by ignoring it. Two parts:
+
+First, the states map. Every name in the record's own `required_states` gets a verdict in the
+diagnostics: `consent_verified` from the consent gate having run, `fair_housing_check_passed`
+from the `FairHousing` check of D38 alone rather than from every check (which is the defect D38
+names), `brand_style_applied` from the brand-style validator below, and any other name recorded
+as not earned, by name, which is A14's rule made real. The hold-out's `renewal_offer_loaded` is
+exactly such a name, and it stays not earned: inventing a rule for it from the record that
+carries `renewal_offer_id` would be fitting a rule to the hold-out, which D9 and A19 forbid. Not
+earned is the honest answer and it is the answer the assumption already committed to.
+
+Second, what brand style is. Three rules, each satisfied by both sample bodies and by the
+template composer on sms and email in both language sets: the opt-out instruction sits on the
+body's last non-blank line (sample 1 `Reply STOP to opt out.`, sample 2 `To opt out of emails,
+click here or reply STOP.`), the body carries at most one exclamation mark (sample 1 one, sample
+2 none), and a subject is present exactly when the channel is email (sample 1 sms null, sample
+2 email 59 characters). The keyword half of the first rule calls `OptOutInstructions`, so the
+two definitions cannot drift; what it adds over the existing opt-out check is position, which
+`Evaluator.OptOut` and `SafetyValidator` do not assert.
+
+What was considered and rejected, with the reason, because each is a rule someone will propose
+again. A cap on sms length fails sample 1 outright at 166 characters. A sentence count is 5 and
+3, so any interval containing both is chosen rather than observed. "Exactly one call to action"
+has no text-level definition both samples satisfy: both carry two imperative asks for one
+`cta.type`. "The body carries the first name" and "the message carries an opt-out" are
+`Evaluator`'s personalization and opt-out checks restated, and a brand rule that restates an
+existing check earns nothing. A second-person pronoun rule passes both samples and fails the
+Spanish template output, which has no `you` token, so it is an English rule wearing a general
+name. Most instructive: "no ALL-CAPS word other than STOP" passes both samples and is a real
+brand property, and it is rejected because the template composer fails it on sample 1's own
+record, emitting `TX` from the record's `city_interest` of "Richardson, TX"; flagging a state
+abbreviation the record itself supplied is a false positive, not a finding, and the two
+formulations that would exclude it fit the samples equally, which makes it an open question
+rather than a rule (VF).
+
+What this check does and does not buy, stated rather than left to be discovered: all three rules
+pass the template composer by construction, so `brand_style_applied` reads true on every record
+of every documented run and no tally moves. It is not therefore the hardcoded `true` it
+replaces: it is computed from the message, a test proves each rule can fail, and the composer it
+has teeth against is the model path, whose subject, punctuation and closing line are the model's
+to get wrong. This is the same disclosure D13 a makes about personalization, and it belongs
+beside it rather than inside a claim that the state is now proven. D39 classifies it: it is a
+diagnostic and never suppresses, because an off-voice message is off-voice and not unlawful.
+Scopes: a new `BrandStyleValidator`, `AgentDiagnostics`, `LeasingMessageAgent`, CODE_REVIEW.md.
+Evidence: the two sample bodies measured character by character on 2026-09-09, and the template
+composer's own output for both channels and both language sets. Assumptions: A12, A14.
+
+**D43. Where a suppressed draft goes (2026-09-09).** Question: step 67 says that on a final
+validation failure the program emits a review-queue record rather than silently dropping output,
+because suppression is a business decision and has to be surfaced. Today a safety suppression
+writes the `none` message, sets `suppression_reason`, and discards the draft text entirely, so
+no human can ever see what was rejected or why; and the diagnostics that carry the reason are
+written only when `--diagnostics` is passed. Options: put the draft in the diagnostics file; or
+give the queue its own output. Recommendation: its own output, `--review-queue <path>`, one row
+per record suppressed by the safety gate, carrying the task id, the channel, every violation by
+check, and the rejected draft. The diagnostics file is a full per-record dump of how every
+decision was reached and is read when debugging a run; the review queue is a work list, it is
+empty on a healthy run, and its length is the number this sprint's step 71 has to report.
+Consent suppression is not in it: not contactable is the correct decision, not a failure.
+Composition failure is not in it either, for now, because there is no draft to review. Scopes:
+`CliRunner`, a new writer, OPERATIONS.md. The queue carries prospect text by design, which is
+the one place in this program that is true: it is a file a reviewer opens, not a log line, and
+step 68's redaction rule is about logs. Evidence: step 67. Assumption: A2.
+
+**D43 addendum (2026-09-09).** Two differences from the paragraph above, both found by building
+it. First, the entry carries no channel of its own: D43's sentence lists one, but the draft
+already carries it, and two spellings of one fact are what a `with` copy desynchronizes, so a
+reader takes it from `draft.channel`. Second, and not cosmetic, the queue as specified could
+never have had a row in it: see D48.
+
+**D44. Whether the vendor's retention default is acceptable (2026-09-09).** Question: step 69
+asks for the data retention of every external service that receives user data, and for the
+production path if the default is not acceptable. Read from OpenAI's own platform data page on
+2026-09-09: API data is not used to train models by default, and abuse-monitoring logs for
+`/v1/chat/completions` are retained up to 30 days. Options: accept the default; take one of the
+vendor's two approval-gated controls; or stop sending prospect data. Recommendation: the default
+is acceptable for this project as it stands and is not acceptable for a production deployment
+carrying real prospect data, and both halves are stated rather than the convenient one. It is
+acceptable here because the evaluation sets are synthetic and because of what the prompt
+actually contains: first name, property name, stated interest, persona, lifecycle stage,
+language, and two dates. It carries no phone number, no email address, no unit number, no
+renewal offer id, and no free-text note, and that is a property of `BuildUserPrompt` a golden
+test already pins. The production path, if a real deployment sends real prospect data, is one of
+the two controls the same page names, Modified Abuse Monitoring or Zero Data Retention; both
+exclude customer content from the abuse-monitoring logs, both require prior approval by OpenAI
+and additional terms, and `/v1/chat/completions` is on the eligible list, with the only side
+effect on that endpoint being a forced `store=false` that a single-shot completion does not
+rely on. What the vendor's documentation does not address, stated as absence rather than filled
+in: what happens to a request the client abandons at its timeout while the server completes it,
+which is the case D31 measured at roughly a third of attempts. Nothing published narrows or
+extends the 30-day window for a dropped connection. Scopes: DESIGN.md section 8. Evidence:
+developers.openai.com/api/docs/guides/your-data, read 2026-09-09; the step 60 run and D31.
+
+**D45. What the widened Social Security pattern is allowed to match (2026-09-09).** Question:
+D41 widened the Social Security pattern so `123 45 6789` and a bare `123456789` match, and the
+implementation of that row, `\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`, also matches a ZIP+4. It matches
+`75201-1234` by reading the separator as optional in the first position and present in the
+second, so a message carrying a property address is suppressed by an unconditional gate that
+D40 made impossible for a record to switch off. The sprint that widened the pattern introduced
+the false positive, and step 71 asks for zero false-positive suppressions, so it does not ship
+as a pinned defect. Options: revert the widening, so the two forms the probe proved missing go
+back to missing; add a ZIP+4 exemption span; or require the pattern's grouping to be
+consistent. Recommendation: consistent grouping, as three explicit alternatives, hyphens
+throughout, spaces throughout, or nine bare digits. A ZIP+4 is a five-digit group and a
+four-digit group, which none of the three describes, so it stops matching by construction
+rather than by an exemption that has to be maintained. Reverting was rejected because the
+missing forms are a real leak of the exact identifier the check exists to catch, which is what
+D41 recorded; an exemption span was rejected because it answers one spelling of the wrong shape
+while `12345-6789` and every other mis-grouped pair stay matched. Second half: the
+confirmation-and-reference exempt span D41 gave the long-digit run is applied to this check
+too, because a bare nine-digit confirmation number is the same false positive as the fourteen
+digit one and the span already exists; leaving it on one check and not the other would be the
+inconsistency, not the fix. Scopes: `SafetyValidator.SocialSecurityNumberPattern` and
+`SocialSecurityNumberCheck`. Evidence: both spellings executed against the pattern on
+2026-09-09; `Ssn_ZipPlusFour_IsAKnownFalsePositive`, the test that recorded the defect, is
+inverted to assert it is not a violation, so the fix is visible in the diff the way D40's
+inversion is. Assumption: A17 is not involved; this check is unconditional under D40.
+
+**D46. What an exception is allowed to say, and who says a missing member's name (2026-09-09).**
+Question: step 68 says never log a prompt, a raw model response, or a secret above debug level.
+An audit of every log call site found the leak is not in any message template: it is
+`LogLineFormatter` appending the whole `Exception.ToString()`, so a `ClientResultException`
+renders the vendor's raw error response body and a `JsonException` renders the offending
+character of whatever it was parsing, both at Warning, to stderr and to `--log-file`. Options:
+redact inside `ToDiagnosticString`, which every failure row already uses; or add a second
+function and choose per call site. Recommendation: the second. `ToDiagnosticString` has four
+remaining callers and every one of them reports an exception whose message this program or the
+operating system wrote, an unopenable `--log-file`, an unknown `--composer`, a missing API key,
+and a per-record bug; redacting those degrades the stderr usage rows and buys no safety.
+`ToRedactedDiagnosticString` reports a type name, and for the two types that carry content a
+bounded locator instead of the content: an HTTP status for `ClientResultException`, a line and
+byte position for `JsonException`, never `Message` and never `Path`. It is used exactly where
+the message can carry vendor, model, or record text. Two rows deliberately change what an
+operator reads: the per-record parse failure and the `--replay` file-format failure now name a
+position rather than the parser's prose, which is accepted because stderr is where the console
+provider renders and is therefore a log stream. Scopes: `ExceptionFormatting`,
+`OpenAiMessageComposer`, `SemanticJudge`, `LenientExpectedOutcomeConverter`, both readers,
+`IngestNotes`, `CliRunner`'s ingest line. Evidence: a real `ClientResultException` built through
+the SDK over `FakeHttpMessageHandler`, asserted to carry the vendor body in `ex.Message` before
+being asserted absent from the rendered line, with a negative control proving the assertions are
+not vacuous. Assumption: A16 for the unknown-member count.
+
+Addendum, the one piece of new logic. Redacting the reader's message broke a stated contract:
+D1 promises that a line missing a required member produces an error row naming the member, and
+that name came only from the deserializer's prose. `JsonlRecordReader` now states it from its
+own `RequiredMembers` constants, which is program-authored text rather than record text. This
+re-establishes D1 rather than adding anything, and it is recorded because a reviewer reading
+the diff would otherwise see a redaction commit growing a feature.
+
+Two findings the audit raised and the implementation disproved, recorded so neither is chased
+again. The `expected` block's parse error does not leak label text: that converter only ever
+sees a well-formed JSON value, because a malformed one fails the outer record read first, and a
+well-formed value's exception carries only declared type and property names plus a position.
+What did reach the log was the full `ToString()`, twenty or more stack frames with absolute
+local source paths, which is why the change was made anyway. And `ReportFailure` passing an
+already-interpolated string as a message template is not the format-injection bug it looked
+like: with no arguments, `FormattedLogValues` never builds a formatter and returns the string
+verbatim, proved by probing five brace shapes through the console provider, so it was left
+alone rather than fixed for a case that cannot occur.
+
+**D47. A null inside a list the element type says cannot hold one (2026-09-09).** Question: D42
+gave `assertions.required_states` its first reader, and a record spelling
+`["consent_verified", null]` took the whole record out with an `ArgumentNullException` from the
+dictionary indexer. The list is typed `IReadOnlyList<string>`, but
+`RespectNullableAnnotations` does not reach inside a collection, so the deserializer honours
+the element's non-nullability nowhere and the type is a claim the wire does not keep. This is
+the same class of defect as the retrospective's silent year-0001 dates, one level deeper: D1
+made every member nullable and stopped at the members. Options: guard at the map only; make the
+element type tell the truth and skip an absent name; or reject the record. Recommendation: the
+second. A16 says an input shape is never an error, and a null name asserts no state, so there
+is nothing to reject and nothing to report: it is skipped, and the names beside it are still
+answered. A blank or whitespace name is the same nothing and goes the same way, through
+`Presence.IsAbsent`, which is already this program's one definition of a stated-but-empty
+value. Scopes: `CaseAssertions.RequiredStates`, `RequiredStateMap.For`. Evidence: the record
+above run through the CLI, which exited 2 with a bare `ArgumentNullException` and no output row
+for that record before the change and exits 0 with its message after. What this does not do,
+recorded so the gap is visible rather than assumed closed: it fixes the one list D42 gave a
+reader, not every collection in the record types. The general rule, that a value-type or
+non-nullable element inside a collection defaults or nulls silently, is now a known shape and
+the next collection to gain a reader inherits it. Assumptions: A16, A17.
+
+**D48. The composer seam carries a refusal, not just a failure (2026-09-09).** Question: D43's
+queue was written, wired and empty, and the reason is a defect three layers deep that one run
+exposed. A record whose own `city_interest` reads `families only` has that text written into
+its body by the template composer, so the violation comes from the record's data and the
+fallback reproduces it exactly. `ValidatingMessageComposer` then refuses both attempts and the
+fallback, and returns `Result<ComposedMessage>.Failure(string)`, which has no payload. Three
+things follow, and all three were measured rather than reasoned about. The rejected draft is
+destroyed before anything can queue it. `SuppressionReason.SafetyViolation` is unreachable
+under production wiring, because `CliRunner` always wraps the composer, so the orchestrator's
+own step 5 gate never sees a violating message and the queue is structurally empty rather than
+empty on a healthy run. And the record reports `fair_housing_check_passed: not_evaluated`
+although its message did contain steering language, which is worse than the defect D38 fixed,
+because `not_evaluated` has to mean nothing was ever checked.
+
+Options: descope the queue and record the finding; widen the queue to composition failures,
+which are reachable but carry no draft and no violations, so most of the value is gone; have
+the compose loop stop being a gate and return its best attempt for the orchestrator to refuse,
+which makes a composer knowingly hand back unsafe content; or have the loop's refusal carry the
+draft out alongside the failure. Recommendation: the last, chosen by the requester on
+2026-09-09. Both gates stay where they are and nothing unsafe ships: the loop still refuses,
+it just stops destroying the evidence.
+
+The seam gains its own result, `ComposeOutcome`, with three cases rather than two:
+`Composed` is a message to send, `Failed` is no draft at all (a transport error, a malformed
+completion), and `Refused` is a draft that exists and was refused on safety. `Result<T>` is not
+changed to carry a payload: it is a general type in `Agent.Common` and the thing being carried
+is a composition concept, so it belongs on the composition seam and nowhere else.
+
+`Refused` carries the draft and not the violations, deliberately. The orchestrator re-derives
+them with its own validator, which is the step 5 gate it already has and which until now no
+production record could reach. That keeps one source for one fact, and it means the fix for the
+third defect falls out of the fix for the first: a refused draft flows down the existing
+`hasViolations` branch, so `suppression_reason` reads `safety_violation`,
+`fair_housing_check_passed` reads the FairHousing check's real verdict, and the queue gets its
+row, all from code that was already written and previously unreachable. Scopes:
+`IMessageComposer` and its three implementations, `LeasingMessageAgent`, `CliRunner`, the test
+fakes. Evidence: the steering record above run through the real CLI, whose diagnostics read
+`composition_failed` and `not_evaluated` before the change. Assumptions: A12, A18.
+
+**D49. The introducer span matched inside a longer word (2026-09-09).** Question: a code review
+of the Sprint 7 diff (PR #24) found `IntroducedIdentifierSpan`'s alternation,
+`(?:confirmation(?:\s+number)?|reference)...`, has no word boundary before it, so `reference`
+matches starting inside `preference`. `"Your preference and SSN 123-45-6789 are noted."` strips
+to `"Your p  are noted."` before `SocialSecurityNumberPattern` runs, and the unconditional
+SocialSecurityNumber gate (D40) passes a message that carries a real, unmasked SSN. Options:
+require the alternation to start at a word boundary; or require it to be preceded by
+non-word-or-string-start via a lookbehind. Recommendation: the first, `\b` before the group,
+which is the direct fix and changes nothing else the span matches. Scopes:
+`SafetyValidator.IntroducedIdentifierSpan`. Evidence:
+`Ssn_WordReferenceInsideALongerWord_DoesNotExemptTheFollowingNumber`, written failing against
+the pattern before the fix and passing after. Assumption: none; this is the same check D40
+already made unconditional.
+
+**D50. The disclosure's exempt span crossed a clause it did not own (2026-09-09).** Question:
+the same review found two ways `ExemptSpans`' disclosure alternative,
+`(?:do|does) not discriminate[^.!?]*`, reads past the disclosure sentence it exists to exempt.
+First, greedy `[^.!?]*` does not stop at a comma, so
+`"We do not discriminate, but this community is families only."` has the steering clause erased
+along with the disclosure, and `FairHousingCheck` reports no violation. Second, a report from
+Antigravity (Gemini 3.8 Flash) on the same PR found that `NormalizeForTermMatching` collapses a
+newline to a bare space before `ExemptSpans` runs, so
+`"We do not discriminate\nThis community is families only."` fuses into one sentence with no
+terminator between the disclosure and the steering text, and the same erasure happens with no
+comma involved. Both defeat FairHousing, the other unconditional gate D40 names. Options for the
+first: bound the span's length the way the confirmation-number span is bounded; require it to
+stop before a comma that starts a new clause; or leave it, since the disclosure's own protected-
+class list is comma-separated and a bare-comma stop would flag the disclosure itself. Recommendation:
+stop before a comma immediately followed by a contrastive conjunction (`but`, `yet`, `however`,
+`although`, `though`), which is what introduces a clause the disclosure did not write; an
+ordinary comma inside the term list still passes through untouched. Options for the second:
+teach `ExemptSpans` about newlines directly; or fix the normalizer that erases the boundary
+before `ExemptSpans` ever runs. Recommendation: the second, since the same collapse would defeat
+any future exempt span or term match the same way, not only this one. A newline not already
+preceded by a sentence terminator is now replaced with `". "` rather than `" "`, so the sentence
+boundary a line break represents in a message body survives normalization. Scopes:
+`SafetyValidator.ExemptSpans`, `SafetyTextNormalizer.NormalizeForTermMatching`. Evidence:
+`Validate_DisclosureFollowedByASteeringClauseInTheSameSentence_StillYieldsTheSteeringViolation`
+and `Validate_DisclosureFollowedByASteeringSentenceOnANewLine_StillYieldsTheSteeringViolation`,
+both written failing against the code before the fix and passing after. Assumption: none.
+
+**D51. Redaction did not reach the evaluator's own catch (2026-09-09).** Question: the same
+review found `Evaluator.Score`'s catch attaches the raw exception to `log.LogError` and writes
+`ex.ToDiagnosticString()` into `RecordScore.Unscoreable`, neither of which D46 covers.
+`Score` reads the composed message and the record's own labeled content, the same boundary D46
+named for the composer and the readers, and `LogLineFormatter` appends `Exception.ToString()` in
+full whenever a raw exception is attached, regardless of the message template, so attaching `ex`
+bypasses redaction outright the same way the composer's old call did. Options: leave it, since
+no exception `Score` currently throws is known to carry record or model content; or bring it
+under D46's rule so a future one does not have to be found again. Recommendation: the second,
+consistent with the rest of D46: the exception is never attached to the log entry, and
+`ToRedactedDiagnosticString` supplies both the log parameter and `RecordScore.ScoringError`.
+Scopes: `Evaluator.Score`'s catch. Evidence:
+`Evaluate_ScoringThrows_LogsTheExceptionTypeWithoutAttachingTheRawException`, replacing the test
+that pinned the old, unredacted behavior (`Evaluate_ScoringThrows_LogsErrorWithTheException`),
+written failing against the code before the fix and passing after. Assumption: none.
+
+**D52. The introducer span was computed twice per check (2026-09-09).** Question: the same
+review found `SocialSecurityNumberCheck` and `LongDigitRunCheck` each call
+`IntroducedIdentifierSpan().Replace(text, " ")` independently, and since SocialSecurityNumber is
+unconditional (D40), both run and both strip the same text on any record with `no_pii_leak:
+true`. Recommendation: compute the stripped text once in `Validate` and pass it to both checks,
+the same pattern `FairHousingCheck` already uses for its own `scannable` variable. No behavior
+changed; this is a pure duplication removal. Scopes: `SafetyValidator.Validate`,
+`SocialSecurityNumberCheck`, `LongDigitRunCheck`. Evidence: the existing safety-validator suite
+(78 tests) unchanged and passing after the refactor. Assumption: none.
+
+**D53. `RequiredMembers` duplicated what `ProspectCase`'s constructor already states
+(2026-09-09).** Question: the same review found `JsonlRecordReader.RequiredMembers` hand-spells
+the three D1 members a second time, with nothing tying it to `ProspectCase`'s `[JsonConstructor]`
+parameters, the thing `RespectRequiredConstructorParameters` actually enforces. A future change
+to which members are required could update one and not the other with no test catching the
+drift. Recommendation: derive the array by reflecting on the `[JsonConstructor]`'s parameters and
+running each name through `AgentJsonOptions.Default.PropertyNamingPolicy`, the same policy the
+serializer itself uses, so the two can never disagree. Scopes: `JsonlRecordReader.RequiredMembers`.
+Evidence: the existing reader suite (29 tests) unchanged and passing after the refactor.
+Assumption: none.
+
+**D54. `ComposeOutcome.NoMessage`, reconsidered and kept (2026-09-09).** Question: the same
+review flagged `NoMessage` as an abstraction extracted at its second occurrence rather than its
+third, against this program's own Earned Abstraction rule, and recommended splitting `Failed`
+and `Refused` into two independent records with the two call sites in
+`ValidatingMessageComposer` pattern-matching each explicitly. That change was made, built, and
+then reverted before landing. The two call sites it touches are both places where
+`ComposeOutcome.Refused` cannot occur under any composer this program ships: no inner composer
+refuses its own draft (only the fallback path, after the loop, can), so a real switch or pattern
+match over `Refused` and `Failed` at either site has one arm no test can reach honestly, and
+`SequenceMessageComposer`, the one fake that stands in for an inner composer in tests, says so in
+its own comment. `ComposeAsync` is also async, and this program's coverage gate excludes
+compiler-generated code (`/p:ExcludeByAttribute=CompilerGeneratedAttribute` in `test.ps1`), which
+excludes the state machine an async method compiles to; the gate would not have caught the
+unreachable arm, but writing it anyway is exactly VF's "never write a branch a test cannot
+exercise honestly," done here as reasoning, not tooling. `NoMessage` is not, on reflection, a
+pure DRY convenience someone reached for a call early: reading `Failed` and `Refused` as one case
+is what lets the loop stay written without that branch, which is a second reason for the type
+distinct from the letter of "extract on the third occurrence." Recommendation: no change.
+Scopes: none; `ComposeOutcome.cs` and `ValidatingMessageComposer.cs` are unchanged from D48.
+Assumption: none.
+
+**D55. The final safety validation runs twice on the same text, kept (2026-09-09).** Question:
+the same review found `SafetyValidator.Validate` is called once inside
+`ValidatingMessageComposer`'s compose-validate loop and again, unconditionally, in
+`LeasingMessageAgent`'s step 5, on text that differs only by `SendAt`, which `Validate` never
+reads, and recommended threading the composer's own `SafetyValidationResult` through
+`ComposeOutcome` so step 5 could reuse it instead of recomputing. Recommendation: no change.
+Step 5's own comment already states why: "this is the orchestrator's own gate, not borrowed
+trust in the composer's cooperation." That sentence is D43's design, not an oversight this
+review found; reusing the composer's result would make step 5 trust the composer's own
+validation exactly where the design says it deliberately does not, for every `IMessageComposer`
+that might reach `LeasingMessageAgent` directly in a test or a future caller, not only through
+`ValidatingMessageComposer`. The cost is one extra linear pass over the message text per record,
+not an unbounded or quadratic one. Scopes: none. Assumption: none.
+
+**D56. `RequiredStateMap.For`'s hardcoded switch, kept (2026-09-09).** Question: the same review
+found `RequiredStateMap.For` maps three state names to three positional verdict parameters via a
+switch rather than a declared table, and recommended a table so a new required state would be
+one row instead of a new parameter and two call-site edits. Recommendation: no change. D42
+already closed the required-state set at three names and argued at length against inventing
+verdict logic for a name like `renewal_offer_loaded` without the evidence D9 and A19 require;
+each of the three states is also computed differently at its two call sites (one path passes
+real computed verdicts, the other stubs two of three as `NotEvaluated`), so a table would still
+need per-call-site wiring and would not remove the touch points the finding is concerned about.
+Scopes: none. Assumption: none.
+
+## Sprint 8 decisions, structure and narration (2026-09-09)
+
+Playbook steps 72 to 79. These are the decisions Sprint 8 implements, and they are numbered from
+D57 because D49 to D56 were already taken by the review-fix decisions that landed with PR #24 on
+the same day.
+
+**Run and debug fact, the sprint's own citations and comments corrected (2026-09-09).** The code
+half of this sprint left comments citing decision numbers that name a different decision, and
+comments describing a component D57 deleted. Both are now corrected in place, comment text only,
+with no behavior, signature or test changed. An earlier version of this paragraph recorded the
+first three citations as noted here rather than fixed, on the ground that the documentation half
+of the sprint does not edit `src/` or `tests/`; that is no longer what happened.
+
+Three citations were repointed from D49 to D57. D49 is the introducer-span fix, a different
+decision entirely; D57, below, is the consent gate merged into the channel selector. The three
+are `src/Agent/Orchestration/LeasingMessageAgent.cs` lines 13 and 30, and
+`tests/Agent.Tests/Decisions/ChannelSelectorTests.cs` line 71.
+
+Six were repointed from D43 to D48. D43 decides where a draft the final safety gate suppressed
+goes, which is the review queue; D48 decides that the composer seam returns `ComposeOutcome` and
+that a refusal carries its draft out for the orchestrator to validate. The six are
+`src/Agent/Composition/ComposeOutcome.cs` line 5,
+`src/Agent/Safety/ValidatingMessageComposer.cs` line 14,
+`src/Agent/Orchestration/LeasingMessageAgent.cs` line 102,
+`tests/Agent.Cli.Tests/CliRunnerTests.cs` line 1066,
+`tests/Agent.Tests/Safety/ValidatingMessageComposerTests.cs` line 95, and
+`tests/Agent.Tests/Orchestration/LeasingMessageAgentTests.cs` line 539.
+
+One was repointed from D3 to D2, at `src/Agent/Decisions/ActionTypes.cs` line 17. D3 decides the
+output contract, what suppression looks like on the wire and what the diagnostics carry; D2 is
+the paragraph that puts consent first and states that a record which is not contactable gets
+`no_op` with reason `no_contact_consent` and nothing else runs, which is what that comment is
+about.
+
+The same pass corrected the comments that still described the consent gate as a component that
+exists, or spelled the step 1 suppression as "consent suppression". In `src/`:
+`Orchestration/AgentDiagnostics.cs`, where the `ActionPlan` sentence said the consent gate
+suppressed the record and three sentences spelled the same state "consent suppression";
+`Decisions/ActionTypes.cs`, where `no_op` was said to be emitted by the consent gate;
+`Orchestration/ActionPlanNotes.cs` and `Orchestration/RequiredStateVerdict.cs`, which both said
+the gate suppressed the record. In `tests/`: three comments in
+`Orchestration/AgentDiagnosticsTests.cs`, one in `Orchestration/LeasingMessageAgentTests.cs`, and
+one in `Orchestration/RequiredStateMapTests.cs`. In `docs/`: four places in `OPERATIONS.md`, the
+`--review-queue` flag row and three of the `--diagnostics` paragraphs, which named the consent
+gate or spelled step 1 "consent suppression" in present-tense operator instructions. That file
+was missed when this paragraph was first written, which made this paragraph itself an incomplete
+record of its own sweep; it is swept now and listed here. Each of the corrected places names what
+the code does: the channel selector returns no value, and the agent's own step 1 emits the
+`no_op`. Two mentions in `src/` and `tests/` stay, because both are written as history and read
+as history: `LeasingMessageAgent.cs` line 13, which says D57 merged the old gate into the
+selector, and `ChannelSelectorTests.cs` line 71, which says the gate asked the same question this
+selector answers. In `docs/`, `DESIGN.md` lines 356 and 370 stay for the same reason: both sit
+inside the
+dated "Numbers after Sprint 4" and "Numbers after Sprint 5" paragraphs, which record what the
+code did on those dates. Evidence: `dotnet build` clean and `.\test.ps1` exit code 0 with 551 and
+61 tests and 100 percent line, branch and method coverage, unmoved from the code half of the
+sprint.
+
+**Run and debug fact, four review findings on the Sprint 8 prose fixed (2026-09-09).** A review
+of the uncommitted Sprint 8 work found four defects, every one of them in prose. All four are
+corrected here, with no behavior, signature or test changed.
+
+The first was false rather than merely incomplete. The justification on `LeasingMessageAgent`'s
+`ConsentVerified` constant said the selector reads consent to answer "which channel", so consent
+has been verified by the time either path runs, whichever way it answered.
+`ChannelSelector.Select` reads consent only inside its `foreach`, so `channel_preferences: []`
+makes zero consent reads, returns no value, and the record still records
+`consent_verified: earned`. That input is live:
+`ChannelSelectorTests.Select_EmptyChannelPreferencesDespiteFullConsent_ReturnsNone` is exactly
+it, and
+`LeasingMessageAgentTests.RunAsync_OnlyRequiredMembersAndNoConsent_SuppressesAndAssertsNoState`
+feeds it to a real agent. The output was never wrong and the deleted `ConsentGate` returned
+`ConsentVerified: true` on that path too, so the verdict is unchanged and only its stated reason
+is: `consent_verified` is earned by a record reaching step 1 at all, the consent-driven
+selection is the step that owns the state, and no input makes the verdict anything else. The
+claim was restated in six places and all six now say that: `LeasingMessageAgent.cs`,
+`LeasingMessageAgentTests.cs`, D57 below, the A14 row of DESIGN.md section 7, DESIGN.md section
+9's states-map paragraph, and NARRATION.md's step 1. A14's own statement is left as it stands,
+and is recorded here as reading, for this one state, as "the step that owns it ran" rather than
+"the step proved it".
+
+The second was `OPERATIONS.md` still naming the deleted gate in present-tense operator
+instructions, in four places; that sweep is recorded in the paragraph above.
+
+The third was README's latency claim, stated as 22, 20 and 19 ms with no caveat where DESIGN.md
+section 9 already discloses that the figure is wall clock, is not pinned in the suite and moves
+between runs. Three further runs of the same three commands read 21, 22 and 19; 21, 21 and 20;
+and 23, 22 and 20. README now carries the disclosure and states what does reproduce: on each set
+one record pays the one-time just-in-time compilation cost and reads around 20 ms, which is that
+set's p95, every other record reads single-digit milliseconds, and runs on unchanged code have
+read p95s from 19 ms to 23 ms. The per-check tallies are untouched: they reproduced exactly.
+
+The fourth was README's seam arithmetic: three components behind an interface and "the other
+six" removed by D58 leaves a reader at nine where ten existed, because the seventh removal is
+`IConsentGate` under D57. The paragraph now names both decisions, and says the completion client
+has no box of its own in the diagram above it, since only Compose and Validate are boxes.
+
+Evidence: `dotnet build` clean; `.\test.ps1` exit code 0 with 551 and 61 tests and 100 percent
+line, branch and method coverage; `.\check-instruction-files.ps1` clean; and the three
+documented runs, every per-check tally identical to the numbers already in DESIGN.md section 9,
+exit codes 0, 0 and 2.
+
+**D57. The consent gate merged into the channel selector (2026-09-09).** Question: whether
+"is this record contactable" and "on which channel" are two decisions or one. Options: keep the
+two components, one answering contactability and one answering the channel, and keep the
+orchestrator calling them in order; or delete the gate and let the selector's absence of a value
+be the answer to both. Recommendation: the second. The two components computed the same
+predicate over the same two inputs: `ConsentGate.Evaluate` computed
+`channelPreferences.Any(consent.IsOptedIn)` and `ChannelSelector.Select` computed the first
+channel satisfying `consent.IsOptedIn`, so the gate's answer was already implied by whether the
+selector found one. A question answered twice is a question that can be answered two ways, and
+the orchestrator paid for the second answer with an extra step and an extra branch.
+`ChannelSelector` is now concrete and `Select` returns `Option<CommunicationChannel>`, where no
+value means no preferred channel is consented; nothing anywhere calls that state "not
+contactable" any more. Scopes: `IConsentGate.cs`, `ConsentGate.cs` and `ConsentDecision.cs` are
+deleted; `LeasingMessageAgent` step 1; `CliRunner`'s composition root; `ConsentGateTests`.
+`consent_verified` is now earned by a record reaching step 1 at all, whichever way the selector
+answered and whatever the record's `channel_preferences` list holds: the consent-driven
+selection is the step that owns the state, and no input makes the verdict anything else (A14).
+Evidence: the two expressions above, read side by side; `ChannelSelectorTests` green, with the
+three `ConsentGateTests` cases that duplicated it dropped and the one case it did not prove
+merged in.
+Assumption: A14.
+
+**D58. Every interface without a second implementation deleted (2026-09-09).** Question: which
+interfaces stay. Options: keep the per-component interfaces, on the argument that a caller might
+one day substitute one; or keep only the seams that have a real and an offline implementation
+today. Recommendation: the second, which is S3's default and D7's commitment, both taken before
+this sprint. `IChannelSelector`, `ISendScheduler`, `INextActionPlanner`, `IMessageAgent`,
+`IEvaluator` and `IRecordWriter` each had exactly one implementation and no test substitute, so
+every call through them was a hop to the only class that could answer, and Appendix B's rehearsal
+rule counts each such hop as a finding. Exactly three interfaces remain in `src/Agent`:
+`IMessageComposer`, `ICompletionClient` and `ISafetyValidator`, and each has a real
+implementation in `src/Agent` and an offline one, the template composer for the first and a test
+substitute for the other two. Scopes: the six interface files are deleted and their callers name
+the concrete type; DESIGN.md section 5's seam column; README.md's architecture paragraph.
+Evidence: S3, which records that eleven interfaces existed at the retrospective and eight had one
+implementation and no test substitute, and D7, which commits to removing them as the sprint that
+touches each one lands. Assumption: none.
+
+**D59. The diagram is renumbered to the code, not the code reordered to the diagram
+(2026-09-09).** Question: DESIGN.md section 5's flow numbered the orchestrator's steps compose,
+validate, schedule, plan, and the orchestrator executes them plan, compose, schedule, validate.
+One of the two had to move. Options: reorder the orchestrator to match the published diagram; or
+renumber the diagram to match the executed order. Recommendation: the second, because the
+executed order is forced and the diagram's is not. Two constraints fix it: the
+composition-failure path returns the planner's `next_action`, so the plan must exist before
+compose runs; and the orchestrator's own step 5 gate validates the final message, which carries
+`send_at`, so scheduling must happen before validation. Reordering the code to the diagram would
+break both. No code was reordered and no behavior changed; the six numbered steps now read 1
+select the contactable channel, 2 plan the next action from the horizon, 3 compose, 4 schedule,
+5 validate, 6 emit, in the order the file executes them. Scopes: DESIGN.md section 5's mermaid
+diagram and README.md's copy of it. Evidence: `LeasingMessageAgent.RunUnguardedAsync` read top to
+bottom, where the `ComposeOutcome.Failed` arm returns `Suppressed(..., nextAction, actionPlan)`
+with a `nextAction` the planner produced above it, and where `validator.Validate` is called on
+`finalMessage`, which is `draft with { SendAt = scheduled.SendAt }`. Assumption: none.
+
+**Run and debug fact, Sprint 8 (2026-09-09).** `tests/Agent.Tests/Evaluation/BaselineNumbersTests.cs`
+could not stay byte-for-byte unchanged through D58, which is the first time that has happened.
+Line 34 declared the deleted `IMessageAgent`, so one token changed, `IMessageAgent` to
+`LeasingMessageAgent`. Every pinned tally is untouched and all three theory cases still pass. The
+suite moved from 553 tests to 551 for a separate reason, D57: three `ConsentGateTests` cases
+duplicated `ChannelSelectorTests` and were dropped, and one case `ChannelSelectorTests` did not
+prove was merged into it.
+
+## Sprint 9 decisions, the Phase 6 remainder and fault injection (2026-09-09)
+
+Playbook steps 80 and 81, then Phase 7 step 84. Numbered from D60 because D59 is the last
+number Sprint 8 took. Nothing below is implemented: these are the decisions that scope the
+sprint, written before any task (Pillar 3, DBT).
+
+**D60. Phase 6's check is the playbook's, not this log's (2026-09-09).** Question: the
+"Current phase" block at the top of this file states Phase 6's check as "the narration is
+delivered without notes and the orchestrator reads as its steps in order";
+`~/.agent-rules/PROJECT_PLAYBOOK.md` states it as "the documented one-line command produces
+the output file, the diagnostics file, and the scorecard, and exits with the documented
+code". Two checks on one gate is one open question, not one rule, and the log has been
+holding the phase open against the check that is not the playbook's. Options: keep this
+log's check and treat the playbook's as wording it grew out of; or adopt the playbook's and
+put the narration back where the playbook puts it. Recommendation: the second. Evidence: the
+playbook's Phase 6 is titled "Orchestration, entry points, and operations" and holds steps 72
+to 81, none of which is a narration; delivering the narration aloud without notes is step 98,
+inside Phase 8, "Documentation and review". This log and DESIGN.md section 9 both retitle
+Phase 6 "Structure and narration", both state the fused check, and Sprint 8 was named for that
+title while implementing steps 72 to 79. So the divergence is a phase renamed after the half
+of step 72 it implemented, with step 98's rehearsal pulled forward onto its gate. What
+changes: Phase 6 passes on the playbook's check once steps 80 and 81 land, and stops waiting
+on a rehearsal the playbook does not gate it on; the narration rehearsal moves to Phase 8 step
+98, where it is still owed. What does not change: `docs/NARRATION.md` stands as written, and
+AGENTS.md's workflow rule that one record is narrated aloud before a PR merges is a project
+rule that was never the phase gate and is untouched. No file under `src/` or `tests/` is
+affected. Scopes: the Current phase block, replaced at the end of Sprint 9 and not before;
+DESIGN.md section 9's phase table row for Phase 6; the order of Sprint 9, which is steps 80
+and 81 and then step 84. Assumption: none.
+
+**D61. What latency in the diagnostics means (2026-09-09).** Question: steps 75 and 80 name
+latency per unit of work and per batch in the diagnostics record, and
+`src/Agent/Orchestration/TaskDiagnostics.cs` is `(TaskId, Diagnostics, IngestNotes)` with no
+latency member; latency exists only on the scorecard. What the number is, what it is measured
+around, and how it relates to the scorecard's p95. Options: (a) leave latency on the scorecard
+alone and read steps 75 and 80 as already satisfied by `--eval-report`; (b) start a second
+stopwatch inside the agent and put its number on the diagnostics row; (c) put the number
+`CliRunner` already measures on the diagnostics row, one measurement with two readers.
+Recommendation: (c). Per record, `latency_ms` is the wall-clock elapsed of exactly one
+`LeasingMessageAgent.RunAsync` call: the `Stopwatch` started at `CliRunner.cs:229` and stopped
+at `:245`. Stated rather than implied, it excludes reading and parsing the input line,
+`IngestNotes.Describe`, every output write, and the evaluator; it includes channel selection,
+the plan, every compose attempt with any model call and its retry inside it, the schedule, and
+the final safety gate. It is the same `double` already handed to `ScoredRun.LatencyMs` at
+`:260`, passed to both from one variable, so the diagnostics file and the eval report can
+never state two different latencies for one record. A record whose `RunAsync` threw gets no
+diagnostics row at all and keeps getting none, so the member is non-nullable. Per batch: one
+wall-clock elapsed around the record loop, and it does not go in the diagnostics file. That
+file is a single JSON array of one row per unit of work, and a batch number in it needs either
+an envelope around the array, which breaks every reader and every test built on the array
+shape, or a synthetic row that is not a unit of work; it goes instead on the two artifacts
+that are already per batch, the `Batch complete` log line at `CliRunner.cs:262` and the
+scorecard, beside the p95 it already prints. Relation to the p95: the p95 is computed from
+these same per-record numbers in `Scorecard.ComputeLatencyP95Ms`, so the diagnostics member is
+its input and not a second opinion. It is wall clock and it moves: DESIGN.md section 9 records
+18 ms in Sprint 6 and 22, 20 and 19 ms in Sprint 8 on unchanged code, and README records 19 to
+23 ms across repeated runs of the same commands. So no test pins it.
+`BaselineNumbersTests` scores with `LatencyMs: null` (line 41) and keeps doing so, and any
+golden or round-trip test over a diagnostics row compares with the latency member excluded or
+replaced by a fixed value, never with a number a run produced; a test asserting a latency
+under a bound fails on a slow machine and proves nothing about this code. Scopes:
+`TaskDiagnostics`, `CliRunner`'s record loop and its batch log line, `ScorecardFormatter`, the
+`--diagnostics` row of OPERATIONS.md section 1, and README's latency paragraph. Evidence:
+playbook steps 75 and 80; `CliRunner.cs:229`, `:245`, `:260`, `:262`; `Scorecard.cs` lines 32
+to 37; DESIGN.md section 9's Sprint 8 paragraph; README's Latency paragraph. Assumption: A15.
+
+**D62. What cost in the diagnostics means (2026-09-09).** Question: steps 75 and 80 name cost
+per unit of work, and cost exists today only as dated prose in DESIGN.md section 9 and README.
+What a cost member says on a record that made no model call, on one whose call was abandoned at
+its timeout, and on one whose call completed; and whether the number is measured or derived
+from a published price. Options: (a) a money member computed in code from a per-model price
+constant; (b) a measured token member and no money anywhere in `src/`; (c) nothing, leaving
+cost as prose. Recommendation: (b). Money is not computed in code, because a price constant is
+a number no test in this suite can check: the check would be "is this still the vendor's list
+price", which is a fact about a web page and not about this program, so the constant would go
+stale silently and be believed. The dollar figure stays where it already is, dated and read
+off the vendor's own usage page rather than estimated: DESIGN.md section 9's cost paragraph
+($0.004 for the 2026-09-08 run, about $0.00017 per record) and README, each naming the model,
+the date, and the published per-million rates it was priced at. A reader who needs today's
+money multiplies today's price by the tokens the diagnostics measured. What is measured is the
+token counts the vendor returns: `OpenAI.Chat.ChatCompletion.Usage` is an
+`OpenAI.Chat.ChatTokenUsage` carrying `int InputTokenCount`, `int OutputTokenCount` and `int
+TotalTokenCount`, confirmed on 2026-09-09 by reflection over the restored OpenAI 2.13.0
+assembly rather than from documentation (playbook step 50, SCS). `OpenAiCompletionClient` does
+not read it today, so the counts travel out on `ModelCompletion` beside `NetworkRetries` and
+reach the diagnostics on `CompositionNotes` the way `NetworkRetries` already does, as a small
+record of `Calls`, `CompletedCalls`, `InputTokens` and `OutputTokens`, from which abandoned
+calls are `Calls` minus `CompletedCalls`. The three cases are three different facts and must
+not collapse into one zero. No call made: the template composer issues no request, so the
+member is null, which is the rule `CompositionNotes.NetworkRetries` already states for a
+composer that makes no network call at all; null here means no model path ran, and the money
+is a known zero stated once in README, not an unknown. Call abandoned at its timeout:
+`OpenAiCompletionClient.CompleteAsync` throws its `TimeoutException` before it ever reads
+`result.Value`, so there is no `Usage` to read, and the client cannot measure what an
+abandoned call cost, while DESIGN.md section 9 records that the vendor billed roughly a third
+of them in full, output tokens included. The member is therefore present with `Calls` counted
+and `CompletedCalls` and both token counts zero, and the counted call is what stops zero
+tokens from reading as free. Every record of the 2026-09-08 live run would read exactly that
+way: calls made, no tokens returned, and a real bill. Call completed: the member carries that
+call's input and output token counts, summed across the compose-validate loop's attempts the
+way `NetworkRetries` is already summed
+(`ValidatingMessageComposerTests.ComposeAsync_FirstAttemptHasRetriesThenFailsValidation_SecondAttemptSucceeds_SumsNetworkRetries`).
+Per batch, D61's rule holds unchanged: the diagnostics file stays one row per unit of work and
+the batch totals go on the scorecard and the `Batch complete` log line. Scopes:
+`ModelCompletion`, `OpenAiCompletionClient.CompleteAsync`, `CompositionNotes`,
+`ValidatingMessageComposer`'s accumulation, the `--diagnostics` row of OPERATIONS.md section
+1, README's money paragraph. Out of scope, explicitly: any dollar arithmetic under `src/`.
+Evidence: playbook steps 75 and 80; the reflection probe above; `OpenAiCompletionClient.cs`
+lines 79 to 87, where the timeout is thrown before `result.Value` is read; `CompositionNotes.cs`'s
+`NetworkRetries` rule; DESIGN.md section 9's cost paragraph. Assumption: A18.
+
+**D63. Step 81 is the Phase 6 check run, not a second scoring pass (2026-09-09).** Question:
+step 81 says run the examples end to end from the documented command and check the output by
+hand against the expected records, and no result for it is recorded anywhere in `docs/`,
+searched 2026-09-09. What a by-hand check is here, what artifact records it, and what it adds
+over the evaluator, which is automated and already runs. Options: (a) a per-field manual
+comparison of every output row against its `expected`, written up; (b) name that comparison as
+the one the evaluator already makes, scope it out with the reason, and keep only what a person
+checks that the scorer cannot; (c) leave step 81 unrecorded. Recommendation: (b). Per field,
+per record, against the label is exactly what `Evaluator` does: D13 d fixes the label as the
+oracle and forbids scoring against the product's own tables, DESIGN.md section 6 names the
+checks, and `--eval-report` prints one verdict per check per record plus a per-check tally. A
+person redoing that across 26 rows would be running the same comparison less reliably, and any
+disagreement would mean the scorer is wrong, which is what `ScorerProofTests` exists to rule
+out. So the per-field re-comparison is a deliberate scope-out and is recorded in
+docs/CODE_REVIEW.md with that reason rather than performed as ceremony. What is kept is the
+half of step 81 the scorer cannot do, and it is Phase 6's check itself: run each documented
+one-line command from the repo root, confirm the output file, the diagnostics file, the review
+queue and the scorecard all appear, and confirm the exit code is the documented one, 0 on
+`sample.jsonl`, 0 on `holdout_12.jsonl` and 2 on `synthetic_12.jsonl` for its malformed line.
+Two things a person adds there that no automated check makes today. First, that the
+scorecard's tally lines agree with its own rows: `Scorecard` computes its tallies and its p95
+once, in field initializers, so a `with` copy that replaces `RecordScores` prints a report
+whose rows and totals disagree, a failure mode this repo has already recorded and no test
+watches for across the CLI's own printed output. Second, that one record read end to end, its
+input line, its output row, its diagnostics row and its scorecard row, tells one consistent
+story. The artifact: a dated subsection of DESIGN.md section 9, where every other run record
+in this project lives, naming per set the exact command, the files that appeared, the exit
+code, and the two confirmations above. Not a new file: the run record has one home and a
+second one splits it. Scopes: DESIGN.md section 9 and its phase table row for Phase 6,
+docs/CODE_REVIEW.md. Evidence: playbook step 81 and Phase 6's check; D13 d; `ScorerProofTests`;
+AGENTS.md's `Scorecard` gotcha; the absence of any step 81 record in `docs/`. Assumption: A19,
+which is why the by-hand check reports what the sets do and never moves a rule to make a row
+match.
+
+**D64. Fault injection: five faults are already proved, one is not (2026-09-09).** Question:
+playbook step 84 names six faults, network down, rate limit, malformed response, unknown
+locale, corrupt input line, and disk full on output, and asks for graceful degradation and
+correct diagnostics for each. Which are already proved, which Sprint 9 proves, which are
+scoped out, and what file carries the results Phase 7's check asks for. Options: write a new
+fault-injection test class covering all six; or audit the suite by test name first and add
+only what is not proved. Recommendation: the second, on the audit below, run 2026-09-09.
+Network down is proved: `OpenAiMessageComposerTests.ComposeAsync_CompletionClientThrowsHttpRequestException_ReturnsFailureNotException`
+turns a transport failure into a `ComposeOutcome.Failed` naming the exception category and not
+its text, and `ValidatingMessageComposerTests.ComposeAsync_ComposerKeepsFailing_FallsBackToSafeComposer`
+plus `ComposeAsync_BothAttemptsBad_ReportsTheFallbackComposerAndEveryAttempt` prove the
+degradation and the diagnostics, `composition.composer: template` with the attempts counted on
+a run that asked for `openai`; the whole-set run with outbound HTTPS blocked at the process
+level is the Phase 4 check and is recorded in DESIGN.md section 9. Rate limit is proved:
+`OpenAiCompletionClientTests.CompleteAsync_TransientFailureThenSuccess_RetriesOnceAndReportsIt`
+injects a 429 then a 200 and asserts one retry reported and two HTTP calls, and
+`CompleteAsync_TransientFailureEveryTime_StopsAfterTheBoundedRetry` proves the retry is
+bounded at two attempts, on a 503 rather than a 429; the SDK retry policy is status-agnostic
+across the transient set it knows, so the exhaustion path is proved once and not per status.
+Malformed response is proved:
+`OpenAiMessageComposerTests.ComposeAsync_MalformedJson_ReturnsFailureNotException`,
+`ComposeAsync_MissingRequiredFields_ReturnsFailure`, `ComposeAsync_NullJsonBody_ReturnsFailure`
+and `ComposeAsync_ModelReturnsWrongCtaType_ReturnsFailure` at the composer, and
+`OpenAiCompletionClientTests.CompleteAsync_ResponseHasNoContent_ThrowsInvalidOperationException`
+and `CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException` at the client, where a
+200 carrying no choice is named rather than escaping as an `ArgumentOutOfRangeException`.
+Unknown locale is proved in all three of the forms this product has: an unserved language tag
+by `TemplateMessageComposerTests.ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied`
+(A13, `locale_applied: false`); an unrecognized timezone id by
+`SendSchedulerTests.Resolve_UnknownTimeZoneId_ResolvesInUtc`,
+`TimeZonesTests.ResolveOrUtc_UnknownId_ReturnsUtc`, `TimeZonesTests.ToLocalDate_UnknownZone_UsesTheUtcDate`
+and, for the diagnostics half, `IngestNotesTests.Describe_UnrecognizedTimezone_NamesItAsDefaultedWithoutTheRecordsOwnValue`
+(A6); and an unrecognized channel name by
+`JsonlRecordReaderTests.ReadAll_UnrecognizedChannelName_ParsesAsUnknownChannel`,
+`ReadAll_ChannelPreferenceEntriesNotChannelNames_ParseAsUnknown` and
+`ReadAll_ChannelPreferenceNumericStringMatchingARealOrdinal_ParsesAsUnknown` (A3). Corrupt
+input line is proved end to end:
+`JsonlRecordReaderTests.ReadAll_ReturnsFailureWithLineNumber_WhenLineIsMalformedJson`,
+`...WhenLineDeserializesToNull`, `...WhenLineIsValidJsonButNotAnObject`,
+`ReadAll_OneBadLineAmongGoodOnes_ReturnsEveryOtherRecord`,
+`ReadAll_BlankLinesBeforeFailingLine_CountTowardTheLineNumber`,
+`ReadAll_MalformedUndeclaredMember_FailureNamesTheLineAndNoTextTheRecordWrote` and
+`ReadAll_ParsesSyntheticTwelve_TwelveSuccessRowsAndOneFailureNamingLineEleven` at the reader,
+and `CliRunnerTests.RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure`
+and `RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure` at the entry point, where
+the documented `synthetic_12.jsonl` run exits 2 by design. Disk full on output is the one
+fault that is not proved, and the audit found a real gap behind it rather than a missing test:
+`--log-file` fails fast on `IOException` or `UnauthorizedAccessException` with a clean stderr
+line and exit code 1 (`CliRunner.cs:105`, proved by
+`CliRunnerTests.RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError`),
+while `--output`, `--diagnostics` and `--review-queue` open unguarded at `CliRunner.cs:195` to
+`:197` and `--eval-report` writes unguarded at `:381`, and `Program.cs` installs no handler, so
+a full or unwritable volume ends the process on an unhandled exception with a stack trace on
+stderr and an exit code that is none of 0, 1 or 2. That contradicts step 79's documented codes
+and step 77's fail fast on bad paths before doing work that costs time or money. In scope for
+Sprint 9: give the three output streams the guard `--log-file` already has, opened before the
+record loop so a bad path costs nothing, and give the scorecard write the same guard where it
+is. Scoped out: producing a genuinely full volume. The portable and testable form of disk full
+is the open that fails, which the guard answers identically for every cause of a failed open, a
+volume that is already full included. Narrowed on 2026-09-09 from "the write that fails, which
+the guard answers identically for every cause", which claimed more than the guard does: all
+three batch guards sit at the open and the stream stays open across the record loop, so a volume
+that fills mid-batch throws from inside the writer, downstream of every guard in `CliRunner`,
+and that run still ends on an unhandled exception. `--eval-report` is the exception on both
+counts, being one guarded `File.WriteAllTextAsync` rather than a stream held open, so its own
+write is covered. An actual out-of-space condition, at the open or after it, needs a virtual
+disk or a filesystem quota, a machine setup this suite cannot carry and CI cannot reproduce.
+That scope-out is recorded in docs/CODE_REVIEW.md and in fault 6 of docs/FAULT_INJECTION.md in
+the narrowed form, which is the form this paragraph now states. The results file Phase 7's check asks for is `docs/FAULT_INJECTION.md`, one row
+per fault naming the injection, what the product did, what the diagnostics said, the exit
+code, and the test that pins it. Not at the repo root: `.gitignore` ignores `/out*.json`,
+`/diag*.json`, `/q_*.json`, `/eval*.txt` and `/*.log` there, so an artifact a run writes at the
+root is not a file in the repo, which is what the check asks for. Not DESIGN.md section 9
+either: section 9 records what a run measured, and this records what a fault did, six rows
+with no tallies. Scopes: Sprint 9's test work, `CliRunner`'s output path handling,
+`docs/FAULT_INJECTION.md`, `docs/CODE_REVIEW.md`, and the exit-code table in OPERATIONS.md
+section 2. Evidence: the audit above by test name; `CliRunner.cs:105` against `:195` to `:197`
+and `:381`; `Program.cs`; `.gitignore`; playbook steps 77, 79 and 84 and Phase 7's check.
+Assumption: none.
+
+**D65. The input paths get the guard the output paths got (2026-09-09).** Question: D64 gave
+`--output`, `--diagnostics` and `--review-queue` the guard `--log-file` already had, and gave
+`--eval-report` the same guard at its write, so an unwritable path is one stderr line naming the
+flag and exit code 1. `--input` and `--replay` were left out, because D64's subject is the
+disk-full fault and it names only the paths a run writes. Both still open unguarded: `ReadInput`
+builds `new StreamReader(inputPath)` at `CliRunner.cs:396`, reached from `RunAsync` at `:140`
+and again from `ReplayAsync` at `:362`, and `ReplayAsync` builds `new StreamReader(replayPath)`
+at `:365`; `Program.cs` installs no handler. Measured on 2026-09-09 against the built CLI rather
+than reasoned about: `--input` naming a file that does not exist ends the process with
+`Unhandled exception. System.IO.FileNotFoundException`, a nine-frame stack trace on stderr whose
+top frame is `CliRunner.cs:line 396`, and exit code -532462766 (0xE0434352, the CLR's
+unhandled-exception code), which is none of 0, 1 or 2; `--replay` naming a file that does not
+exist does the same from `:365`. So the question is whether the two reader paths get the same
+guard, and what exit code an input file that will not open deserves, given that the documented
+codes are 0 success, 1 usage error and 2 partial failure.
+
+Options: (a) leave them unguarded and treat a bad input path as an operator error the operating
+system already reports; (b) guard both with `OpenOutputStream`'s mirror and return 1 for every
+input path that will not open; (c) guard both but split the code, 1 for a path the user typed
+wrongly and 2 for a file that exists and cannot be read, on the ground that the second is a
+failure of the run rather than of the command line. Recommendation: (b). Exit 2 is a per-record
+fact everywhere else it is used: `JsonlRecordReader.ReadAll` returns one failure row per bad
+line and `ReadInput` counts them, so 2 means some records were processed and some were not. A
+file that never opened has no lines and no records, so 2 would report a partial success that did
+not happen, and anything scripting on the code would retry the good half of a batch that has no
+good half. (c) also asks the exception type to draw a line it does not draw:
+`FileNotFoundException` and `DirectoryNotFoundException` both derive from `IOException`, and a
+locked file, a full volume, a bad drive letter and a denied ACL all arrive as `IOException` or
+`UnauthorizedAccessException` without saying which of the two stories they are. The four output
+flags already answer 1 for that whole class, a locked or full volume included, so a reader path
+answering 2 for the same operating-system fact would make one program say two things about one
+kind of failure.
+
+The shape, stated so it is not chosen again while building: `private static Result<StreamReader>
+OpenInputReader(string flag, string path)`, the mirror of `OpenOutputStream` at `:472`, with the
+same message text (`Could not open {flag} '{path}': {ex.ToDiagnosticString()}`), the same filter
+(`IOException or UnauthorizedAccessException`, unchanged from D64: a wider one here and a
+narrower one there is the thing to avoid), reported through `ReportFailure` so the log line and
+the stderr line keep one wording. `ReadInput` takes the opened reader instead of the path and
+keeps its tuple return; its two callers own the `using` and the `return CliExitCodes.UsageError`.
+Nothing moves in the order: the input open stays where `ReadInput` is called today, which is
+already before the composer is built, so a bad path still costs no time and no money (step 77).
+`--replay` is guarded at `:365`, in place.
+
+One hole found while measuring this, closed here rather than left for the next reader to find: an
+option given an empty value ends the process the same way, and every guard D64 wrote has the same
+hole, because an empty path throws `ArgumentException` and not `IOException`. Measured, all four
+on 2026-09-09: `--input ""` throws `System.ArgumentException: The value cannot be an empty string.
+(Parameter 'path')` at `:396`, `--output ""` throws it at `:481` inside `OpenOutputStream`'s try,
+`--log-file ""` at `:103`, and `--eval-report ""` at `:446`. It is not closed by widening a catch
+filter to `ArgumentException`, which would ask three guards to swallow an exception a bug in the
+same try block could also throw; it is closed in the argument parsing, before the existing usage
+check at `:64`, by the rule that no argument of this program may be empty. Every flag either
+takes a value or is a presence flag, and no value any of them takes has a meaning when empty:
+`--composer ""` is already an invalid composer name and `--now ""` an unparsable date-time, both
+exit 1 today. So one scan of `args` for a zero-length entry, reporting the flag that precedes it
+when there is one and the position when there is not, is one check with no list of flags to keep
+in sync. Exit code 1, one stderr line, no stack trace.
+
+Tests, named after `RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError`,
+which is the case this copies: `RunAsync_InputPathDoesNotExist_WritesCleanErrorAndReturnsUsageError`,
+`RunAsync_ReplayPathDoesNotExist_WritesCleanErrorAndReturnsUsageError`,
+`RunAsync_OptionGivenAnEmptyValue_WritesCleanErrorAndReturnsUsageError` and
+`RunAsync_FirstArgumentIsEmpty_WritesCleanErrorAndReturnsUsageError`, each written failing against
+the current code first and each asserting the exit code, the one stderr line, and the absence of a
+stack trace in it. Scopes: `CliRunner`'s argument parsing and both reader opens,
+`Agent.Cli.Tests/CliRunnerTests.cs`, the exit-code table in OPERATIONS.md section 2, and the
+by-hand paragraph of DESIGN.md section 9 that already records the four output flags checked on
+2026-09-08, which gains the reader paths beside them. Not `docs/FAULT_INJECTION.md`: step 84 names
+six faults and an unreadable input path is not one of them, so that file stays six rows (D64).
+Evidence: the four measured failures above; `CliRunner.cs:396`, `:365`, `:362`, `:140`, `:481`,
+`:472`, `:446`, `:103`, `:64`; `Program.cs`; playbook steps 77 and 79; D64. Assumption: none.
+
+**D65 addendum, the six failures measured after (2026-09-09).** D65 recorded what each case did
+before the guard. Measured against the built CLI after it, from the repo root: `--input` naming a
+file that does not exist writes `Could not open --input '<path>': FileNotFoundException: Could
+not find file '<absolute path>'.` and exits 1, with no stack frame anywhere in its output, where
+before it ended the process on an unhandled `FileNotFoundException` with a nine-frame stack trace
+and exit -532462766; `--replay` naming a file that does not exist does the same, naming
+`--replay`. Each of `--input ""`, `--output ""`, `--log-file ""` and `--eval-report ""` writes
+`The argument after '<flag>' is empty: no argument of this program may be empty.` and exits 1,
+where before each ended the process on an unhandled `ArgumentException: The value cannot be an
+empty string. (Parameter 'path')`. An empty first argument, which follows no flag, writes
+`Argument 1 is empty: no argument of this program may be empty.` and also exits 1; those are the
+only two forms the scan emits. One difference between the two halves, measured rather than
+assumed and unchanged from D64: the two reader guards print the failure twice and the empty-value
+cases print it once. `ReportFailure` writes one failure through the logger and through the error
+writer both, and the console sink is the CLI's own `error` stream (OPERATIONS.md section 3), so a
+guarded open produces a timestamped `[Error] Agent.Cli.CliRunner:` line and the plain stderr line
+under it, exactly as D64's four output guards do. The empty-value scan runs before any logger
+exists, at `CliRunner.cs:72` to `:83`, and writes to `error` directly, so it has one line to
+print. Neither form carries a stack frame, which is what the tests assert. Evidence: the runs
+above; `CliRunner.cs:72` to `:83`, `:164`, `:399`, `:413`, `:512` to `:516`, `:548`; D64; D65's
+own before measurements, which are not re-measured here because that would mean reverting `src/`.
+
+**D66. The model cost vanishes on exactly the records that failed (2026-09-09).** Question: D62
+put the token counts on `CompositionNotes.ModelCost`, and `CompositionNotes` is the one
+diagnostics member that is absent on every record with no message. `LeasingMessageAgent` nulls it
+at `:127` for a refused draft and at `:197` for a safety-suppressed one, and `Suppressed` never
+sets it, at `:75` for no consented channel and at `:133` for a composition failure. The loss
+starts a layer lower than that: `ValidatingMessageComposer` accumulates `discardedModelCost`
+across every attempt (`:72` for a draft it rejected, `:91` for an attempt that produced none) and
+then drops the accumulation at `:103`, where the fallback produced no message and the `Failed` it
+builds takes the default `ModelCost: null`, and at `:112`, where `ComposeOutcome.Refused` cannot
+carry one at all, being defined with `ModelCost: null` at `ComposeOutcome.cs:49` on the stated
+ground that a refused record carries no composition notes and so has nowhere to report it. A
+record that made two model calls and ended with no message therefore reports no model call, and
+`CliRunner.cs:292` sums the batch total off `result.Diagnostics.Composition?.ModelCost`, so the
+batch total loses the same tokens. `NetworkRetries` is dropped at the same two lines by the same
+mechanism. The question is what carries the cost of a record whose run produced no message.
+
+The evidence, stated exactly, because the number in a file today is not yet wrong. No documented
+run understates: on all three sets `composition.model_cost` is null on all 26 rows, the review
+queue is empty, and every suppression is `no_contact_consent`, which is step 1 returning before
+the composer runs, so there is no cost to lose (DESIGN.md section 9, step 71's numbers). The
+2026-09-08 live run does not understate either: every call was abandoned at its timeout, the
+template fallback answered every record, and `WithAttempts` at `:108` carries a discarded
+attempt's cost into the winner, so the abandoned calls survive; that run also predates the field.
+What loses is a record that ends with no message on a run that called the model, and the
+constructed steering record of D48, whose own `city_interest` reads `families only`, is that
+record: under `--composer openai` its two abandoned calls accumulate into `discardedModelCost`,
+the template fallback reproduces the steering language from the record's own data, `:112` refuses,
+and the row reports no model call and no retries while the vendor billed for roughly a third of
+what was asked (D31 addendum). So the understatement is structural and preventive rather than a
+figure to correct, and it lands on the failing record every time.
+
+Options: (a) move the two numbers off `CompositionNotes` onto `AgentDiagnostics`, so they survive
+a nulled composition; (b) keep the carrier and stop nulling it; (c) keep the carrier, accept the
+understatement, and document it as a known limit of the field. (a) costs two members on
+`AgentDiagnostics`, two on the `ComposeOutcome` base, and moving two keys out of the `composition`
+object to the diagnostics row's own level in every golden over one
+(`AgentDiagnosticsTests.cs:177`, `:193`, `:215`, `CliRunnerTests.cs:1490`, `:1529`), plus every
+prose citation of the two keys by their path: the `--diagnostics` row of OPERATIONS.md section 1
+and the `composition` walkthrough of its section 2, DESIGN.md's Sprint 9 cost paragraph and its
+live-run paragraph, README's money paragraph, and three rows of `docs/FAULT_INJECTION.md`. It
+re-opens
+nothing: D62's null-is-not-zero rule is unchanged, and so is D24's rule for what the notes are. A
+reader of a diagnostics file would see a suppressed row with no `composition` object and
+`model_cost: {calls: 2, completed_calls: 0, input_tokens: 0, output_tokens: 0}` beside its
+`latency_ms`. (b) costs more than it looks: `Composer` is a non-nullable string and `LocaleApplied`
+a non-nullable bool, so a record with no message must be handed a composer name and a locale
+verdict for a message that does not exist, or those three members become nullable and every reader
+learns a fourth state. It re-opens D3's addendum, which nulled `Composition` on the final-safety
+branch precisely so that a record with nothing on the wire cannot name a composer as if its draft
+had shipped, and with it D24, D48's rule that a refused draft carries no notes, and
+`AgentDiagnostics`'s own stated contract. A reader would see `composition.composer: template` on a
+record that sent nothing, which is the exact misreading D3's addendum was written to remove. (c)
+costs nothing to build, and a reader would see a `safety_violation` row with no `composition`
+object, from which the only available reading is that no model call was made, on a record that
+made two. That is word for word the misreading D62 named and fixed for the template-fallback case
+("the record would fall back to the template composer and read as a run that never called a model,
+while the vendor billed for the abandoned attempts anyway"), so (c) fixes that reading where the
+run succeeded and leaves it where the money actually went.
+
+Recommendation: (a), and `NetworkRetries` moves with `ModelCost` in the same change. It is the
+same class of fact, what this record's run spent, which is what `latency_ms` is and why D61 put
+that on `TaskDiagnostics` where every row carries it whatever the outcome; it is dropped at the
+same two lines by the same mechanism; and D28's own visibility goal, that a retry a discarded
+attempt spent is still a retry this record spent, fails there exactly as the token count does.
+Splitting the pair would leave two adjacent numbers on two carriers and make a reader know which
+of them survives a suppression. What stays on `CompositionNotes` is `Composer`, `Attempts` and
+`LocaleApplied`, which are properties of a returned message and not of the record: which
+implementation wrote it, how many calls it took to get it, whether its language was served. A
+record with no message has no answer to those three, so `Composition` stays null there exactly as
+D24, D3's addendum and D48 left it, and that is the answer to the question (a) raises about what
+else on the notes belongs to the record.
+
+The shape, so nothing below is decided again while building. `ComposeOutcome` gains
+`ModelCostNotes? ModelCost` and `int? NetworkRetries` as init-only properties on the base type, so
+D48's private constructor and closed three-case hierarchy stay as they are and all three cases
+answer for both; `NoMessage.ModelCost` and `Failed`'s positional `ModelCost` go away in favour of
+them, and `Refused`'s comment about having no cost of its own is rewritten, because the reason it
+gives stops being true. `ValidatingMessageComposer` stays the one place that stamps the totals,
+the way it already stamps `Attempts` (D24): `WithAttempts` sets both on the `Composed` it returns,
+and `:103` and `:112` set them from `discardedModelCost` and `discardedNetworkRetries` instead of
+dropping them. Not closed here, and still stated: an attempt that built no `ComposedMessage` has
+no capturable retry count, because that count rides on `ModelCompletion` and an abandoned call
+returns none, which is the gap D28's addendum already names. `CompositionNotes` becomes
+`(Composer, Attempts, LocaleApplied)` and `ForComposer` loses its two optional parameters.
+`AgentDiagnostics` gains `ModelCostNotes? ModelCost = null` and `int? NetworkRetries = null` as its
+last two positional members, so the existing key order of a diagnostics row is untouched and the
+two keys are appended to it. `LeasingMessageAgent` reads both off `composeOutcome` once, at `:109`
+before the switch, and passes them into every `AgentDiagnostics` it builds, including `Suppressed`,
+which gains the two parameters: null and null at `:75`, where the composer never ran, and the
+outcome's own at `:133`. `CliRunner.cs:292` sums `result.Diagnostics.ModelCost`.
+
+The test that proves it, written failing against the current code first: the steering record driven
+through `LeasingMessageAgent` with a composer that abandons both attempts and a fallback that
+reproduces the violation, asserting the suppressed record's diagnostics carry two calls, zero
+completed and zero tokens, where today they carry no cost at all; and a `CliRunner` case asserting
+the batch total counts that record. Scopes: `ComposeOutcome`, `CompositionNotes`,
+`AgentDiagnostics`, `ValidatingMessageComposer`, `LeasingMessageAgent`, `CliRunner`'s batch sum,
+the five goldens named above, the `--diagnostics` row of OPERATIONS.md section 1 and the
+`network_retries` sentence of its section 2, DESIGN.md's cost paragraphs, README's money
+paragraph, and `docs/FAULT_INJECTION.md`'s citations of the two keys. Out of scope, unchanged
+from D62: any
+dollar arithmetic under `src/`. Evidence: the line numbers above, all read on 2026-09-09;
+DESIGN.md section 9's step 71 numbers and its cost paragraph; D31's addendum for the third of
+abandoned calls billed in full; D28's addendum for the retry gap this does not close; D62, which
+this corrects. Assumption: A18, D62's own.
+
+**D66 addendum, what building it changed (2026-09-09).** One member of the shape above came out
+differently and the paragraph is amended rather than left reading as though it had not.
+`discardedNetworkRetries` in `ValidatingMessageComposer` is `int?` initialised to null, not an
+`int` initialised to zero, and the attempts are folded together by a private `AddRetries` helper
+that mirrors `ModelCostNotes.Add`: null plus anything is that thing. An `int` starting at zero
+cannot distinguish "no call was made" from "calls were made and measured zero retries", and a
+record whose every attempt stayed offline would have reported a measured zero for calls that
+never happened, which is the null-is-not-zero rule D62 and D28 both state and this decision was
+written to preserve, not to break. `ModelCost` needed no equivalent because `ModelCostNotes?` was
+already nullable and `Add` already stated the rule. Everything else landed as the shape says:
+`ComposeOutcome` carries both as init-only properties on the base type, `CompositionNotes` is
+`(Composer, Attempts, LocaleApplied)` with `ForComposer(composer, localeApplied)`,
+`AgentDiagnostics` carries `ModelCost` and `NetworkRetries` as its last two positional members so
+the two keys are appended to the existing key order, and `Suppressed` takes null and null where
+the composer never ran. Three line numbers in the paragraph above are pre-change and have moved
+with the code: the batch sum is `CliRunner.cs:328`, and the two no-message exits that now stamp
+the accumulations are `ValidatingMessageComposer.cs:109` for `Failed` and `:122` for `Refused`.
+On the wire the two keys sit on the `diagnostics` object, beside `composition` and not beside
+`latency_ms`, which is one level out; the paragraph above says "beside its `latency_ms`" and that
+is loose. Evidence: `ValidatingMessageComposer.cs:47`, `:66`, `:74`, `:109`, `:122`, `:136` and
+`:154` to `:164`; `ModelCostNotes.cs:27`; `CompositionNotes.cs`; `AgentDiagnostics.cs`;
+`CliRunner.cs:328`; a diagnostics file written by the documented `sample.jsonl` run, all read
+2026-09-09.
+
+**D67 (open). The fallback outcome's own spend is dropped at both no-message exits
+(2026-09-09).** Question: D66 moved the two spend counts onto `ComposeOutcome` so the
+compose-validate loop's two no-message exits could carry them, and both now do. What they carry
+is the accumulation and only the accumulation. At `ValidatingMessageComposer.cs:109` the `Failed`
+is built with `ModelCost = discardedModelCost` and `NetworkRetries = discardedNetworkRetries`,
+and the `NoMessage` the fallback composer returned is read for its `Error` alone, so whatever
+that outcome measured is dropped; at `:122` the `Refused` does the same to the `Composed` the
+fallback returned. `WithAttempts` at `:136` is not symmetric with either: it adds the winning
+attempt's own counts to the accumulation through `ModelCostNotes.Add` and `AddRetries`. So one
+path in this class sums both sources and two paths sum one. Nothing in the shipped wiring
+produces the difference: `CliRunner.cs:182` builds one `TemplateMessageComposer` and passes it as
+the fallback at `:210`, and `TemplateMessageComposer.ComposeAsync` returns
+`new ComposeOutcome.Composed(composed)` with neither property set, so both are null on every
+fallback outcome this program can construct and adding null changes nothing. The `Failed` exit is
+further unreachable today, because that composer never returns a `NoMessage` at all. Options,
+none taken: (a) add the fallback outcome's own counts at both exits, which makes the three paths
+read alike; (b) state on `ComposeOutcome` that a fallback composer is one that never spends, and
+assert it; (c) leave it and record the asymmetry here. Recommendation: not made. Each option is a
+decision about what a fallback composer is allowed to be, and DBT puts that decision before the
+task rather than patching a line whose behavior no input can currently reach. Recorded so the
+next reader of that method does not have to rediscover it, and so it cannot be flagged as an
+unrecorded defect. Scopes: nothing yet; whichever option is taken scopes
+`ValidatingMessageComposer`'s two no-message exits and their tests. Evidence:
+`ValidatingMessageComposer.cs:104` to `:126` and `:136` to `:148`; `TemplateMessageComposer.cs:55`;
+`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none.
+
+**Run and debug fact, five review findings fixed (2026-09-10).** A Claude Code review of PR #26
+and an Antigravity (Gemini 3.8 Flash) review of the same PR together found five real defects,
+none of them D67 (which both reviews independently read and left alone, since it is already
+recorded above as open). Each is fixed here with a failing test written first and confirmed to
+fail against the unfixed code before the fix landed, per this repo's TDD rule; none is a new
+decision, since none chooses between options DBT would gate.
+
+The whitespace-only argument crash (Antigravity). The D65 empty-argument scan at
+`CliRunner.cs:72` checked `args[index].Length != 0`, so `--input "   "` passed the scan, reached
+`OpenInputReader`, and `Path.GetFullPath` threw `ArgumentException: The path is empty.` unhandled
+- the exact D65 was meant to close, just on a blank string instead of an empty one. Confirmed by
+running `RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError` before the
+fix: it failed with that stack trace. Fixed by widening the condition to
+`!string.IsNullOrWhiteSpace(args[index])`; the message text is unchanged, since a blank path is
+the same operator-facing fact an empty one is.
+
+NetworkRetries dropped on three of four `OpenAiMessageComposer` `Failed` exits, and on the
+compose-validate loop's own `NoMessage` accumulation branch (Claude Code). Once a completion
+succeeds, `completion.NetworkRetries` was in scope at the JSON-parse-failure, missing-fields, and
+wrong-`cta_type` exits (`OpenAiMessageComposer.cs:136`, `:145`, `:166`) but only the `Composed`
+exit (`:203`) read it; `ValidatingMessageComposer.cs`'s loop separately accumulated
+`discardedModelCost` from a `NoMessage` attempt but never `discardedNetworkRetries` (`:94`). A
+transport retry spent on an attempt that later failed downstream (a real, not abandoned, call)
+read as `network_retries: null` instead of the count it actually spent. `SequenceMessageComposer`
+(`tests/Agent.Tests/TestSupport/SequenceMessageComposer.cs`) had the identical gap on its own
+`Failed` case, which is why no existing test could reach the scenario; fixed there first so the
+production fix could be tested at all. Four new tests pin the fix:
+`ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletionsRetries`,
+`ComposeAsync_CompletedCallMissingRequiredFields_FailureCarriesTheCompletionsRetries` and
+`ComposeAsync_CompletedCallReturnsWrongCtaType_FailureCarriesTheCompletionsRetries` in
+`OpenAiMessageComposerTests.cs`, and
+`ComposeAsync_FirstAttemptFailsWithRetriesThenSecondSucceeds_SumsNetworkRetriesFromTheFailedAttempt`
+in `ValidatingMessageComposerTests.cs`; all four failed before the fix (0 instead of the expected
+count) and pass after it.
+
+A 200 with no completion choice discarded a real usage block (Claude Code). `result.Value` is
+already read by the time `ChatCompletion.get_Content()` throws `ArgumentOutOfRangeException` on
+an empty `Choices` list (`OpenAiCompletionClient.cs`), so `result.Value.Usage` was readable but
+the old code threw a bare `InvalidOperationException` without reading it, and
+`OpenAiMessageComposer`'s catch folded the case into the same zero-tokens bucket a genuinely
+abandoned timeout gets, contrary to D62's own rule that the three cost states "must not collapse
+into one zero." Fixed with a new type, `NoCompletionChoiceException` (still an
+`InvalidOperationException`, so every catch that does not know about it keeps working), which
+reads `result.Value.Usage` before throwing and carries the tokens on itself; `OpenAiMessageComposer`
+gets a new catch clause ahead of its general one that turns them into a `ModelCostNotes` with
+`CompletedCalls: 1` and the real counts. Making the exception type more specific broke
+`CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException`'s exact-type assertion (xUnit's
+`Assert.ThrowsAsync<T>` requires an exact match, not a subtype), so that test now asserts
+`NoCompletionChoiceException` instead; two new tests,
+`CompleteAsync_ResponseHasNoChoiceButCarriesUsage_ThrowsWithTheVendorsTokenCounts` and
+`CompleteAsync_ResponseHasNoChoiceAndNoUsage_ThrowsWithZeroTokens`, pin the token-carrying and
+zero-token cases, and
+`ComposeAsync_CompletedCallHadNoChoiceButCarriedUsage_FailureCountsTheCompletedCallAndItsTokens`
+pins the composer-level outcome.
+
+Four independent file-open guard bodies in `CliRunner.cs`, and six near-identical
+Result-unwrap-then-return blocks at their call sites (Claude Code, altitude and simplification).
+The `--log-file` guard, `OpenOutputStream`, `OpenInputReader`, and the `--eval-report` write each
+restated the same `catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)`
+filter and the same message template independently, past this repo's own "extract on the third
+occurrence" rule. Collapsed into three shared private methods - `TryOpen<T>` (a synchronous open
+returning `Result<T>`), `TryOpenOptional<T>` (the same for a flag whose absence is success, not
+failure), and `TryPerformAsync` (the write-shaped sibling, for `--eval-report`) - all built on one
+filter and one message format, at `CliRunner.cs:514`, `:528` and `:544`. The six call sites that
+unwrapped a `Result<T>` and returned `CliExitCodes.UsageError` on failure collapsed onto one
+instance helper, `ReportIfFailed<T>` (`:561`; an instance method rather than static, because it
+calls `this.ReportFailure`). Pure refactor, not a behavior change: no new test was needed or
+added, and the existing suite (which already exercised both the success and failure path of every
+guard) is what verifies it.
+
+Evidence for all five: `dotnet build` clean, `.\test.ps1` exit code 0, 662 tests (584 in
+`Agent.Tests`, up from 577; 78 in `Agent.Cli.Tests`, up from 77) all passing, 100 percent line,
+branch and method coverage on both modules.
+
+## Sprint 10 decisions, the decision log trim (2026-09-10)
+
+**D68. How this log gets under the two-thousand-word cap (2026-09-10).** Question: how playbook
+step 92's cap is met without breaking the 690 `D<n>` citations that point into this file from
+outside it, or the two AGENTS.md rules that every substantive decision, bug and run or debug fact
+lands here and that a task citing no paragraph here is not scheduled. Options: (a) one paragraph
+per sprint here, every full decision paragraph moved to `docs/DECISIONS_ARCHIVE.md`; (b) every
+paragraph rewritten in place to question, recommendation and scope, with the options and evidence
+prose dropped; (c) keep the file and record a reasoned exception to step 92; (d) (a), plus the
+word cap moved out of prose and into `check-instruction-files.ps1`, the script CI already runs for
+the two limits it enforces today. Recommendation: (d). Scopes: Sprint 10, and how every sprint
+after it records a decision. Evidence, measured at 0460c95 on 2026-09-10: 23,112 words over 1,866
+lines in 91 bold paragraphs, mean 250 words, longest D66 at 1,405; by section, Decisions 7,030,
+Sprint 9 6,837, Sprint 7 5,661, Sprint 8 1,817, latency 1,139, starting decisions 305, Current
+phase 247, preamble 76. Option (b) cannot reach the cap arithmetically: the preamble and the phase
+block already spend 323 words, leaving 1,677 for 91 paragraphs, or 18 words each, and one or two
+sentences a paragraph lands near 2,800. Option (c) pays all 23,112 words on every cold read by
+every agent, which is the cost the cap exists to stop. Mechanics for the implementing sprint.
+Citations are plain text, never links, so a citation resolves by search and needs only that the
+archive keeps the `**D<n>. ` heading form; 415 of the 690 are in `src/` and `tests/`. The 14
+addenda fold into their parent's archive paragraph. The four run and debug fact paragraphs, 1,825
+words, carry no number and so can be cited by nothing, and go to the archive under the sprint that
+produced them, as do S1 to S4. Nine lines name `DECISION_LOG.md` by filename and are the whole
+rename cost: `README.md:78`, `AGENTS.md:12`, `:38`, `:53`, `DESIGN.md:6`, `:294`,
+`FAULT_INJECTION.md:5`, `RETROSPECTIVE_2026-09-06.md:160` and `JsonlRecordReaderTests.cs:148`;
+AGENTS.md is at its 150-line cap, so those three lines are edited, never added to. The Current
+phase block stays in this file, at its own 20-line cap, and `check-instruction-files.ps1` resolves
+`docs/DECISION_LOG.md` before `DECISION_LOG.md`, so the archive must carry neither name. A later
+sprint writes its full paragraphs to the archive and at most 120 words here; ten sprint paragraphs
+plus the 323 fixed words come to about 1,523, so the cap is reached around Sprint 14, and the
+oldest sprint paragraphs merge into one then, the archive already holding them in full. The check
+that proves no citation dangles, to be added to `check-instruction-files.ps1` and runnable now:
+`$c = (git ls-files src tests docs README.md TalkingPoints.md AGENTS.md) | %{ Select-String $_
+-Pattern '\bD[0-9]+\b' -AllMatches } | %{ $_.Matches.Value } | Sort-Object -Unique; $d =
+Select-String -Path docs/DECISION_LOG.md,docs/DECISIONS_ARCHIVE.md -Pattern '^\*\*(D[0-9]+)' | %{
+$_.Matches[0].Groups[1].Value } | Sort-Object -Unique; $c | ?{ $d -notcontains $_ }`, which must
+print nothing. Run on 2026-09-10 against this file alone it printed nothing, over 67 cited and 67
+defined. Assumption: none.
+
+**Run and debug fact, D68 executed (2026-09-10).** The trim landed as D68 specifies. This file
+is new and holds, verbatim, the 137 paragraphs the log carried below its Current phase section
+plus the log's own preamble; `DECISION_LOG.md` keeps its title, its Current phase section byte
+for byte, and one paragraph per sprint, and went from 23,647 words over 1,905 lines to 1,060
+words over 88 lines. That 23,647 is the working tree the trim ran against, D68's own paragraph
+already written into the log; the 23,112 words over 1,866 lines D68 records is the committed
+file at 0460c95, before that paragraph was added. One file, two states, 535 words apart. The 14 addenda sit with the paragraph each amends rather than in the order
+they were written. `check-instruction-files.ps1` gained the step 92 word cap, defaulting to
+2,000, and D68's dangling-citation check; both were proved able to fail before being believed,
+the cap by lowering it to 500 and the citation check by running it with this file moved aside,
+which made every cited number dangle. At that point the check reported 65 cited numbers against
+68 defined and no dangling one; the review fix below moved both counts. Seven of the nine lines
+that named `DECISION_LOG.md` by filename now name this file. Two were left as they were,
+`AGENTS.md:12` and `DESIGN.md:294`, because each points at the live phase block, which stayed in
+the log rather than moving here, and AGENTS.md is at its 150-line cap.
+Evidence: `.\check-instruction-files.ps1` exit 0; `dotnet build` clean, 0 warnings; `.\test.ps1`
+exit code 0 with 584 tests in `Agent.Tests` and 78 in `Agent.Cli.Tests`, all passing, 100 percent
+line, branch and method coverage on both modules, unmoved from the PR #26 numbers above;
+`.\sync-agent-rules.ps1` regenerated `.agents/rules/project.md`. The only change under `src/` or
+`tests/` is one comment word in `JsonlRecordReaderTests.cs`.
+
+**Run and debug fact, seven review findings on the trim fixed (2026-09-10).** A review of the
+Sprint 10 working tree found seven, all in the tooling and the prose the trim touched. One:
+`check-instruction-files.ps1` took a definition from `^\*\*(D[0-9]+)`, which also matches the
+log's sprint headings, so `**D1 to D31,` at `DECISION_LOG.md:43` registered D1 as defined and the
+five headings below it did the same for D32, D38, D57, D60 and D68; for those six numbers the arm
+could not see a dangling citation, while the script's own header claimed every cited number
+resolves to a paragraph. Requiring a trailing period instead gives 67 of 68, since `**D67 (open).`
+is not `**D67.`. The rule now reads definitions from this file alone, the log holding no decision
+paragraph after the trim, and only from a heading of the form `**D<n>.` or `**S<n>.` with
+` (open)` the one permitted insert. An addendum or open-question heading amends a paragraph
+rather than defining one and does not count; all 68 D numbers and all 4 S numbers still resolve
+without them. Proved on a fixture repository, this repo's `.git` copied beside `AGENTS.md`, the
+log and an archive with the `**D1.` paragraph deleted while the log's range heading stayed: the
+old script exits 0, the new one exits 1 naming D1. Two: S1 to S4 live only here, and S2 is cited
+from `ComposedMessagePayload.cs:5`, `OpenAiMessageComposer.cs:31`, `:170` and `:234` and
+`OpenAiMessageComposerTests.cs:489`, but the pattern was `\bD[0-9]+\b` and the log's preamble
+stated the resolution rule for the D form only, so the S namespace was neither gated nor
+documented. Both now cover D and S, and the same fixture with the `**S2.` paragraph deleted exits
+0 on the old script and 1 on the new. Three: this file is untracked, so `git ls-files` did not
+list it and the citations it makes itself went unscanned. It is now in the scanned set whether or
+not it is tracked, which moved the reported counts from 65 cited against 68 defined to 72 against
+72, being 68 D numbers and 4 S numbers, none dangling. Four: a deleted archive came out as 57
+dangling citations and never as an absent file. The arm now names the absence and checks no
+citation, proved on a second fixture built without this file. Five: `DESIGN.md:146` named the
+decision log for S1 to S4 and `:308` cited S1 to S4 and D8 to D12 without saying where they are;
+both now name the archive. D68's nine-line inventory missed them because it counted literal
+filename occurrences only. Six: `AGENTS.md:56` described the check as two rules when it enforces
+four, and `DESIGN.md:8` and `:291` still pointed decisions at the log. All three now read as the
+tools behave, and the AGENTS.md bullet was rewrapped inside its existing three lines, at 111, 118
+and 94 characters against that file's own longest line of 119, so nothing was cut to make room
+and the file stays at 150 lines. Seven: the two baselines and the eight-of-nine count in the
+paragraph above are corrected in place. Evidence: `.\check-instruction-files.ps1` exit 0,
+reporting 150 lines, 1,111 words of 2,000 and 72 cited numbers resolving among 72;
+`.\sync-agent-rules.ps1` regenerated `.agents/rules/project.md` at 10,410 bytes; `dotnet build`
+clean with 0 warnings; `.\test.ps1` exit code 0 with 584 tests in `Agent.Tests` and 78 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method coverage on both modules,
+unmoved. Nothing under `src/` or `tests/` changed.
