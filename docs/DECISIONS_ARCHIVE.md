@@ -2578,3 +2578,15 @@ tool manifest, DESIGN.md section 9. Order: set up in parallel, the threshold pin
 merges, since every stream moves the score. Evidence: the glossary entries for coverage and
 mutation testing. Assumptions: none. Check: a planted mutant, the planner threshold flipped from
 at most to under, is reported killed, and the score is in `test-output.txt`.
+
+**D81 to D88 taken (2026-09-10).** The owner took every recommendation on 2026-09-10 after PR #32
+merged: D81 (a), D82 (c), D83 (a), D84 (a), D85 (a), D86 (a), D87 (a), D88 (a). The log's open
+line said taking D81 sends the project to Phase 2; step 9, the frozen set, is in Phase 0, so the
+project returns to Phase 0 and each later phase's check is run again before the next phase's work
+merges (step 102). Work is written in parallel, one worktree per decision, and merged into the
+sprint branch in phase order (step 103): D81 (Phase 0); D85 and D88 (Phase 2, the harness); D82,
+D84 and D83 (Phase 3, the core, D82 only after D81 has merged); D86 (Phase 6); D87 (Phase 8). D83
+moves after D86 rather than beside D84, since both D83 and D86 edit the fold in `CliRunner.cs`.
+D88 lands its tool and a first measured score in Phase 2 and pins the threshold after D87. One PR
+per sprint (AGENTS.md) rather than per decision (step 103): each decision is its own merge commit
+on the sprint branch, so it is reviewed as a unit inside the one PR.

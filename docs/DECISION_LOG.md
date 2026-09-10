@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, met by the retrospective of 2026-09-06 (D77).
-Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-10: its section 10.
-Next step: none. Step 104 closed with no change to `~/.agent-rules` (D79); the project is complete at `v1.0.0`.
-Open decisions: D81 to D88, proposed 2026-09-10, the plan to raise every architecture dimension to 9. Taking D81 sends the project back to Phase 2 (step 9, a frozen set) per step 102.
+Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, re-opened 2026-09-10 by D81 under step 102 (step 9, a frozen synthetic set).
+Check: the design doc's assumptions log has an evidence column with no blanks. Not yet run for this sprint.
+Next step: step 9, `synthetic_v2.jsonl` written and committed before any D82 rule; then each later phase's check runs again as its decisions merge, in phase order (D81 to D88 taken).
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -126,3 +126,8 @@ compiled by default and loadable from a file (D82); a generic-row answer queued 
 one validation per composed record (D84); a scorecard that cannot carry stale tallies (D85);
 bounded memory in the batch with a benchmark (D86); comments that state the rule and cite no
 number (D87); a mutation score beside coverage (D88). None taken.
+
+**D81 to D88 taken, Sprint 15 (2026-09-10).** The owner took every recommendation. The project
+returns to Phase 0, since step 9 is the frozen set, and decisions merge into the sprint branch in
+phase order while their work is written in parallel, one worktree each. D83 moves after D86, and
+D88 pins its threshold after D87.
