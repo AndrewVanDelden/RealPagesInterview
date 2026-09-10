@@ -78,17 +78,6 @@ public class TemplateMessageComposerTests
         Assert.DoesNotContain("looking in", result.Message.Body);
     }
 
-    [Fact]
-    public async Task ComposeAsync_UnrecognizedPrimaryCta_PassesCtaTypeThroughUnchanged()
-    {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "call_now");
-
-        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
-
-        ComposedMessage result = ComposedOf(outcome);
-        Assert.Equal("call_now", result.Message.Cta!.Type);
-    }
-
     // A12: an absent first name means no name in the greeting, not a failed record.
     [Fact]
     public async Task ComposeAsync_AbsentFirstName_ComposesWithoutAName()

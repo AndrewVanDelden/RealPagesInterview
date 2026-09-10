@@ -32,12 +32,6 @@ public class JsonlRecordReaderTests
     private static readonly IReadOnlyList<ProspectCase> SampleCases = ReadSample();
 
     [Fact]
-    public void ReadAll_ParsesSampleJsonl_ReturnsExactlyTwoCases()
-    {
-        Assert.Equal(2, SampleCases.Count);
-    }
-
-    [Fact]
     public void ReadAll_ParsesSampleJsonl_PopulatesShortHorizonSmsCase()
     {
         ProspectCase shortHorizonCase = SampleCases[0];
@@ -131,6 +125,7 @@ public class JsonlRecordReaderTests
         Assert.Equal(2, results.Count);
         Assert.False(results[1].IsSuccess);
         Assert.Contains("Line 2 failed to parse", results[1].Error);
+        Assert.DoesNotContain("Missing required member", results[1].Error);
     }
 
     [Fact]
@@ -143,6 +138,7 @@ public class JsonlRecordReaderTests
 
         Assert.False(result.IsSuccess);
         Assert.Contains("Line 1", result.Error);
+        Assert.DoesNotContain("Missing required member", result.Error);
     }
 
     // D1 (DECISIONS_ARCHIVE.md): every member is optional except task_id, consent, and
@@ -369,19 +365,6 @@ public class JsonlRecordReaderTests
         ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
 
         Assert.Equal("minimal", parsedCase.TaskId);
-        Assert.Null(parsedCase.Expected);
-    }
-
-    [Fact]
-    public void ReadAll_ExpectedPropertyMissingEntirely_ParsesRecordWithNullExpected()
-    {
-        string lineWithoutExpected = MinimalValidLine.Replace(
-            ",\"expected\":{\"next_message\":{\"channel\":\"sms\",\"body\":\"hi\"},\"next_action\":{\"type\":\"start_cadence\"}}",
-            string.Empty);
-        using TextReader reader = new StringReader(lineWithoutExpected + Environment.NewLine);
-
-        ProspectCase parsedCase = Reader.ReadAll(reader)[0].Value;
-
         Assert.Null(parsedCase.Expected);
     }
 

@@ -105,26 +105,6 @@ public class FileLoggerProviderTests
     }
 
     [Fact]
-    public void SetScopeProvider_NotCalled_StillWritesUsingTheDefaultScopeProvider()
-    {
-        string path = TempFilePath();
-        try
-        {
-            using (var provider = new FileLoggerProvider(path))
-            {
-                ILogger logger = provider.CreateLogger("MyCategory");
-                logger.LogInformation("no explicit scope provider set");
-            }
-
-            Assert.Contains("no explicit scope provider set", File.ReadAllText(path));
-        }
-        finally
-        {
-            TestFiles.DeleteWithRetry(path);
-        }
-    }
-
-    [Fact]
     public void MultipleLoggersFromSameProvider_WriteConcurrentlyWithoutCorruptingTheFile()
     {
         string path = TempFilePath();

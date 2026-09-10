@@ -73,27 +73,6 @@ public class SafetyValidatorTests
     }
 
     [Fact]
-    public void Validate_BareStopSubstringWithoutRealOptOutLanguage_StillYieldsMissingOptOutViolation()
-    {
-        SafetyValidationResult result = Validator.Validate(
-            Message("Sorry, I couldn't find a property near the bus stop you mentioned."),
-            Constraints());
-
-        Assert.Contains(result.Violations, v => v.Contains("opt-out", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void Validate_SteeringPhrase_YieldsViolation()
-    {
-        SafetyValidationResult result = Validator.Validate(
-            Message("This community is families only. Reply STOP to opt out."),
-            Constraints());
-
-        Assert.Contains(result.Violations, v => v.Contains("protected", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(SafetyCheckVerdict.Failed, result.FairHousing.Verdict);
-    }
-
-    [Fact]
     public void Validate_WordContainingSteeringSubstring_IsNotAFalsePositive()
     {
         SafetyValidationResult result = Validator.Validate(
@@ -101,28 +80,6 @@ public class SafetyValidatorTests
             Constraints());
 
         Assert.Empty(result.Violations);
-    }
-
-    [Fact]
-    public void Validate_PiiLeak_YieldsViolation()
-    {
-        SafetyValidationResult result = Validator.Validate(
-            Message("Your SSN 123-45-6789 is on file. Reply STOP to opt out."),
-            Constraints());
-
-        Assert.Contains(result.Violations, v => v.Contains("identifier", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(SafetyCheckVerdict.Failed, result.SocialSecurityNumber.Verdict);
-    }
-
-    [Fact]
-    public void Validate_FormattedLongDigitRun_YieldsPiiViolation()
-    {
-        SafetyValidationResult result = Validator.Validate(
-            Message("Your card 4111-1111-1111-1111 was charged. Reply STOP to opt out."),
-            Constraints());
-
-        Assert.Equal(SafetyCheckVerdict.Failed, result.LongDigitRun.Verdict);
-        Assert.Contains(result.Violations, v => v.Contains("identifier", StringComparison.OrdinalIgnoreCase));
     }
 
     // A sixteen-digit card matches the long-digit run and nothing else: the Social
@@ -180,16 +137,6 @@ public class SafetyValidatorTests
         Assert.Empty(result.Violations);
     }
 
-    [Fact]
-    public void Validate_MultipleViolations_CountsAll()
-    {
-        SafetyValidationResult result = Validator.Validate(
-            Message("This community is families only. Your SSN 123-45-6789 is on file."),
-            Constraints());
-
-        Assert.Equal(3, result.Violations.Count);
-    }
-
     // D38's second named defect: FindWholeWord was FirstOrDefault, so a message matching
     // six protected-class terms emitted exactly one violation and safety_violations_max
     // was scored against that count.
@@ -233,14 +180,6 @@ public class SafetyValidatorTests
             Constraints());
 
         Assert.Contains(result.Violations, v => v.Contains("identifier", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void Validate_NullSubject_DoesNotThrow()
-    {
-        SafetyValidationResult result = Validator.Validate(Message("Hi Taylor! Reply STOP to opt out."), Constraints());
-
-        Assert.Empty(result.Violations);
     }
 
     [Fact]

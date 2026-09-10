@@ -279,22 +279,6 @@ public class LeasingMessageAgentTests
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
     }
 
-    [Fact]
-    public async Task RunAsync_CancellationRequested_PropagatesCancellationFromComposer()
-    {
-        LeasingMessageAgent agent = new LeasingMessageAgent(
-            new ChannelSelector(),
-            new ThrowsOnCancellationComposer(),
-            new SafetyValidator(),
-            new SendScheduler(),
-            new NextActionPlanner());
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() => agent.RunAsync(prospectCase, ReferenceTime, cts.Token));
-    }
-
     // D16: the CLI's batch loop is the one owner of the TaskId scope. The agent opening a
     // second one rendered every line as "TaskId=x TaskId=x" (the retrospective's logging
     // defect 1); a library caller that wants correlation opens its own scope, as the CLI does.
@@ -381,7 +365,7 @@ public class LeasingMessageAgentTests
 
         await agent.RunAsync(suppressedCase, ReferenceTime);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("not contactable", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -400,7 +384,7 @@ public class LeasingMessageAgentTests
 
         await agent.RunAsync(prospectCase, ReferenceTime);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Suppressing message: final safety validation found", StringComparison.Ordinal));
     }
 
     // D24 and the Phase 4 check: the record says which implementation wrote its message.

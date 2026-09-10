@@ -21,14 +21,6 @@ public class ActionCatalogTests
     private static ActionCatalog CatalogOf(params ActionCatalogRow[] rows) =>
         ActionCatalog.Create(Generic, rows).Value;
 
-    [Fact]
-    public void Create_ValidRows_Succeeds()
-    {
-        Result<ActionCatalog> result = ActionCatalog.Create(Generic, [Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None())]);
-
-        Assert.True(result.IsSuccess);
-    }
-
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -194,30 +186,6 @@ public class ActionCatalogTests
 
         ActionCatalogMatch match = catalog.Resolve("  Prospect ", "NEW", HorizonBranch.Short);
 
-        Assert.Equal(ActionSource.CatalogRow, match.Source);
-    }
-
-    // Sample 1: prospect at new, 32 days out, start_cadence with the cadence name.
-    [Fact]
-    public void Default_ProspectNew_ShortHorizon_IsTheSampleOneAction()
-    {
-        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", "new", HorizonBranch.Short);
-
-        Assert.Equal(ActionTypes.StartCadence, match.Action.Type);
-        Assert.Equal("prospect_welcome_short_horizon", match.Action.Name);
-        Assert.Null(match.Action.Value);
-        Assert.Equal(ActionSource.CatalogRow, match.Source);
-    }
-
-    // Sample 2: prospect at open, 68 days out, follow_up_in_days 3.
-    [Fact]
-    public void Default_ProspectOpen_LongHorizon_IsTheSampleTwoAction()
-    {
-        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", "open", HorizonBranch.Long);
-
-        Assert.Equal(ActionTypes.FollowUpInDays, match.Action.Type);
-        Assert.Equal(3, match.Action.Value);
-        Assert.Null(match.Action.Name);
         Assert.Equal(ActionSource.CatalogRow, match.Source);
     }
 

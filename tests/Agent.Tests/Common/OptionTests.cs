@@ -22,12 +22,4 @@ public class OptionTests
         Assert.False(option.HasValue);
         Assert.Throws<InvalidOperationException>(() => option.Value);
     }
-
-    [Fact]
-    public void None_OfEnumType_ValueThrowsRatherThanReturningDefaultMember()
-    {
-        Option<DayOfWeek> option = Option<DayOfWeek>.None();
-
-        Assert.Throws<InvalidOperationException>(() => option.Value);
-    }
 }

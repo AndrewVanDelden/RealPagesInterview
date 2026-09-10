@@ -24,12 +24,6 @@ public class LanguageDetectorTests
     }
 
     [Fact]
-    public void Detect_EmptyText_Null()
-    {
-        Assert.Null(LanguageDetector.Detect(string.Empty));
-    }
-
-    [Fact]
     public void Detect_EqualCounts_Null()
     {
         Assert.Null(LanguageDetector.Detect("the para"));

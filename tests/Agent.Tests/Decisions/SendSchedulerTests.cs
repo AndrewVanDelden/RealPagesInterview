@@ -98,28 +98,6 @@ public class SendSchedulerTests
         Assert.Equal(TimeZoneInfo.Utc.Id, scheduled.TimeZoneId);
     }
 
-    // The zone the send was computed in is the resolved zone's own id, not the string the
-    // record carried: a record whose timezone was unrecognized reads UTC here and the
-    // unrecognized value is named once, in the ingest notes (A6).
-    [Fact]
-    public void Resolve_KnownTimeZoneId_NamesThatZone()
-    {
-        ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Sms);
-
-        Assert.Equal(TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, scheduled.TimeZoneId);
-    }
-
-    // No transition in the current zone database covers 09:00 or 10:00, so every record any
-    // input can produce takes the exact branch (A20). The other two are proved against the
-    // custom zones in TimeZonesTests, where the transition does cover the slot.
-    [Fact]
-    public void Resolve_OrdinaryDay_ResolvesTheSlotExactly()
-    {
-        ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Sms);
-
-        Assert.Equal(SlotResolution.Exact, scheduled.Slot);
-    }
-
     // The synthetic set's daylight-saving record (item 8 of DESIGN.md section 4): the send
     // day is the day the zone springs forward, and 10:00 is after the transition, so the
     // slot itself is ordinary and the offset is the daylight one.

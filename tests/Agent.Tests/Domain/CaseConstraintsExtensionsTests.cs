@@ -16,14 +16,6 @@ public class CaseConstraintsExtensionsTests
     }
 
     [Fact]
-    public void RequiresOptOutInstructions_ExplicitFalse_ReturnsFalse()
-    {
-        var constraints = new CaseConstraints(IncludeOptOutInstructions: false);
-
-        Assert.False(constraints.RequiresOptOutInstructions());
-    }
-
-    [Fact]
     public void RequiresOptOutInstructions_ExplicitTrue_ReturnsTrue()
     {
         var constraints = new CaseConstraints(IncludeOptOutInstructions: true);

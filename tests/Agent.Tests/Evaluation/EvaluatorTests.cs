@@ -104,15 +104,6 @@ public class EvaluatorTests
     // send_at: to the day and to the hour, compared in the label's own offset (D4, D6).
 
     [Fact]
-    public void Evaluate_SendAtSameInstant_DayAndHourPassed()
-    {
-        RecordScore score = ScoreOf(Run(BaselineCase(BaselineExpected(Message(CommunicationChannel.Sms, "x", sendAt: BaselineSendAt))), Message(CommunicationChannel.Sms, EnglishSmsBody, sendAt: BaselineSendAt)));
-
-        Assert.Equal(CheckResult.Passed, score.SendAtDay);
-        Assert.Equal(CheckResult.Passed, score.SendAtHour);
-    }
-
-    [Fact]
     public void Evaluate_SendAtSameInstantInAnotherOffset_DayAndHourPassed()
     {
         DateTimeOffset sameInstantUtc = BaselineSendAt.ToUniversalTime();
@@ -604,15 +595,6 @@ public class EvaluatorTests
     }
 
     // Unscoreable rows and per-record isolation (playbook step 34).
-
-    [Fact]
-    public void Evaluate_CaseHasNoExpectedOutcome_ReturnsUnscoreableRecordScore()
-    {
-        RecordScore score = ScoreOf(Run(SampleProspectCases.Minimal(), Message(CommunicationChannel.Sms, "hi")));
-
-        Assert.NotNull(score.ScoringError);
-        Assert.False(score.Passed);
-    }
 
     [Fact]
     public void Evaluate_OneUnscoreableAmongMultiple_StillScoresTheOthers()

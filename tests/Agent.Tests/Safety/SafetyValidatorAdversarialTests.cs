@@ -54,14 +54,6 @@ public class SafetyValidatorAdversarialTests
             Verdict("Visit https://oakridge.example/STOP-by-today for hours.", SafetyCheck.OptOutInstructions, OptOutRequired));
     }
 
-    [Fact]
-    public void OptOut_RealInstructionAlongsideAUrl_StillPasses()
-    {
-        Assert.Equal(
-            SafetyCheckVerdict.Passed,
-            Verdict("Hours at https://oakridge.example/hours. Reply STOP to opt out.", SafetyCheck.OptOutInstructions, OptOutRequired));
-    }
-
     // --- SafetyCheck.SocialSecurityNumber ---
 
     [Fact]

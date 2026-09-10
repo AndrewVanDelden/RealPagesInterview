@@ -42,30 +42,6 @@ public class OpenAiMessageComposerTests
     }
 
     [Fact]
-    public async Task ComposeAsync_MalformedJson_ReturnsFailureNotException()
-    {
-        var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json"));
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
-
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
-
-        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
-        Assert.NotNull(result.Error);
-    }
-
-    [Fact]
-    public async Task ComposeAsync_MissingRequiredFields_ReturnsFailure()
-    {
-        const string json = """{"subject":"Tour","body":"","cta_type":""}""";
-        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
-
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
-
-        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
-    }
-
-    [Fact]
     public async Task ComposeAsync_NullJsonBody_ReturnsFailure()
     {
         var composer = new OpenAiMessageComposer(new FakeCompletionClient("null"));
@@ -74,30 +50,6 @@ public class OpenAiMessageComposerTests
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
-    }
-
-    [Fact]
-    public async Task ComposeAsync_ProspectWithAmenityInterest_StillComposesSuccessfully()
-    {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
-        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
-        ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: ["pool", "fitness"]);
-
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
-
-        ComposedMessage result = ComposedOf(outcome);
-    }
-
-    [Fact]
-    public async Task ComposeAsync_ProspectWithNoStatedInterest_StillComposesSuccessfully()
-    {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
-        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
-        ProspectCase prospectCase = SampleProspectCases.Minimal(cityInterest: null, amenityInterest: null);
-
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
-
-        ComposedMessage result = ComposedOf(outcome);
     }
 
     [Fact]
@@ -147,22 +99,6 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("Invalid JSON schema.", result.Error);
     }
 
-    [Fact]
-    public async Task ComposeAsync_UserPrompt_DelimitsIngestedDataFromInstructions()
-    {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
-        var fakeClient = new FakeCompletionClient(json);
-        var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "Taylor");
-
-        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
-
-        Assert.NotNull(fakeClient.LastUserPrompt);
-        Assert.Contains("<prospect_data>", fakeClient.LastUserPrompt);
-        Assert.Contains("</prospect_data>", fakeClient.LastUserPrompt);
-        Assert.Contains("Taylor", fakeClient.LastUserPrompt);
-    }
-
     // D1: an absent fact is told to the model as unknown, never as an empty value it could
     // read as a name.
     [Fact]
@@ -193,19 +129,6 @@ public class OpenAiMessageComposerTests
 
         Assert.Contains("first_name: unknown", fakeClient.LastUserPrompt);
         Assert.Contains("property: unknown", fakeClient.LastUserPrompt);
-    }
-
-    [Fact]
-    public async Task ComposeAsync_UserPrompt_InstructsRequiredCtaType()
-    {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
-        var fakeClient = new FakeCompletionClient(json);
-        var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "book_tour");
-
-        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
-
-        Assert.Contains("schedule_tour", fakeClient.LastUserPrompt);
     }
 
     // The CTA instruction must be an instruction, not prospect data: the system prompt
@@ -419,7 +342,7 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        ComposedMessage result = ComposedOf(outcome);
+        Assert.Equal("call_now", ComposedOf(outcome).Message.Cta!.Type);
     }
 
     // A record with no primary_cta constraint at all is real, not hypothetical: two

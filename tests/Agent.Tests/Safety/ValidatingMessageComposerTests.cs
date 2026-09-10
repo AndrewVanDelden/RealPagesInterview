@@ -142,7 +142,7 @@ public class ValidatingMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.NotNull(innerComposer.LastPriorViolations);
-        Assert.NotEmpty(innerComposer.LastPriorViolations);
+        Assert.Contains(innerComposer.LastPriorViolations, violation => violation.Contains("families only", StringComparison.Ordinal));
     }
 
     // D34: the fallback answers a no-message first attempt even where a second model attempt
