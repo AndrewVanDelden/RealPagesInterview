@@ -91,19 +91,39 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
-    // D28: the budget is a stated value and it bounds the whole call, so the client divides
-    // it into per-attempt timeouts and a call that outlives it fails instead of holding the
-    // batch open. The pipeline retries a timeout, so the failure arrives as an
-    // AggregateException of TaskCanceledException; the client names it TimeoutException so
-    // the composer catches a timeout by its own type.
+    // D28: the budget is a stated value, so a call that outlives it fails instead of holding
+    // the batch open, and the client names the failure TimeoutException so the composer
+    // catches a timeout by its own type. D33: the timeout is not retried. It says the
+    // completion did not fit the budget, and an identical second call inside the same budget
+    // has no mechanism by which it would, while about a third of abandoned attempts are billed
+    // in full (D31 addendum): one HTTP attempt, never two.
     [Fact]
-    public async Task CompleteAsync_CallOutlivesTheTimeout_ThrowsTimeoutException()
+    public async Task CompleteAsync_CallOutlivesTheTimeout_ThrowsTimeoutExceptionWithoutRetrying()
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromSeconds(5) };
         using var httpClient = new HttpClient(handler);
         ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(100));
 
         await Assert.ThrowsAsync<TimeoutException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // D33 retries only a transient status, so a request that fails with no response at all is
+    // not retried either: the SDK would otherwise make it twice and hand the composer an
+    // AggregateException of the two, a type its catch list does not name, which escapes the
+    // agent and costs the record its output row. One attempt, and the SDK's own
+    // ClientResultException, which the composer does catch.
+    [Fact]
+    public async Task CompleteAsync_RequestFailsWithNoResponse_IsNotRetried()
+    {
+        var handler = new CallbackHttpMessageHandler((_, _) => throw new HttpRequestException("connection reset"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Equal(1, handler.CallCount);
     }
 
     // A caller's cancellation arrives in the same shapes as a timeout and is not one: it

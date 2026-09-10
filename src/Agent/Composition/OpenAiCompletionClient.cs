@@ -16,8 +16,10 @@ namespace Agent.Composition;
 // HttpClientPipelineTransport(HttpClient) and ClientRetryPolicy(maxRetries).
 //
 // D28 bounds the call: one retry with the SDK's exponential backoff on the transient
-// statuses it knows (408, 429, 5xx), a per-call timeout the caller states, and a low
-// temperature that is never called determinism (step 52).
+// statuses it knows (408, 429, 500, 502, 503, 504), a per-call timeout the caller states, and
+// a low temperature that is never called determinism (step 52). D33 narrows the retry to
+// those statuses alone: a timeout, or any attempt that ends in an exception, is not retried
+// (CountingRetryPolicy.ShouldRetryAsync).
 public sealed class OpenAiCompletionClient : ICompletionClient
 {
     // One retry, not the SDK's default of three: a record states a latency budget, and a
@@ -77,13 +79,14 @@ public sealed class OpenAiCompletionClient : ICompletionClient
                 options,
                 cancellationToken);
         }
-        catch (Exception ex) when (IsTimeout(ex) && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // The pipeline treats a timeout as transient and retries it, so an exhausted
-            // call arrives as an AggregateException of TaskCanceledException rather than as
-            // one cancellation. Named here so the composer above catches a timeout by its
-            // own type instead of unwrapping the SDK's, and so a caller's cancellation,
-            // which arrives in the same shapes, still propagates untouched.
+            // D33: a timed-out attempt is never retried, so the pipeline rethrows that one
+            // attempt's TaskCanceledException rather than an AggregateException of every
+            // attempt's; a 429 retried before it adds no exception of its own. Named here so
+            // the composer above catches a timeout by its own type instead of the SDK's, and
+            // so a caller's cancellation, which arrives in the same shape, still propagates
+            // untouched.
             throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
@@ -126,10 +129,6 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
             : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
-
-    private static bool IsTimeout(Exception exception) =>
-        exception is OperationCanceledException ||
-        (exception is AggregateException aggregate && aggregate.Flatten().InnerExceptions.Any(inner => inner is OperationCanceledException));
 
     // NetworkTimeout bounds one attempt, and the policy above may make MaxRetries more of
     // them, so a budget handed straight to it would be exceeded by the retry beside it: a
