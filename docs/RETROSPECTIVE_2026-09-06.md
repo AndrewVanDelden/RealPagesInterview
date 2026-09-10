@@ -359,6 +359,35 @@ tasks, and pasted output as evidence.
 - Whether the interview project restarts at Phase 0 step 1, in which case the AGENTS.md next
   step moves from 4 to 1.
 
+## 10. The playbook step that catches each finding (step 101, added 2026-09-10)
+
+Each section 2 finding against the playbook step whose text would have caught it, with the first
+commit of that step's catching clause in `~/.agent-rules` (`git log -S`): 2026-09-05 is `be974c4`,
+the root commit, and 2026-09-06 is `87f473f`, the audit this file drove; no commit in either
+repository shows playbook text on 2026-09-04, the build day.
+
+| Finding | Step | First committed |
+|---|---|---|
+| 1 Planner keys on the wrong fields | 6, 41 | 6's rule-per-example clause, 41: 2026-09-06 |
+| 2 Orchestrator hands the planner three fields | 41, 78 | 41, 78's decision-input line: 2026-09-06 |
+| 3 Plan before consent, never revised, throws on a past date | 9, 40, 44 | 2026-09-05 |
+| 4 Domain model fitted to the sample | 25, 26 | 25: 2026-09-05; 26's unknown-field clause: 2026-09-06 |
+| 5 Evaluator scores the agent against itself | 29, 33, Phase 2 check | 29: 2026-09-06; 33, check: 2026-09-05 |
+| 6 Required states are literals | 66 | 2026-09-05 |
+| 7 Gate and selector compute one thing twice | None; new step for 104: one owner per question, a value two components compute is a finding | Not in the playbook; 98 exposes it only indirectly |
+| 8 Second safety validation redundant | Not a failure: declined by D55 | Not applicable |
+| 9 Three exits indistinguishable in diagnostics | 39, 75 | 2026-09-05 |
+| 10 Composition ignores what the oracle varies on | 29, 55, 59 | 29: 2026-09-06; 55, 59: 2026-09-05 |
+| 11 `send_at` anchored on a field 10 records lack | 38, 41 | 38: 2026-09-05; 41: 2026-09-06 |
+| 12 Logs record exceptions, not decisions; TaskId twice | 73, 78 | 73's one-owner clause, 78's: 2026-09-06 |
+| 13 Planner throws on ordinary data | 25, 44 | 2026-09-05 |
+| 14 No step structure in the narratable file | 72 | Pipeline: 2026-09-05; one comment per step: 2026-09-06 |
+| 15 Coverage could not catch any of it | 9, 85 | Set, gate: 2026-09-05; 85's presence clause: 2026-09-06 |
+| 16 The rehearsal found it and it was parked | 9 | 9's blocker clause: 2026-09-06 |
+
+Every finding names a step: fourteen name existing steps, finding 7 names a new step that step 104
+has yet to add, and finding 8 is not a failure.
+
 ## Appendix: hold-out evidence
 
 From a fresh run on 2026-09-06 against the real 12-record hold-out (kept outside the repo):
