@@ -115,10 +115,11 @@ public sealed class ValidatingMessageComposer(
             // No draft anywhere: the fallback built no message either. Nothing to review, so
             // this stays a failure rather than becoming an empty queue row.
             log.LogError("Fallback composer produced no message; suppressing.");
+            (int? networkRetries, ModelCostNotes? modelCost) = CombinedSpend(discardedNetworkRetries, discardedModelCost, fallbackOutcome);
             return new ComposeOutcome.Failed(((ComposeOutcome.NoMessage)fallbackOutcome).Error)
             {
-                ModelCost = ModelCostNotes.Add(discardedModelCost, fallbackOutcome.ModelCost),
-                NetworkRetries = AddRetries(discardedNetworkRetries, fallbackOutcome.NetworkRetries),
+                ModelCost = modelCost,
+                NetworkRetries = networkRetries,
             };
         }
 
@@ -128,33 +129,45 @@ public sealed class ValidatingMessageComposer(
         }
 
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
+        (int? refusedNetworkRetries, ModelCostNotes? refusedModelCost) = CombinedSpend(discardedNetworkRetries, discardedModelCost, fallbackComposed);
         return new ComposeOutcome.Refused(fallbackComposed.Message.Message, RefusalError)
         {
-            ModelCost = ModelCostNotes.Add(discardedModelCost, fallbackComposed.ModelCost),
-            NetworkRetries = AddRetries(discardedNetworkRetries, fallbackComposed.NetworkRetries),
+            ModelCost = refusedModelCost,
+            NetworkRetries = refusedNetworkRetries,
         };
     }
 
     // D24: the composer that answered keeps its own name, and this loop supplies the count,
     // because the number of calls it took is the loop's fact and not the composer's.
-    // discardedNetworkRetries carries retries spent on attempts this loop rejected: added
-    // into the winning attempt's own count rather than lost with the attempt that made them.
-    // discardedModelCost is the same fact for D62's token counts, and it matters most where the
-    // winning attempt has no cost of its own: the template fallback answering after an
-    // abandoned model call would otherwise report a record that never called a model.
     private static ComposeOutcome WithAttempts(
         ComposeOutcome.Composed composed,
         int attempts,
         int? discardedNetworkRetries,
         ModelCostNotes? discardedModelCost)
     {
+        (int? networkRetries, ModelCostNotes? modelCost) = CombinedSpend(discardedNetworkRetries, discardedModelCost, composed);
         return composed with
         {
             Message = composed.Message with { Notes = composed.Message.Notes with { Attempts = attempts } },
-            NetworkRetries = AddRetries(discardedNetworkRetries, composed.NetworkRetries),
-            ModelCost = ModelCostNotes.Add(discardedModelCost, composed.ModelCost),
+            NetworkRetries = networkRetries,
+            ModelCost = modelCost,
         };
     }
+
+    // Claude Code review of PR #28: the three exits below each combined what the loop discarded
+    // with one outcome's own spend the same way, written out three times. discardedNetworkRetries
+    // carries retries spent on attempts this loop rejected: added into the winning attempt's or
+    // the fallback's own count rather than lost with the attempt that made them.
+    // discardedModelCost is the same fact for D62's token counts, and it matters most where the
+    // winning outcome has no cost of its own: the template fallback answering after an abandoned
+    // model call would otherwise report a record that never called a model. One helper for all
+    // three exits, since ModelCost and NetworkRetries live on the shared ComposeOutcome base
+    // (D66), so the combining rule cannot read differently at any of them.
+    private static (int? NetworkRetries, ModelCostNotes? ModelCost) CombinedSpend(
+        int? discardedNetworkRetries,
+        ModelCostNotes? discardedModelCost,
+        ComposeOutcome outcome) =>
+        (AddRetries(discardedNetworkRetries, outcome.NetworkRetries), ModelCostNotes.Add(discardedModelCost, outcome.ModelCost));
 
     // The rule ModelCostNotes.Add states, for the retry count: null plus anything is that
     // thing, so an attempt that made no network call adds no measurement and a record whose

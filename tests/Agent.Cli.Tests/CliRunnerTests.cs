@@ -1248,6 +1248,38 @@ public class CliRunnerTests
         }
     }
 
+    // Claude Code review of PR #28: a record's own cancellation is not a bug, so it must not be
+    // logged as one. LeasingMessageAgent's own catch already excludes OperationCanceledException
+    // for that reason; RunRecordAsync's catch did not, so a run cancelled while a record was
+    // genuinely in flight (not merely between dispatches, which CancelOnFirstComposeComposer
+    // above covers) logged "Record failed." for a clean shutdown.
+    [Fact]
+    public async Task RunAsync_RecordCancelledMidFlight_LogFileDoesNotRecordItAsAFailure()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        using var cancellation = new CancellationTokenSource();
+        var composer = new CancelsWhileComposingComposer(cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath], cancellation.Token));
+
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.DoesNotContain("Record failed.", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
     // D14: --replay re-scores an existing output file against --input without running the
     // agent. The composer injected here throws on the only record, so a run that reached
     // the agent would exit 2; exit 0 proves nothing ran but the scorer.

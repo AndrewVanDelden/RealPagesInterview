@@ -44,7 +44,13 @@ public sealed record Scorecard(
     // threw, as one unscoreable row each. Built rather than copied with `with`, because the
     // tallies and the p95 are computed at construction. Called after the judge, which pairs rows
     // with runs by position, so these rows sit past the last run.
-    // O(n + m) in the rows already here and the rows appended.
+    // O((n + m) log(n + m)) for the p95 sort and O(n + m) for the tallies, both redone in full
+    // over `RecordScores` and `unprocessedRows` together: the appended rows are always
+    // unmeasured (Unscoreable/DidNotParse rows carry a null LatencyMs and every check as
+    // NotMeasured), so they cannot move either number, but the constructor recomputes both
+    // from scratch anyway rather than carrying the input scorecard's own values forward, the
+    // same cost SemanticJudge.JudgeAsync's own rebuild already pays for the same reason: a
+    // `with` copy would carry stale cached fields (Claude Code review of PR #28).
     public Scorecard AppendUnprocessed(IReadOnlyList<RecordScore> unprocessedRows) =>
         new([.. RecordScores, .. unprocessedRows], LatencyBudgetMs, BatchLatencyMs, BatchModelCost);
 

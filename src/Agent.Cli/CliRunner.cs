@@ -435,13 +435,20 @@ public sealed class CliRunner(
         {
             result = await agent.RunAsync(prospectCase, referenceTime, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Per-record isolation: a bug that throws on one record must not discard the
             // output already produced for every other record in the batch. Every input
             // shape has a default (D1), so only a bug reaches here. The log entry is written
             // here, inside the record's scope; the stderr line and the scorecard row are the
             // fold's, in input order.
+            //
+            // Claude Code review of PR #28: cancellation is excluded, matching
+            // LeasingMessageAgent.RunAsync's own catch, so it isn't logged as Error and doesn't
+            // become a RecordRun.Failed. It isn't a bug, and with up to MaxConcurrentRecords
+            // records in flight, logging it as one would turn a clean shutdown into what looks
+            // like several. It propagates out of this call and Parallel.ForEachAsync's own
+            // cancellation handling ends the batch.
             log.LogError(ex, "Record failed.");
             return new RecordRun.Failed(prospectCase, ex);
         }
