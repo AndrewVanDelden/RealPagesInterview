@@ -3,9 +3,9 @@
 Rewritten 2026-09-07 from playbook Phase 0 step 1, after the hold-out retrospective. The two
 records in `sample.jsonl` are the only evidence any rule below is fitted to. The twelve-record
 file `holdout_12.jsonl` is an evaluation set: it is run and reported, never fitted to
-(decision D9 in [DECISION_LOG.md](DECISION_LOG.md)). Decisions are one paragraph each in the
-decision log; this document holds the problem, the inputs, the rules with their evidence, the
-architecture, the evaluation contract, and the numbered assumptions the log cites.
+(decision D9 in [DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md)). Decisions are one paragraph each
+in the archive; this document holds the problem, the inputs, the rules with their evidence, the
+architecture, the evaluation contract, and the numbered assumptions the archive cites.
 
 ## 1. Problem
 
@@ -143,7 +143,7 @@ Questions put to the requester on 2026-09-07 and the answers, recorded either wa
 ## 5. Architecture
 
 The four starting decisions of `~/.agent-rules/ARCHITECTURE.md` stay on their defaults
-(decision log S1 to S4): one command-line tool over one library; code owns every decision and a
+(S1 to S4 in the archive): one command-line tool over one library; code owns every decision and a
 model writes prose only, choosing the call-to-action type from a code-owned catalog under
 constrained decoding; seams exist only at the composer, the completion client, and the safety
 validator, each with a real and an offline implementation, and time is a value passed in;
@@ -288,7 +288,7 @@ of the two approval-gated controls above.
 
 ## 9. Plan
 
-Each sprint cites decisions in the log; one PR per sprint against `dev`.
+Each sprint cites decisions in the archive; one PR per sprint against `dev`.
 
 Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the top of
 [DECISION_LOG.md](DECISION_LOG.md); this is what has been passed and what passed it.
@@ -305,7 +305,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 
 | Sprint | Implements | Proof |
 |---|---|---|
-| 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4, D8 to D12) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |
+| 1 Decisions and gates | this document, the decision log, `holdout_12.jsonl`, CI, branch protection (S1 to S4 and D8 to D12, in the archive) | Phase 0 check: section 7 has no blank evidence cell; Phase 1 check: the `test` check green on the PR |
 | 2 Contracts (landed 2026-09-08) | optional members, unknown members retained and logged, per-record diagnostics, `--now`, suppression shape and reason, consent first (D1, D3, D10, the first line of D2) | every record of both files parses to one row and runs to a valid output; diagnostics name every defaulted field and every unknown member |
 | 3 Harness (landed 2026-09-08) | evaluator on every field of section 6, scorer proof, synthetic set from section 4, replay mode, one log scope owner (D6, D13 to D16) | scorer scores the labels at 100 percent and a corrupted field below; baseline numbers for all three sets recorded and pinned in the suite |
 | 4 Decision core (landed 2026-09-08) | catalog keyed on persona and stage, generic fallback, the `Result` on catalog construction, the planner's decision object in the diagnostics (D2, D17 to D20) | synthetic set through the core with the composer stubbed; diagnostics explain every decision |

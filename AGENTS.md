@@ -35,8 +35,8 @@ sets it. Never read, print, or write the value.
   agent; `Evaluation/` scorer and judge; `Ingest/` reader, writer; `Common/` shared types.
 - `src/Agent.Cli`: thin shell; `CliRunner` is the composition root.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
-- `docs/`: `DECISION_LOG.md` holds the current phase and every decision, `DESIGN.md` the
-  rules with their evidence and the numbers, `CODE_REVIEW.md` the deliberate scope-outs.
+- `docs/`: `DECISION_LOG.md` the current phase and one paragraph per sprint, `DECISIONS_ARCHIVE.md`
+  every decision in full, `DESIGN.md` the rules, their evidence and the numbers, `CODE_REVIEW.md` the scope-outs.
 - `sample.jsonl` is the only evidence any rule is fitted to; `holdout_12.jsonl` and
   `synthetic_12.jsonl` are evaluation sets, run and reported, never fitted to (D9, D6).
 
@@ -50,11 +50,11 @@ sets it. Never read, print, or write the value.
   (playbook Appendix B). A hop through an interface to its only implementation is a finding.
 - All work on `dev`, never `main`. One PR per sprint, `gh pr create` against `dev`.
 - No edits under `src/` or `tests/` while the phase is 0 or 1.
-- Every substantive decision, bug, or run/debug fact lands in `docs/DECISION_LOG.md` before
-  the turn ends, never in this file. Assume the chat can be cleared at any time.
-- After any edit to this file, run `.\check-instruction-files.ps1`, which CI also runs (rules
-  only, 150 lines, phase state in the decision log), then `.\sync-agent-rules.ps1`, which
-  regenerates `.agents/rules/project.md` for Antigravity. Never edit the generated copy.
+- Every substantive decision, bug, or run/debug fact lands in `docs/DECISIONS_ARCHIVE.md` before
+  the turn ends, named in the log's sprint paragraph, never in this file. Assume the chat can be cleared at any time.
+- After any edit to this file, run `.\check-instruction-files.ps1`, which CI also runs (four rules: rules only,
+  150 lines, the phase state in the log, the log's word cap, every citation resolving), then `.\sync-agent-rules.ps1`,
+  which regenerates `.agents/rules/project.md` for Antigravity. Never edit the generated copy.
 
 ## Conventions that differ from defaults
 

@@ -75,7 +75,7 @@ against the twelve-record evaluation set is
 `--input holdout_12.jsonl --now 2025-12-09T00:00:00-06:00`, the oracle's own date. That
 file is an evaluation set, never fitted to: the two records in `sample.jsonl` are the only
 evidence any rule is fitted to (decision D9 in
-[docs/DECISION_LOG.md](docs/DECISION_LOG.md)). A third set, `synthetic_12.jsonl`
+[docs/DECISIONS_ARCHIVE.md](docs/DECISIONS_ARCHIVE.md)). A third set, `synthetic_12.jsonl`
 (`--now 2026-03-07T12:00:00Z`), holds one record per case the samples cannot decide, plus one
 malformed line. After Sprint 3 the scorer covers every field of the label.
 
