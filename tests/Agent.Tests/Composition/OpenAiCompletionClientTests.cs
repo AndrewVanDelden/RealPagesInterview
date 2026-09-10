@@ -77,6 +77,44 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
+    // D37's first prerequisite: a call's retries are the ones that call spent, not a difference
+    // read across a counter the client shares. Two calls in flight on one client at once: the
+    // first meets a 429 and is retried, and the second answers cleanly but only after the
+    // first's retry has been sent. A before-and-after difference of one shared counter hands
+    // both calls attempts that were not theirs.
+    [Fact]
+    public async Task CompleteAsync_TwoConcurrentCallsOneRetried_EachReportsOnlyItsOwnRetries()
+    {
+        var retriedCallsSecondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int retriedCallRequests = 0;
+        var handler = new CallbackHttpMessageHandler(async (requestBody, cancellationToken) =>
+        {
+            if (requestBody.Contains("retried call", StringComparison.Ordinal))
+            {
+                if (Interlocked.Increment(ref retriedCallRequests) == 1)
+                {
+                    return (HttpStatusCode.TooManyRequests, """{"error":{"message":"slow down"}}""");
+                }
+
+                retriedCallsSecondAttempt.TrySetResult();
+                return (HttpStatusCode.OK, CompletionJson);
+            }
+
+            await retriedCallsSecondAttempt.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            return (HttpStatusCode.OK, CompletionJson);
+        });
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        Task<ModelCompletion> retried = client.CompleteAsync("system", "retried call");
+        Task<ModelCompletion> clean = client.CompleteAsync("system", "clean call");
+        ModelCompletion[] completions = await Task.WhenAll(retried, clean);
+
+        Assert.Equal(1, completions[0].NetworkRetries);
+        Assert.Equal(0, completions[1].NetworkRetries);
+        Assert.Equal(3, handler.CallCount);
+    }
+
     // Bounded: one retry, then the failure is the caller's problem. A pipeline that kept
     // retrying would spend the record's whole latency budget on one call.
     [Fact]

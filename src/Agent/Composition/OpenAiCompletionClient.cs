@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Runtime.CompilerServices;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -77,7 +78,9 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ResponseFormat = BuildResponseFormat(responseJsonSchema),
         };
 
-        int attemptsBefore = retryPolicy.Attempts;
+        // D37: this call's own attempt count, which concurrent calls on this client cannot add
+        // to (CountingRetryPolicy.BeginCall).
+        StrongBox<int> callAttempts = retryPolicy.BeginCall();
 
         ClientResult<ChatCompletion> result;
         try
@@ -98,7 +101,8 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
-        int retries = Math.Max(retryPolicy.Attempts - attemptsBefore - 1, 0);
+        // A call that returned was sent at least once, so this is never negative.
+        int retries = callAttempts.Value - 1;
 
         string content;
         try

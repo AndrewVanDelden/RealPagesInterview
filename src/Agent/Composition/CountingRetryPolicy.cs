@@ -1,25 +1,38 @@
 using System.ClientModel.Primitives;
+using System.Runtime.CompilerServices;
 
 namespace Agent.Composition;
 
 // The SDK's own retry policy, counting the attempts it makes (D28, playbook step 49: the
-// retry count is visible in the diagnostics). The policy is the pipeline's, so the count is
-// a running total for the client; OpenAiCompletionClient reads the difference across one
-// call. Known limit, stated rather than hidden: that difference is only this call's when the
-// client is used one call at a time, which is what the CLI's sequential batch loop does. A
-// concurrent caller would see another call's retries mixed in.
+// retry count is visible in the diagnostics). D37: the count is per call. It was a running
+// total for the client, read as a difference across one call, and two calls in flight on one
+// client each saw the other's attempts in that difference. The client opens a holder per call
+// through BeginCall, carried by an AsyncLocal: the SDK runs its retry loop, and so the hook
+// below, inside the async flow of the call that opened the holder, and each concurrent call
+// has a flow of its own. An instance field carrying per-call state, not a static accessor
+// standing in for constructor injection, which is AgentLog's alone.
 internal sealed class CountingRetryPolicy(int maxRetries) : ClientRetryPolicy(maxRetries)
 {
-    private int attempts;
+    private readonly AsyncLocal<StrongBox<int>?> currentCallAttempts = new();
 
-    public int Attempts => Volatile.Read(ref attempts);
+    // Called by the client at the top of one call, inside that call's own async method, so the
+    // holder flows into the SDK call beneath it and never out to the caller or to a sibling
+    // call: an async method restores its caller's context when it first yields.
+    public StrongBox<int> BeginCall()
+    {
+        var attempts = new StrongBox<int>();
+        currentCallAttempts.Value = attempts;
+        return attempts;
+    }
 
     // Only the async hook is overridden: OpenAiCompletionClient calls CompleteChatAsync and
     // nothing else, so the synchronous path is never taken and an override on it would be a
-    // line no honest test could reach.
+    // line no honest test could reach. The holder is never null here: this policy is only ever
+    // the pipeline of the one client that opens a holder before every call it makes. The
+    // attempts of one call are sequential, so a plain increment is enough.
     protected override ValueTask OnSendingRequestAsync(PipelineMessage message)
     {
-        Interlocked.Increment(ref attempts);
+        currentCallAttempts.Value!.Value++;
         return base.OnSendingRequestAsync(message);
     }
 
