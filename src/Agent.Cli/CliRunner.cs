@@ -716,6 +716,10 @@ public sealed class CliRunner(
                 "OpenAI:ApiKey is not configured. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
+        // Playbook step 78: the log states the inputs a decision used, and which model wrote a
+        // run's prose is one; the key is never logged, the model name is configuration.
+        loggerFactory.CreateLogger<CliRunner>().LogInformation("Composer: openai, model {Model}.", model);
+
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
     }

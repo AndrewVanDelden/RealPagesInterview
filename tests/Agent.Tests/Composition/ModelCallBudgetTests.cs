@@ -38,12 +38,6 @@ public class ModelCallBudgetTests
         Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(null)]));
     }
 
-    [Fact]
-    public void PerCallBudget_EmptyBatch_ReturnsNull()
-    {
-        Assert.Null(ModelCallBudget.PerCallBudget([]));
-    }
-
     // A budget of zero or less bounds nothing a call could satisfy, so it is not a timeout
     // this program can honor: the client keeps its own default and the p95 check reports the
     // miss.

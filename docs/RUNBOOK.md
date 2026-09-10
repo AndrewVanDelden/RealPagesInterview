@@ -39,4 +39,4 @@ Left to right: the UTC timestamp, the level (`Warning` is a handled retry or fal
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval-replay.txt
 ```
 
-An evaluation run with the model, `--composer openai`, needs `--model-call-budget-ms`: see [OPERATIONS.md](OPERATIONS.md) section 1. Exit codes 0, 1 and 2 are success, usage error and partial failure (section 2).
+An evaluation run with the model, `--composer openai`, needs `--model-call-budget-ms` for the model to answer more than the few records whose completion fits the records' 2000 ms: see [OPERATIONS.md](OPERATIONS.md) section 1. Exit codes 0, 1 and 2 are success, usage error and partial failure (section 2).

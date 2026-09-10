@@ -154,7 +154,7 @@ flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
     B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
-    C --> D[3 Compose: template or model, in the record's language; bounded retry then template]
+    C --> D[3 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
     D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
     D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
     E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
@@ -302,7 +302,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
 | 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
 | 6 Orchestration, entry points, and operations | the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code | 2026-09-09 in Sprint 9, on the by-hand run of step 81 recorded below: all four artifacts on all three sets, exit codes 0, 0 and 2 (D60, D63). The narration this table previously fused onto this gate is the playbook's step 98, inside Phase 8, and is still owed there (D60) |
-| 7 Test the way it will be judged | the scorecard on the synthetic set, the variance report, and the fault-injection results are all files in the repo | 2026-09-10 in Sprint 11: `docs/scorecards/synthetic_12_template.txt`, `docs/VARIANCE.md` and `docs/FAULT_INJECTION.md` (D69 to D71). Steps 86, 87 and 88 were not done and are owed |
+| 7 Test the way it will be judged | the scorecard on the synthetic set, the variance report, and the fault-injection results are all files in the repo | 2026-09-10 in Sprint 11: `docs/scorecards/synthetic_12_template.txt`, `docs/VARIANCE.md` and `docs/FAULT_INJECTION.md` (D69 to D71). Steps 86, 87 and 88 were done the same day, `docs/RUNBOOK.md` among them |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -315,7 +315,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
 | 9 Diagnostics, guards and fault injection (landed 2026-09-09) | Phase 6's check restored to the playbook's, per-record latency and token counts on the diagnostics row, the step 81 by-hand run, a guard on every path the CLI opens in either direction and on every empty argument, the two spend counts moved off `composition`, `docs/FAULT_INJECTION.md` (D60 to D66) | every per-check tally unmoved on all three sets; all four artifacts and the documented exit code on each; six command-line failures that ended the process unhandled now exit 1 with no stack frame; the six faults of step 84 each named with the tests that prove it |
-| 11 Phase 7 evidence (landed 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71), `docs/VARIANCE.md` from three live runs, and D72 and D73, opened by those runs and fixed: code appends the opt-out sentence and sets a call to action the record leaves unstated | the model answers on `synthetic_12.jsonl` for the first time, 7 to 9 of 10 messages across three runs, then 10 of 10 with no draft refused after D72 and D73; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
+| 11 Phase 7 evidence (landed 2026-09-10) | the committed scorecard in `docs/scorecards/` (D69), `--model-call-budget-ms` for evaluation runs (D70), every input the batch could not process as an `ERROR` row of the scorecard (D71), `docs/VARIANCE.md` from three live runs, and D72 and D73, opened by those runs and fixed: code appends the opt-out sentence and sets a call to action the record leaves unstated; then D67, D34, D33, D35 and D37 (the fallback's own spend on every exit, a retry only after a safety rejection, no retry after a timeout, the whole budget to one attempt, four records at once with retries counted per call), `docs/RUNBOOK.md`, a clean-clone run and the step 86 test review | the model answers on `synthetic_12.jsonl` for the first time, 7 to 9 of 10 messages across three runs, then 10 of 10 with no draft refused after D72 and D73; the synthetic set reads 12 of 13 with its malformed line a row; every per-check tally unmoved on the template path |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
 file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
@@ -413,7 +413,8 @@ the first live model run this project has made. The model wrote nothing: on all 
 have a message, `diagnostics.composition` reads `composer: template` with `attempts: 3`, which
 is the compose-validate loop's two model attempts and then the fallback. Every model call was
 abandoned at its timeout, 46 calls and 92 HTTP requests in total, because the strictest stated
-`p95_latency_ms` is 2000 ms, the client splits that into two 1000 ms attempts (D28), and a
+`p95_latency_ms` is 2000 ms, the client then split that into two 1000 ms attempts (D28, since
+replaced by D33 and D35, which give one attempt the whole budget and never retry a timeout), and a
 completion of this size does not come back in 1000 ms. Every per-check tally is therefore
 identical to the offline run above, since the same composer wrote every message: 2 of 2, 4 of
 12 and 12 of 12 records passing, with exit codes 0, 0 and 2. The one number that moved is
@@ -442,7 +443,7 @@ into tokens cannot give a token count worth stating. The recorded 12,100 is most
 with input tokens only: about 30 billed requests at about 430 prompt tokens each is 12,900. So
 read the dollar figures as the vendor's own rounded charge and the 12,100 as the input side of
 it, and read neither as a measured total. The interesting number is the request count. The
-client made 92 HTTP attempts, 46 model calls each retried once, and the vendor recorded about
+client made 92 HTTP attempts, 46 model calls each retried once as the client then did, and the vendor recorded about
 30 requests: abandoning a call at its 1000 ms timeout stops roughly two thirds of them from
 ever becoming billable requests, while the remaining third complete on the server after the
 client has walked away and are billed in full, output tokens included. So a timeout is a
@@ -656,4 +657,5 @@ three runs: overall 11, 11 and 12 of 13, CTA 9, 9 and 10 of 10, every other chec
 8,043, 8,261 and 9,356 ms against 2000 ms; the model wrote 8, 9 and 7 of the 10 messages and the
 template the rest, and its first draft missed the opt-out instructions on nine of the ten records
 on every run (D72). Phase 7's check passes on these three files, 2026-09-10. Steps 86 (review
-every test), 87 (the one-screen runbook) and 88 (a clean-clone run) were not done and are owed.
+every test), 87 (the one-screen runbook) and 88 (a clean-clone run) were done the same day; the
+archive's run and debug facts of 2026-09-10 record them.

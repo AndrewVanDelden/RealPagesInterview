@@ -5,7 +5,7 @@ diagnostics say, the exit code where one applies, and the tests that prove it by
 name. The audit behind this file is D64 in
 [DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md), which found five of the six already proved by the
 suite and a real gap behind the sixth. Every test named below was checked against the suite on
-2026-09-09 and exists.
+2026-09-10 and exists.
 
 Two things this file is not. It is not a tally: what a documented run measures is in
 [DESIGN.md](DESIGN.md) section 9, and what a fault does is here. And it is not written at the
@@ -21,12 +21,13 @@ in [DESIGN.md](DESIGN.md) section 9.
 
 **What the product does.** `OpenAiMessageComposer` catches the transport exception and returns
 `ComposeOutcome.Failed` naming the exception category and not its text. The compose-validate
-loop retries to its bound of two model attempts and then composes with the template composer,
-which makes no network call at all. Every record keeps its output row.
+loop does not retry an attempt that returned no message (D34): it composes with the template
+composer at once, which makes no network call at all. Every record keeps its output row.
 
 **What the diagnostics say.** `composition.composer` reads `template` on a run that asked for
 `openai`, which is the fallback naming itself; `attempts` counts the model attempts and the
-fallback, so 3 on the live run of 2026-09-08. `model_cost` is D62's second state:
+fallback, so 2 since D34, where the live run of 2026-09-08, before it, read 3. `model_cost` is
+D62's second state:
 `calls` counted, `completed_calls` and both token counts zero, because the client threw before
 it could read a usage block.
 
@@ -36,8 +37,8 @@ it could read a usage block.
 `tests/Agent.Tests/Composition/OpenAiMessageComposerTests.cs`,
 `ComposeAsync_CompletionClientThrowsHttpRequestException_ReturnsFailureNotException`;
 `tests/Agent.Tests/Safety/ValidatingMessageComposerTests.cs`,
-`ComposeAsync_ComposerKeepsFailing_FallsBackToSafeComposer` and
-`ComposeAsync_BothAttemptsBad_ReportsTheFallbackComposerAndEveryAttempt`.
+`ComposeAsync_ComposerReturnsNoMessage_FallsBackWithoutASecondModelAttempt` and
+`ComposeAsync_FirstAttemptReturnsNoMessage_TheFallbackAnswersOnTheSecondCall`.
 
 ## 2. Rate limit
 
@@ -48,7 +49,10 @@ transient status on every attempt.
 **What the product does.** The SDK's retry policy, bounded to one retry by
 `OpenAiCompletionClient` (D28), retries and returns the completion. A transient status on every
 attempt exhausts that bound at two attempts and the failure reaches the composer, which turns
-it into a `ComposeOutcome.Failed`; from there the loop falls back exactly as in fault 1.
+it into a `ComposeOutcome.Failed`; from there the loop falls back exactly as in fault 1. Only a
+transient status is retried (D33): a timeout, or a request that got no response at all, is one
+attempt and fails at once, and a retry after a transient status is given the whole budget again
+(D35).
 
 **What the diagnostics say.** `network_retries` reads 1 on a call that was retried
 and then succeeded. That number is the transport's retries inside one call and is never counted
@@ -59,7 +63,10 @@ a second time as a model call in `model_cost.calls` (D62).
 **Proved by.** `tests/Agent.Tests/Composition/OpenAiCompletionClientTests.cs`,
 `CompleteAsync_TransientFailureThenSuccess_RetriesOnceAndReportsIt` (one retry reported, two
 HTTP calls) and `CompleteAsync_TransientFailureEveryTime_StopsAfterTheBoundedRetry` (two
-attempts, then stop). The SDK's retry policy is status-agnostic across the transient set it
+attempts, then stop); `CompleteAsync_CallOutlivesTheTimeout_ThrowsTimeoutExceptionWithoutRetrying`,
+`CompleteAsync_RequestFailsWithNoResponse_IsNotRetried` and
+`CompleteAsync_TransientStatusThenASlowAttempt_GivesTheRetryTheWholeBudgetToo` for D33 and D35.
+The SDK's retry policy is status-agnostic across the transient set it
 knows, so the exhaustion path is proved once, on a 503 rather than a 429, and not per status.
 
 ## 3. Malformed model response
@@ -69,7 +76,8 @@ required `body` and `cta_type`, a null JSON body, and a call-to-action type the 
 ask for. At the client, a 200 carrying no message content and a 200 carrying no choice at all.
 
 **What the product does.** Every one of them becomes a failure rather than an exception, so the
-compose-validate loop retries and then falls back to the template composer. The 200 with no
+compose-validate loop falls back to the template composer without a second model attempt (D34).
+The 200 with no
 choice is named as an `InvalidOperationException` inside the client instead of escaping as the
 SDK's own `ArgumentOutOfRangeException`, which is not in the composer's catch list and would
 cost that record its output row.
@@ -81,8 +89,8 @@ and output token counts, because the call completed and only what came back was 
 **Exit code.** 0.
 
 **Proved by.** `tests/Agent.Tests/Composition/OpenAiMessageComposerTests.cs`,
-`ComposeAsync_MalformedJson_ReturnsFailureNotException`,
-`ComposeAsync_MissingRequiredFields_ReturnsFailure`, `ComposeAsync_NullJsonBody_ReturnsFailure`
+`ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletedCallAndItsTokens`,
+`ComposeAsync_CompletedCallMissingRequiredFields_FailureCarriesTheCompletionsRetries`, `ComposeAsync_NullJsonBody_ReturnsFailure`
 and `ComposeAsync_ModelReturnsWrongCtaType_ReturnsFailure`;
 `tests/Agent.Tests/Composition/OpenAiCompletionClientTests.cs`,
 `CompleteAsync_ResponseHasNoContent_ThrowsInvalidOperationException` and
@@ -112,7 +120,7 @@ when no other preference was consented, which is the correct decision rather tha
 **Proved by.** `tests/Agent.Tests/Composition/TemplateMessageComposerTests.cs`,
 `ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied`;
 `tests/Agent.Tests/Decisions/SendSchedulerTests.cs`, `Resolve_UnknownTimeZoneId_ResolvesInUtc`;
-`tests/Agent.Tests/Common/TimeZonesTests.cs`, `ResolveOrUtc_UnknownId_ReturnsUtc` and
+`tests/Agent.Tests/Common/TimeZonesTests.cs`, `TryResolve_UnknownId_ReturnsFalseAndUtc` and
 `ToLocalDate_UnknownZone_UsesTheUtcDate`; `tests/Agent.Tests/Ingest/IngestNotesTests.cs`,
 `Describe_UnrecognizedTimezone_NamesItAsDefaultedWithoutTheRecordsOwnValue`;
 `tests/Agent.Tests/Ingest/JsonlRecordReaderTests.cs`,
@@ -150,7 +158,7 @@ Record failed to parse: Line 11 failed to parse: JsonException: line 0, byte pos
 `ReadAll_ParsesSyntheticTwelve_TwelveSuccessRowsAndOneFailureNamingLineEleven`;
 `tests/Agent.Cli.Tests/CliRunnerTests.cs`,
 `RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure` and
-`RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure`.
+`RunAsync_ReplayWithAnUnparsableInputLine_ScorecardCarriesAnErrorRow`.
 
 ## 6. Disk full on output
 

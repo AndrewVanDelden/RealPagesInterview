@@ -107,3 +107,15 @@ three more runs: [run 1](scorecards/synthetic_12_openai_after_d72_run1.txt),
 The model path now scores the template's 12 of 13 on every run, with the scored outcome no longer
 moving between runs, at about half the calls and tokens it spent before. It still does not beat
 the template on a scored check here, and it still misses the stated latency threshold.
+
+## Without the flag, after D33, D35 and D37 (2026-09-10)
+
+One run of the documented command with `--composer openai` and no `--model-call-budget-ms`, so
+each call is bounded by the records' own 2000 ms: [scorecard](scorecards/synthetic_12_openai_no_flag_after_d35.txt).
+A timeout is no longer retried (D33), one attempt gets the whole 2000 ms rather than half of it
+(D35), and four records run at once (D37). The model wrote 2 of the 10 messages, where the step
+60 run's model wrote none of 23 when each attempt had 1000 ms; the template wrote the other 8,
+whose 8 calls were abandoned at the timeout and are counted with zero tokens. 10 calls, 2
+completed, 792 input and 186 output tokens, no draft refused, 12 of 13 with every check at the
+template's level, p95 2,066 ms against 2000 ms and so FAIL, batch latency 6,072 ms, where the
+step 60 run's sequential batch took 63 seconds for the same file.

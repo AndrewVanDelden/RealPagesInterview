@@ -26,7 +26,7 @@ flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
     B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
-    C --> D[3 Compose: template or model, in the record's language; bounded retry then template]
+    C --> D[3 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
     D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
     D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
     E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
@@ -104,7 +104,8 @@ and every other record reads single-digit milliseconds. **Money:** the default p
 nothing, because it makes no request and needs no key. The first live run this project made,
 `--composer openai` across all three sets on 2026-09-08, cost about $0.004 read off the vendor's
 own usage page rather than estimated, roughly $0.00017 per record, and the model wrote none of the
-text: every call was abandoned at its 1000 ms timeout and the template answered, which is what the
+text: every call was abandoned at the 1000 ms attempt timeout the client then used and the
+template answered, which is what the
 fallback is for (D31, and the arithmetic in [docs/DESIGN.md](docs/DESIGN.md) section 9). That
 dollar figure is dated prose and stays dated prose; what the program measures is tokens. On
 2026-09-10 the model answered for the first time, under `--model-call-budget-ms 30000` (D70): on
@@ -142,6 +143,7 @@ debug a bad run: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 - [docs/DESIGN.md](docs/DESIGN.md) - architecture, the component table and its seam column, inferred decision rules and their evidence, assumptions log, security/governance posture.
 - [docs/NARRATION.md](docs/NARRATION.md) - the seven-question script for explaining this system out loud, plus one record walked file by file through the six steps.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) - one screen: set the secret, build and test, run, open the scorecard, read a log line, replay.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — how to run it, how to debug a bad run, how the logging actually works, and how to read one log line.
 - [TalkingPoints.md](TalkingPoints.md) - one sentence per decision, grouped from the 60-second answer down; the walkthrough script.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — what the two automated PR reviewers check for, and the scope decisions they should not re-flag.

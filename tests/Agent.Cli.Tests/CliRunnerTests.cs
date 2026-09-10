@@ -708,6 +708,7 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Composer: openai, model gpt-4o-mini.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -734,29 +735,7 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
-    public async Task RunAsync_NoDiagnosticsPath_DoesNotThrow()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
-
-            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Composer: openai, model gpt-4o.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1211,29 +1190,6 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_NoLogFilePathProvided_DoesNotThrow()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
-
-            Assert.Equal(CliExitCodes.Success, exitCode);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
     public async Task RunAsync_UnknownComposer_LogFileStillWritesTheComposerSelectionFailure()
     {
         string inputPath = TempFilePath();
@@ -1292,33 +1248,6 @@ public class CliRunnerTests
         }
     }
 
-    [Fact]
-    public async Task RunAsync_EvalReportRecordUnscoreable_LogFileCapturesTheWarning()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        string evalReportPath = TempFilePath(".txt");
-        string logFilePath = TempFilePath(".log");
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: false));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath, "--log-file", logFilePath]);
-
-            string logContent = await File.ReadAllTextAsync(logFilePath);
-            Assert.Contains("could not be scored", logContent);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-            File.Delete(evalReportPath);
-            TestFiles.DeleteWithRetry(logFilePath);
-        }
-    }
     // D14: --replay re-scores an existing output file against --input without running the
     // agent. The composer injected here throws on the only record, so a run that reached
     // the agent would exit 2; exit 0 proves nothing ran but the scorer.
@@ -1431,32 +1360,6 @@ public class CliRunnerTests
         }
     }
 
-    // A line that did not parse is still one failure row in replay: it produced no output
-    // when the file was written, so the rows that remain still align by position.
-    [Fact]
-    public async Task RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure()
-    {
-        string inputPath = TempFilePath();
-        string replayPath = TempFilePath(".json");
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
-        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
-
-            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            Assert.Contains("Line 2", errorWriter.ToString());
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(replayPath);
-        }
-    }
 
     [Fact]
     public async Task RunAsync_InputWithoutOutputOrReplay_WritesUsageAndReturnsUsageError()

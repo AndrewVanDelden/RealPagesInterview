@@ -485,6 +485,9 @@ transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the 
 still not bounded is stated rather than hidden: after a failed call the compose-validate loop
 composes once more before falling back, so a record that fails composition can spend up to
 twice its budget before the template composer answers, and the p95 check measures that.
+Superseded 2026-09-10 by D33 and D35: a timeout is no longer retried, so the division bought
+nothing and is gone, and one attempt is given the whole budget; the retry after a transient
+status may now exceed it, which `OpenAiCompletionClient`'s constructor states.
 
 **D28 addendum, PR #21 review, part two (2026-09-08).** `CompositionNotes.NetworkRetries` read
 only the winning compose attempt's own count; a retry spent on an attempt
@@ -588,7 +591,8 @@ call's retries mixed in"). Parallelizing the loop before that attribution is mad
 concurrency would corrupt `CompositionNotes.NetworkRetries` rather than only speed up the
 batch, so this is a design change ahead of a review-fix round, not a matter of confidence in
 the finding. Scopes: any future concurrency work on the batch loop, which opens by replacing
-the shared-counter retry attribution.
+the shared-counter retry attribution. Resolved 2026-09-10 by D37, which replaced that
+attribution first and then made the loop concurrent.
 
 **Evidence, PR #21 review round (2026-09-08).** `.\test.ps1`: 443 tests in `Agent.Tests`, 49 in
 `Agent.Cli.Tests`, all passing, 100 percent line, branch and method on both modules. Four of
@@ -624,7 +628,19 @@ attempts complete server-side and are billed in full, so a futile retry is a pai
 Scopes: `OpenAiCompletionClient`'s retry policy, `CountingRetryPolicy`, and D35, which only
 exists because retries are counted into the budget. Evidence: the step 60 logs, four
 timeout-terminated attempts per record; the usage page, about 30 billable requests from 92
-attempts. Assumption: A15.
+attempts. Assumption: A15. Taken 2026-09-10 on the requester's "dont defer do now", the second
+option. `CountingRetryPolicy` overrides `ClientRetryPolicy.ShouldRetryAsync`, whose signature was
+confirmed by reflection over the restored System.ClientModel 1.14.0: an attempt that ended in an
+exception is never retried, and a response is retried only when
+`PipelineMessageClassifier.Default` calls its status transient, which the package's own docs and
+a probe through a fake transport both give as 408, 429, 500, 502, 503 and 504, the base still
+capping it at `MaxRetries`. Read literally, "never a timeout" became "never an exception", so a
+request that got no response at all is not retried either, by the requester's acceptance; that
+also closed a gap in which two such failures reached the composer as an `AggregateException` its
+catch list does not name, and the record became an ERROR row. A timeout is one HTTP attempt and
+arrives as one `TaskCanceledException`, so `IsTimeout`'s `AggregateException` branch went.
+Test-first: the timeout test saw two attempts and the no-response test an `AggregateException`
+before the change; `.\test.ps1` exit 0, 593 and 87 tests, 100 percent on both modules.
 
 **D34. What the compose-validate loop retries (2026-09-08).** Question: `ValidatingMessageComposer`
 composes a second time after any failure, including a transport failure. Options: keep it; or
@@ -637,7 +653,21 @@ always available, so the record still gets a message either way. Scopes:
 `ValidatingMessageComposer`, and `CompositionNotes.Attempts`, which would read 2 rather than 3
 on a transport-failed record; that changes a pinned test and how a diagnostics row reads.
 Evidence: the step 60 run, `attempts` 3 on every one of 23 records, two of the three failing for
-transport reasons. Assumption: A18.
+transport reasons. Assumption: A18. Taken 2026-09-10 on the requester's "dont defer do now", the
+second option. In `ValidatingMessageComposer`, an attempt that returns `ComposeOutcome.NoMessage`
+(a transport failure, a timeout, a malformed or wrong completion) leaves the loop for the
+fallback composer; only a safety-validation rejection is retried, with its violations in the
+second prompt. D66's accounting is unchanged: what that attempt spent still rides onto the
+outcome. The fallback's `Attempts` stamp is the number of model attempts made plus one, so a
+record whose first attempt returned no message reads `attempts` 2 and `model_cost.calls` 1 where
+it read 3 and 2; two safety rejections still read 3. The fallback warning now reads `No compose
+attempt produced a clean message; falling back to the safe fallback composer.` Evidence: seven
+tests in `ValidatingMessageComposerTests.cs` and `LeasingMessageAgentTests.cs`, changed to the new
+behavior, failed on the unfixed loop and pass after, and
+`ComposeAsync_FirstAttemptFails_RetryReceivesFailureReasonAsCorrection` is replaced by
+`ComposeAsync_FirstAttemptReturnsNoMessage_TheFallbackAnswersOnTheSecondCall`, since the retry it
+tested no longer exists; `.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both modules.
+Older paragraphs below that name the renamed tests record what existed when they were written.
 
 **D35. What one attempt is allowed to take, once a timeout is not retried (2026-09-08).**
 Question: D28 divides the stated budget by 1 + `MaxRetries` so that a call and its retry both
@@ -649,7 +679,15 @@ Recommendation: none taken, because it needs D32's measurement. If a successful 
 under 2000 ms, the second option roughly doubles the chance of success at no cost to the common
 path; if it lands over 2000 ms, no division scheme helps and D36 is the real question. Scopes:
 `OpenAiCompletionClient.PerAttemptTimeout`, D28 and its addendum. Evidence: none yet, which is
-the point of D32.
+the point of D32. Taken 2026-09-10, the second option, on D32's measurement of about 1.5 to 4.5
+seconds a completion (the run and debug fact of that date, the first model calls that
+answered). `OpenAiCompletionClient` hands the whole call budget to `NetworkTimeout`, and
+`PerAttemptTimeout`, which would have become a function returning its input, is removed with the
+test that pinned the division. The cost is stated in the constructor's comment: after a
+transient status the retry gets the whole budget again, so such a call can take up to twice the
+budget plus the SDK's backoff. Test-first: an attempt needing 1200 ms of a 2000 ms budget, and a
+429 followed by such an attempt, both timed out at the old 1000 ms attempt before the change;
+`.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both modules.
 
 **D36. What `p95_latency_ms` is (2026-09-08).** Question: D28 reads the records' stated threshold
 as a bound on the model call; D31's third way out reads it as a reporting threshold that the
@@ -662,6 +700,9 @@ step 60 run measured at 0 of 23; as a reporting threshold the product can use th
 p95 check simply fails and says so, which is honest but means shipping a configuration that
 misses a stated threshold on purpose; the override keeps both and adds a flag whose only user is
 an evaluation run. Scopes: D28, D31, `ModelCallBudget`, the CLI. Evidence: the step 60 run.
+Closed 2026-09-10 by D70, which is this decision's third option: the records' threshold still
+bounds the call and is still what the p95 check reads, and `--model-call-budget-ms` overrides
+the bound for an evaluation run.
 
 **D37. Batch concurrency (2026-09-08).** Question: `CliRunner`'s batch loop is sequential, so a
 batch's wall-clock is the sum of its per-record latencies, and with a model in the path that is
@@ -673,7 +714,25 @@ This decision adds a second prerequisite that addendum does not name: D14 pairs 
 input records by position, and the per-record log scope assumes one record at a time, so both
 have to survive out-of-order completion. Scopes: `CliRunner`'s batch loop, `CountingRetryPolicy`,
 D14. Evidence: the D31 addendum's measurement of retries reported as 2 and 0 for two concurrent
-calls; the step 60 run's 63 seconds of wall-clock for 12 records.
+calls; the step 60 run's 63 seconds of wall-clock for 12 records. Taken 2026-09-10 on the
+requester's "dont defer do now", with both prerequisites landed first. Retry attribution:
+`CountingRetryPolicy` counts into a holder the client opens per call, carried by an instance
+`AsyncLocal`; this is per-call state inside one object, not a static accessor standing in for
+constructor injection, so the AGENTS.md rule that reserves the latter for `AgentLog` is not
+touched. Proved by two calls in flight on one client, which reported 2 retries for the retried
+call before the change and 1 and 0 after. The loop: `CliRunner` runs records through
+`Parallel.ForEachAsync` with at most four in flight, a constant, because one record's calls are
+sequential and four requests in flight is a margin under a vendor rate limit this project has
+never measured; each record's `RecordRun` is written to its input position and folded afterwards,
+single-threaded and in input order, into the output, the diagnostics, the review queue, the
+scored runs, the batch cost, the failure count, the ERROR row and the stderr line, so D14's
+pairing by position holds. D16's scope is opened per record inside its own async flow, still only
+in `CliRunner`. Proved by records forced to overlap and finish in reverse input order, which keep
+input order in every file, and a fold in completion order was checked to fail that test; by three
+records failing while others are in flight, whose log entries each carry their own `TaskId`
+alone; and by a run cancelled from inside its first record, which starts no further record. The
+template run on `synthetic_12.jsonl` writes a byte-identical `--output` before and after.
+`.\test.ps1` exit 0, 595 and 90 tests, 100 percent on both modules.
 
 **Not a lever, recorded so it is not proposed again.** Prompt caching does not apply here.
 Automatic caching engages above a prompt-prefix threshold these prompts do not reach, about 430
@@ -1751,7 +1810,7 @@ is loose. Evidence: `ValidatingMessageComposer.cs:47`, `:66`, `:74`, `:109`, `:1
 `CliRunner.cs:328`; a diagnostics file written by the documented `sample.jsonl` run, all read
 2026-09-09.
 
-**D67 (open). The fallback outcome's own spend is dropped at both no-message exits
+**D67. The fallback outcome's own spend is dropped at both no-message exits
 (2026-09-09).** Question: D66 moved the two spend counts onto `ComposeOutcome` so the
 compose-validate loop's two no-message exits could carry them, and both now do. What they carry
 is the accumulation and only the accumulation. At `ValidatingMessageComposer.cs:109` the `Failed`
@@ -1775,7 +1834,19 @@ next reader of that method does not have to rediscover it, and so it cannot be f
 unrecorded defect. Scopes: nothing yet; whichever option is taken scopes
 `ValidatingMessageComposer`'s two no-message exits and their tests. Evidence:
 `ValidatingMessageComposer.cs:104` to `:126` and `:136` to `:148`; `TemplateMessageComposer.cs:55`;
-`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none.
+`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none. Taken
+2026-09-10 on the requester's "dont defer do now", option (a): both no-message exits after the
+fallback now add the fallback outcome's own counts to what the rejected attempts spent, the
+`Failed` through `ModelCostNotes.Add(discardedModelCost, fallbackOutcome.ModelCost)` and
+`AddRetries(discardedNetworkRetries, fallbackOutcome.NetworkRetries)`, the `Refused` the same with
+the fallback's `Composed`, so all three exits sum both sources as `WithAttempts` does. This
+decides what a fallback composer may be: one that spends is billed on every exit, not only on the
+one that ships. No shipped output moves, because `TemplateMessageComposer`, the only fallback
+`CliRunner` wires, sets neither count. Evidence: two new tests in
+`ValidatingMessageComposerTests.cs` with a fallback that reports its own spend failed on the
+unfixed code, reporting the attempts' sum (2, 2, 22, 14) where (3, 3, 27, 17) and (3, 2, 22, 14)
+were expected, and pass after; `.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both
+modules. The line numbers cited above are the file as it stood on 2026-09-09.
 
 **Run and debug fact, five review findings fixed (2026-09-10).** A Claude Code review of PR #26
 and an Antigravity (Gemini 3.8 Flash) review of the same PR together found five real defects,
@@ -2153,3 +2224,43 @@ to `_run3.txt`: 12 of 13 and CTA 10 of 10 on every run, 10 calls and 3,900 input
 attempt each, p95 2,318, 2,398 and 4,508 ms against 2000 ms and so still FAIL. Against Sprint
 11's first three runs: refusals 33 to 0, calls 57 to 30, output tokens 6,308 to 2,941. Brand
 style reported 4 findings a run, a diagnostic (D39). VARIANCE.md carries both sets of runs.
+
+**Run and debug fact, playbook steps 87 and 88 (2026-09-10).** `docs/RUNBOOK.md`, 42 lines: set
+the secret, build and test, run both documented sets, open the scorecard, read a log line, replay.
+Step 88 cloned the branch fresh into a temporary directory and ran the runbook's text alone:
+`dotnet build` exit 0 with 0 warnings; `.\test.ps1` exit 0, 592 and 87 tests, 100 percent; the
+hold-out run exit 0 reading `Overall: 4/12 passed`; the synthetic run exit 2 reading `Overall:
+12/13 passed`; `--replay` exit 0 with the same tallies but `Safety 0/0` and latency `n/a`, as the
+runbook says; `git status` in the clone empty, so every file the runs wrote is ignored. No step
+needed help, so the run produced no finding. The runbook's claim that `run.log` is appended to by
+every run was not exercised by that run and was checked in code instead: `FileLoggerProvider`
+opens its writer with `append: true`.
+
+**Run and debug fact, playbook step 86 (2026-09-10).** A read-only review of every test, 511
+methods in `Agent.Tests` and 84 in `Agent.Cli.Tests`, recommended deleting 38 that assert no rule
+a reader could dispute (a duplicate of another test's rule and branch, an echo of the input, a
+bare "does not throw") and strengthening 10 whose assertion a wrong implementation would also
+pass. 33 deletions and 8 rewrites landed in one commit, and the coverage gate is the proof each
+deletion was safe: `.\test.ps1` exit 0 at 562 and 86 tests with 100 percent line, branch and
+method coverage on both modules, and no deletion had to be restored. Every stronger assertion
+passed. One recommendation was declined: `ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize`
+stays, because it is the only coverage of `LenientExpectedOutcomeConverter.Write`, which
+`JsonConverter` requires, and it pins that a serialized record keeps its `expected` block. One
+finding outside the step was checked and found to be decided already: `CliRunner` logs a failed
+record's exception attached, stack trace included, while the scorecard row carries the type alone.
+D46 classed a per-record bug's message as program-authored and OPERATIONS.md sends an operator to
+that stack trace for exit code 2, and vendor, model and record text is caught inside the
+composer and the readers before any record-level catch, so the line stays as D46 left it.
+
+**Run and debug fact, the combined branch and D35's measurement (2026-09-10).** The four agent
+branches were cherry-picked onto `sprint-11-phase-7-evidence`, and the rest of step 86 landed
+there: five more deletions in `CliRunnerTests.cs` and `ModelCallBudgetTests.cs`, and the two
+tests that built the model composer now assert the model the CLI resolved, through a new log line,
+`Composer: openai, model <name>.`, after failing on its absence first. `.\test.ps1` on the combined
+branch: exit 0, 564 tests in `Agent.Tests` and 85 in `Agent.Cli.Tests`, 100 percent line, branch
+and method coverage on both modules. Then one live run of `synthetic_12.jsonl` with `--composer
+openai` and no `--model-call-budget-ms`, to measure what D33 and D35 bought on the records' own
+2000 ms: the model wrote 2 of 10 messages where the step 60 run's model wrote none of 23, 10
+calls with 2 completed, 792 input and 186 output tokens, 12 of 13, p95 2,066 ms and so FAIL,
+batch latency 6,072 ms under D37's four records at once against the step 60 run's 63 seconds.
+Scorecard `docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`; VARIANCE.md tables it.
