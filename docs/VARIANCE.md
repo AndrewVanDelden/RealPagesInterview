@@ -76,4 +76,34 @@ template on a scored check here, it misses the stated latency threshold by rough
 every run, and about a third of its drafts are refused for leaving out the opt-out instructions.
 What it adds is prose that differs per record and per run, which no deterministic check on this
 set rewards. The two findings behind those refusals and the `synthetic_05` miss are D72 and D73
-in [DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md).
+in [DECISIONS_ARCHIVE.md](DECISIONS_ARCHIVE.md), fixed the same day (below).
+
+## After D72 and D73 (2026-09-10)
+
+Code now appends the opt-out sentence when a record requires one and the model left it out
+(D72), and sets A9's generic call to action when a record states none (D73). The same command,
+three more runs: [run 1](scorecards/synthetic_12_openai_after_d72_run1.txt),
+[run 2](scorecards/synthetic_12_openai_after_d72_run2.txt),
+[run 3](scorecards/synthetic_12_openai_after_d72_run3.txt).
+
+| Run | Overall | CTA | Every other check | p95 | Batch latency | Calls | Input tokens | Output tokens | Model wrote | Template fallback | Drafts rejected |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 12/13 | 10/10 | unmoved | 2,318 ms | 18,199 ms | 10 | 3,900 | 976 | 10 | 0 | 0 |
+| 2 | 12/13 | 10/10 | unmoved | 2,398 ms | 19,449 ms | 10 | 3,900 | 990 | 10 | 0 | 0 |
+| 3 | 12/13 | 10/10 | unmoved | 4,508 ms | 33,399 ms | 10 | 3,900 | 975 | 10 | 0 | 0 |
+
+- **No draft was refused on any run**, so every record makes one call: 10 calls a run where
+  there were 19, 2,941 output tokens over three runs where there were 6,308, and 1.5 to 4.5
+  seconds a record where it was 1.7 to 9.4.
+- **`synthetic_04`, the Spanish record, is written by the model on every run**, with the Spanish
+  set's `Responde STOP para cancelar.` appended.
+- **`synthetic_05` carries `reply` on every run and passes**, so the score no longer depends on
+  whether the fallback fires.
+- **The prose still varies:** every model-written record has three distinct bodies across the
+  runs except `synthetic_03` and `synthetic_04`, which have two each.
+- **Brand style**, a diagnostic and not a gate (D39), reported 4 findings a run.
+- **p95 still fails** the records' 2000 ms on every run.
+
+The model path now scores the template's 12 of 13 on every run, with the scored outcome no longer
+moving between runs, at about half the calls and tokens it spent before. It still does not beat
+the template on a scored check here, and it still misses the stated latency threshold.

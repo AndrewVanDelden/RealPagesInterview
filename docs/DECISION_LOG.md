@@ -21,9 +21,8 @@ fault-injection results are files in the repo, `docs/scorecards/`, `docs/VARIANC
 `docs/FAULT_INJECTION.md` (D69 to D71). Its steps 86 (review every test), 87 (the one-screen
 runbook) and 88 (a clean-clone run) were not done and are owed, as the narration of step 98 is.
 Next step: steps 86 to 88, then Phase 8 from step 90.
-Open decisions: four. D72, the model's drafts refused for missing opt-out instructions; D73, the
-model's call to action on a record that states none; D67, the fallback's dropped spend; and
-whether D33 to D35 and D37 get a sprint.
+Open decisions: two. D67, the fallback's dropped spend, and whether D33 to D35 and D37 get a
+sprint.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -93,5 +92,6 @@ written by the CLI into `docs/scorecards/`, a dated snapshot rather than a golde
 `--model-call-budget-ms` flag for evaluation runs lets the model answer, after a scratch run
 measured 2 to 4 seconds a call against D28's 1000 ms attempt (D70). A line that did not parse,
 or a record that threw, is an `ERROR` row counted in `Overall`, so the synthetic set reads 12 of
-13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7. They opened D72, drafts
-refused for missing opt-out instructions, and D73, the call to action on a record stating none.
+13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7. Code now appends the opt-out
+sentence (D72) and sets a call to action the record leaves unstated (D73): refusals fell from 33
+to 0.

@@ -2086,7 +2086,7 @@ the last column to its widest cell, so every row of a scorecard with an `ERROR` 
 trailing spaces to the width of the reader's failure text, as an unscoreable row always did.
 Nothing is pinned for the live run: its prose, its latency and its token counts are the vendor's.
 
-**D72 (open). The model's drafts refused for missing opt-out instructions (2026-09-10).**
+**D72. The model's drafts refused for missing opt-out instructions (2026-09-10).**
 Question: across the three runs of VARIANCE.md the safety gate refused 33 of the model's drafts,
 11, 10 and 12, every one for `Missing required opt-out instructions`, and the first draft failed
 on nine of the ten records on every run. The prompt says only `Opt-out instructions: required.`
@@ -2104,9 +2104,17 @@ the way the link is (S2); (c) leave it and pay the second call. Recommendation: 
 required disclosure is a reproducible decision and S2 gives those to code, and it removes the
 refusal rather than making it rarer; its effect is measured by rerunning VARIANCE.md's three
 runs. Scopes: `OpenAiMessageComposer`, the language sets, the prompt's golden test, VARIANCE.md.
-Evidence: VARIANCE.md and the three runs' error streams. Assumption: A18.
+Evidence: VARIANCE.md and the three runs' error streams. Assumption: A18. Taken 2026-09-10 by
+the requester ("fix the issues. dont defer"), option (b): when a record requires opt-out
+instructions and the model's body carries none by `OptOutInstructions`, the composer appends the
+record's own language set's sentence, `SmsOptOut` after a space or `EmailOptOut` on its own line,
+the sentence the template writes; a body that already carries one is left as the model wrote it,
+so none is doubled. The prompt says `Opt-out instructions: the system appends them, so do not
+write any.` where it said `required`. A language with no set gets the English sentence, the same
+fallback the template takes with `LocaleApplied` false. `OptOutInstructions` stays the one
+definition: the composer reads it, the first reference from Composition into Safety.
 
-**D73 (open). The model's call to action on a record that states none (2026-09-10).** Question:
+**D73. The model's call to action on a record that states none (2026-09-10).** Question:
 `synthetic_05` states no `primary_cta`, the prompt then says `No specific call to action is
 required; choose one reasonable for this message.`, and the model chose `contact` on both runs
 where it wrote the message. The label expects `reply`, which is what the template writes under
@@ -2117,7 +2125,13 @@ and leave the model only the options prose; (c) leave it, since the label is one
 unstated constraint. Recommendation: (b), keyed on the absence of the input field as A9 already
 is and not on this label, which D9 forbids fitting to: the type is a decision, and S2 gives
 decisions to code. Scopes: `OpenAiMessageComposer`'s call-to-action instruction and its response
-schema. Evidence: VARIANCE.md's per-record table. Assumption: A9.
+schema. Evidence: VARIANCE.md's per-record table. Assumption: A9. Taken 2026-09-10, option
+(b): the required type is `CallToActionCatalog.Resolve(primary_cta).Type` on every record, so an
+absent or blank `primary_cta` requires A9's `reply` as the template does, the schema's enum is set
+on every call, and a model returning any other type is a failure the compose-validate loop
+retries. The email link follows the resolved call to action's own path, so
+`CallToActionCatalog.LinkPathForType`, which existed only because the type sent could diverge from
+the constraint, lost its one caller and is deleted.
 
 **Run and debug fact, step 83's three runs and the Phase 7 close (2026-09-10).** Runs 2 and 3
 were made at e4c74ad with run 1's command, changing only the scorecard name, and wrote
@@ -2127,3 +2141,15 @@ and the three runs' diagnostics and output files, which were read from the scrat
 committed. With it, Phase 7's check holds: the synthetic scorecard, the variance report and the
 fault-injection results are all files in the repo. Steps 86, 87 and 88 were not done and are
 recorded as owed in the log's Current phase block. No code changed for the close.
+
+**Run and debug fact, D72 and D73 executed (2026-09-10).** Test-first: nine composer tests failed
+against the unchanged code, the four appended-sentence cases, the prompt's new opt-out line, the
+golden prompt, the generic type in the prompt and in the schema, and the blank `primary_cta`;
+the other 44 passed. After: `.\test.ps1` exit code 0, 592 tests in `Agent.Tests` and 87 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method coverage on both modules.
+Three live runs with run 1's command wrote `docs/scorecards/synthetic_12_openai_after_d72_run1.txt`
+to `_run3.txt`: 12 of 13 and CTA 10 of 10 on every run, 10 calls and 3,900 input tokens each,
+976, 990 and 975 output tokens, no draft refused, the model writing all ten messages at one
+attempt each, p95 2,318, 2,398 and 4,508 ms against 2000 ms and so still FAIL. Against Sprint
+11's first three runs: refusals 33 to 0, calls 57 to 30, output tokens 6,308 to 2,941. Brand
+style reported 4 findings a run, a diagnostic (D39). VARIANCE.md carries both sets of runs.

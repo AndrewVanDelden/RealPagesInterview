@@ -111,6 +111,10 @@ dollar figure is dated prose and stays dated prose; what the program measures is
 `synthetic_12.jsonl` it wrote 8 of the 10 messages in 19 calls, 7,479 input and 2,129 output
 tokens, at a p95 of 8,043 ms, which fails the records' own 2000 ms, and the call-to-action check
 fell to 9 of 10 ([docs/scorecards/synthetic_12_openai_run1.txt](docs/scorecards/synthetic_12_openai_run1.txt)).
+Once code took over the opt-out sentence and the unstated call to action (D72, D73), three more
+runs had the model write all 10 in 10 calls, 3,900 input and about 980 output tokens, every check
+at the template's level, and a p95 of 2.3 to 4.5 seconds, still over 2000 ms
+([docs/VARIANCE.md](docs/VARIANCE.md)).
 `diagnostics.model_cost` carries the vendor's own input and output token counts for
 each record, null when no model call was made at all and a counted call with zero tokens when one
 was abandoned at its timeout, and the scorecard's `Batch model cost:` line is the batch total

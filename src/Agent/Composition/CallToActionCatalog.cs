@@ -35,19 +35,4 @@ internal static class CallToActionCatalog
         Presence.IsAbsent(primaryCta)
             ? Generic
             : ByPrimaryCta.TryGetValue(primaryCta!, out CallToAction? cta) ? cta : Generic with { Type = primaryCta! };
-
-    private static readonly FrozenDictionary<string, string> LinkPathByType =
-        ByPrimaryCta.Values
-            .Append(Generic)
-            .ToFrozenDictionary(cta => cta.Type, cta => cta.LinkPath, StringComparer.Ordinal);
-
-    // O(1): one hash lookup. Reverse of Resolve: a cta_type a caller already has (the one
-    // that ends up on the wire) maps to its own link path, rather than a caller re-deriving
-    // the path from the primary_cta constraint that produced the type - the two can diverge
-    // when nothing constrains the type at all (OpenAiMessageComposer, absent primary_cta),
-    // so the type actually being sent is the only fact the link path can safely follow.
-    // A type the catalog does not name (the model's own invention with no constraint) takes
-    // the generic path, the same fallback Resolve gives an unrecognized primary_cta.
-    public static string LinkPathForType(string ctaType) =>
-        LinkPathByType.TryGetValue(ctaType, out string? linkPath) ? linkPath : Generic.LinkPath;
 }
