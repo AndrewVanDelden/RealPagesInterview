@@ -67,8 +67,11 @@ public class ValidatingMessageComposerTests
         Assert.Empty(finalValidation.Violations);
     }
 
+    // D34: an attempt that returned no message (a transport failure, a timeout, a malformed
+    // completion) is not a content problem a second prompt could fix, so it goes straight to
+    // the fallback and the inner composer is called once.
     [Fact]
-    public async Task ComposeAsync_ComposerKeepsFailing_FallsBackToSafeComposer()
+    public async Task ComposeAsync_ComposerReturnsNoMessage_FallsBackWithoutASecondModelAttempt()
     {
         var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("boom"));
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
@@ -77,7 +80,7 @@ public class ValidatingMessageComposerTests
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.IsType<ComposeOutcome.Composed>(outcome);
-        Assert.Equal(2, innerComposer.CallCount);
+        Assert.Equal(1, innerComposer.CallCount);
     }
 
     [Fact]
@@ -142,12 +145,11 @@ public class ValidatingMessageComposerTests
         Assert.NotEmpty(innerComposer.LastPriorViolations);
     }
 
-    // A Result.Failure from the inner composer (e.g. a wrong cta_type, a malformed
-    // completion) is not a safety violation, but it's still something the retry should
-    // know about - otherwise the second attempt repeats the exact same prompt with zero
-    // corrective signal, wasting the one retry this loop has.
+    // D34: the fallback answers a no-message first attempt even where a second model attempt
+    // would have come back clean, because the loop no longer makes one. The notes count the
+    // one model attempt and the fallback, so Attempts reads 2 and not 3.
     [Fact]
-    public async Task ComposeAsync_FirstAttemptFails_RetryReceivesFailureReasonAsCorrection()
+    public async Task ComposeAsync_FirstAttemptReturnsNoMessage_TheFallbackAnswersOnTheSecondCall()
     {
         var innerComposer = new SequenceMessageComposer(
             Result<NextMessage>.Failure("Model returned cta_type 'call_now' but 'schedule_tour' was required."),
@@ -155,10 +157,9 @@ public class ValidatingMessageComposerTests
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.NotNull(innerComposer.LastPriorViolations);
-        Assert.Contains("Model returned cta_type 'call_now' but 'schedule_tour' was required.", innerComposer.LastPriorViolations);
+        Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 2, LocaleApplied: true), ComposedOf(outcome).Notes);
     }
 
     [Fact]
@@ -189,15 +190,14 @@ public class ValidatingMessageComposerTests
     }
 
     // The error text can carry raw model response content on the OpenAI path, so the log
-    // records the failure category and the text itself never reaches a log sink. The
-    // correction still carries it to the next attempt, which the test above proves.
+    // records the failure category and the text itself never reaches a log sink. Since D34 it
+    // reaches no later attempt either: a no-message attempt goes straight to the fallback.
     [Fact]
     public async Task ComposeAsync_FirstAttemptResultFailure_LogsTheCategoryAndNotTheErrorText()
     {
         var capturingLogger = new CapturingLogger<ValidatingMessageComposer>();
         var innerComposer = new SequenceMessageComposer(
-            Result<NextMessage>.Failure("Model returned cta_type 'call_now' but 'schedule_tour' was required."),
-            Result<NextMessage>.Success(CleanMessage()));
+            Result<NextMessage>.Failure("Model returned cta_type 'call_now' but 'schedule_tour' was required."));
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer, capturingLogger);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
@@ -288,21 +288,21 @@ public class ValidatingMessageComposerTests
     // the winner; this is the other branch, an attempt that made no message at all (a
     // Result.Failure, the same shape a wrong-cta_type or malformed-JSON response takes on the
     // OpenAI path). A retry that attempt spent is still a retry this record spent, whether or
-    // not the attempt produced a message (Claude Code review, PR #26).
+    // not the attempt produced a message (Claude Code review, PR #26). D34 sends that attempt
+    // straight to the fallback, which spends none, so its retries are the whole count.
     [Fact]
-    public async Task ComposeAsync_FirstAttemptFailsWithRetriesThenSecondSucceeds_SumsNetworkRetriesFromTheFailedAttempt()
+    public async Task ComposeAsync_FirstAttemptFailsWithRetries_TheFallbackCarriesTheFailedAttemptsRetries()
     {
-        var innerComposer = new SequenceMessageComposer(
-            Result<NextMessage>.Failure("boom"),
-            Result<NextMessage>.Success(CleanMessage()))
+        var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("boom"))
         {
-            NetworkRetries = [2, 0],
+            NetworkRetries = [2],
         };
         var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
+        Assert.Equal(ComposerNames.Template, ComposedOf(outcome).Notes.Composer);
         Assert.Equal(2, outcome.NetworkRetries);
     }
 
@@ -351,12 +351,13 @@ public class ValidatingMessageComposerTests
             outcome.ModelCost);
     }
 
-    // The 2026-09-08 live run, in the shape this loop sees it: both attempts abandoned at the
-    // timeout, the template fallback answers, and the record still states that two calls were
-    // made and no tokens came back. The fallback has no cost of its own, so without the
-    // accumulation the bill would vanish behind a clean-looking template row.
+    // The 2026-09-08 live run, in the shape this loop sees it since D34: the attempt is
+    // abandoned at its timeout, the template fallback answers with no second model attempt,
+    // and the record still states that one call was made and no tokens came back. The fallback
+    // has no cost of its own, so without the accumulation the bill would vanish behind a
+    // clean-looking template row.
     [Fact]
-    public async Task ComposeAsync_BothAttemptsAbandonedAtTheirTimeout_FallsBackAndKeepsTheCountedCalls()
+    public async Task ComposeAsync_AttemptAbandonedAtItsTimeout_FallsBackAndKeepsTheCountedCall()
     {
         var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
         {
@@ -368,7 +369,7 @@ public class ValidatingMessageComposerTests
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         Assert.Equal(ComposerNames.Template, ComposedOf(outcome).Notes.Composer);
-        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), outcome.ModelCost);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), outcome.ModelCost);
     }
 
     // Nothing on the record's path made a model call, so there is no measurement to report and
@@ -410,12 +411,12 @@ public class ValidatingMessageComposerTests
     }
 
     // The other exit with no message: the fallback built none either, so the record is a
-    // composition failure rather than a refusal. Both attempts were abandoned at their
-    // timeout, and an abandoned call returns no completion to read a retry count off (D28's
-    // addendum), so the retries stay null - no measurement, not a measured zero - while the
-    // calls themselves are still counted.
+    // composition failure rather than a refusal. The attempt was abandoned at its timeout and
+    // D34 sent it straight to the fallback, and an abandoned call returns no completion to read
+    // a retry count off (D28's addendum), so the retries stay null - no measurement, not a
+    // measured zero - while the call itself is still counted.
     [Fact]
-    public async Task ComposeAsync_FallbackProducesNoMessage_TheFailureCarriesWhatTheAttemptsSpent()
+    public async Task ComposeAsync_FallbackProducesNoMessage_TheFailureCarriesWhatTheAttemptSpent()
     {
         var innerComposer = new SequenceMessageComposer(Result<NextMessage>.Failure("OpenAI call exceeded its budget."))
         {
@@ -428,7 +429,7 @@ public class ValidatingMessageComposerTests
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
         var failed = Assert.IsType<ComposeOutcome.Failed>(outcome);
-        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), failed.ModelCost);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), failed.ModelCost);
         Assert.Null(failed.NetworkRetries);
     }
 

@@ -6,7 +6,9 @@ using Microsoft.Extensions.Logging;
 namespace Agent.Safety;
 
 // Bounded compose-validate loop: one retry through the inner composer, then a hard
-// stop at the fallback composer. Never loops unboundedly (BACKLOG 4.2). The fallback's
+// stop at the fallback composer. Never loops unboundedly (BACKLOG 4.2). D34: only a safety
+// rejection is retried, since only it has a reason to feed back into the prompt; an attempt
+// that returned no message goes straight to the fallback. The fallback's
 // output is validated too: "nothing unsafe leaves the agent" applies to every exit path,
 // not just the retried ones, so an unsafe fallback yields ComposeOutcome.Refused rather than
 // shipping unvalidated content.
@@ -53,8 +55,13 @@ public sealed class ValidatingMessageComposer(
         // abandoned at its timeout produced nothing to ship and the vendor billed for it anyway.
         ModelCostNotes? discardedModelCost = null;
 
+        // D34: how many model attempts ran before the fallback, which is 1 when the first
+        // attempt returned no message and MaxComposeAttempts when both were rejected on safety.
+        int modelAttempts = 0;
+
         for (int attempt = 1; attempt <= MaxComposeAttempts; attempt++)
         {
+            modelAttempts = attempt;
             ComposeOutcome attemptOutcome = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken);
 
             if (attemptOutcome is ComposeOutcome.Composed attemptComposed)
@@ -76,27 +83,26 @@ public sealed class ValidatingMessageComposer(
             }
             else
             {
-                // Not a safety violation this loop found, but still something the next
-                // attempt should know about - otherwise a retry after a failure (a wrong
-                // cta_type, a malformed completion) repeats the exact same prompt with no
-                // corrective signal, wasting the one retry this loop has.
+                // D34: no message at all (a transport failure, a timeout, a malformed or wrong
+                // completion) is not a content problem, so a second prompt has no mechanism to
+                // do better and would only add a second wait. This attempt goes straight to
+                // the fallback, which is deterministic and always available.
                 // The error text can carry raw model response content on the OpenAI path,
-                // so the log records the failure category and never the content. The text
-                // itself still reaches the next attempt as a correction below; it just
-                // never reaches a log sink.
+                // so the log records the failure category and never the content.
                 // Read as NoMessage rather than as Failed and Refused separately: an inner
                 // composer that refuses its own draft is the same fact to this loop, no
-                // message to ship and a reason for the next attempt, and no composer in this
-                // program does it, so a branch of its own would be one no test could reach.
+                // message to ship, and no composer in this program does it, so a branch of its
+                // own would be one no test could reach. What the attempt spent still rides onto
+                // the outcome (D66).
                 log.LogWarning("Compose attempt {Attempt} failed: the composer returned a failure result.", attempt);
                 var noMessage = (ComposeOutcome.NoMessage)attemptOutcome;
-                violationsForNextAttempt = [noMessage.Error];
                 discardedNetworkRetries = AddRetries(discardedNetworkRetries, noMessage.NetworkRetries);
                 discardedModelCost = ModelCostNotes.Add(discardedModelCost, noMessage.ModelCost);
+                break;
             }
         }
 
-        log.LogWarning("Both compose attempts were rejected; falling back to the safe fallback composer.");
+        log.LogWarning("No compose attempt produced a clean message; falling back to the safe fallback composer.");
         ComposeOutcome fallbackOutcome = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
         // D66: the two exits below return no message, so there are no notes to stamp, and
@@ -118,7 +124,7 @@ public sealed class ValidatingMessageComposer(
 
         if (validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
         {
-            return WithAttempts(fallbackComposed, MaxComposeAttempts + 1, discardedNetworkRetries, discardedModelCost);
+            return WithAttempts(fallbackComposed, modelAttempts + 1, discardedNetworkRetries, discardedModelCost);
         }
 
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
@@ -134,8 +140,8 @@ public sealed class ValidatingMessageComposer(
     // discardedNetworkRetries carries retries spent on attempts this loop rejected: added
     // into the winning attempt's own count rather than lost with the attempt that made them.
     // discardedModelCost is the same fact for D62's token counts, and it matters most where the
-    // winning attempt has no cost of its own: the template fallback answering after two
-    // abandoned model calls would otherwise report a record that never called a model.
+    // winning attempt has no cost of its own: the template fallback answering after an
+    // abandoned model call would otherwise report a record that never called a model.
     private static ComposeOutcome WithAttempts(
         ComposeOutcome.Composed composed,
         int attempts,
