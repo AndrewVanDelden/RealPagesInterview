@@ -101,14 +101,29 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             // not there and throws from inside itself, after the call has already returned.
             // Named here as the same failure an empty message body is, because the composer
             // catches that one into a Result and the compose-validate loop turns it into a
-            // fallback; an ArgumentOutOfRangeException escapes all of that and costs the
-            // record its output row. This is the guarantee the hand-rolled client gave with
+            // fallback; an unhandled exception escapes all of that and costs the record its
+            // output row. This is the guarantee the hand-rolled client gave with
             // "Choices?.FirstOrDefault()?.Message?.Content ?? throw" before D27 replaced it.
-            throw new InvalidOperationException("OpenAI response contained no completion choice.", ex);
+            //
+            // D62: unlike a timeout, result.Value is already read by this point (it is what
+            // threw), so result.Value.Usage is real and readable - the vendor can still bill
+            // a response with no choice. Read here and carried on the exception, because it
+            // has nowhere else to travel once this throws.
+            ChatTokenUsage? noChoiceUsage = result.Value.Usage;
+            throw new NoCompletionChoiceException(noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0, ex);
         }
 
+        // D62: the measured cost of the call, read off the vendor's own usage block. Confirmed
+        // against the restored assembly on 2026-09-09, not from documentation, which does not
+        // list it (playbook step 50, SCS): ChatCompletion.Usage is an OpenAI.Chat.ChatTokenUsage
+        // with int InputTokenCount, int OutputTokenCount and int TotalTokenCount, and it is null
+        // when the response body carried no usage object. Read here, after the content, because
+        // a call that never got this far is an abandoned call the client cannot measure at all:
+        // the TimeoutException above is thrown before result.Value is ever read.
+        ChatTokenUsage? usage = result.Value.Usage;
+
         return content.Length > 0
-            ? new ModelCompletion(content, retries)
+            ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
             : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
 

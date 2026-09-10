@@ -1,4 +1,5 @@
 using Agent.Common;
+using Agent.Composition;
 using Agent.Domain;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,14 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     private readonly ILogger<Evaluator> log = logger.OrNullLogger();
 
     // O(n) in the batch size, each record scored once.
-    public Scorecard Evaluate(IReadOnlyList<ScoredRun> runs)
+    // batchLatencyMs is measured by the caller that ran the loop (D61), not here: nothing in
+    // this library reads a clock. batchModelCost is the same for D62's token totals, which the
+    // same caller summed off the diagnostics rows it wrote. Both are carried onto the scorecard
+    // unchanged, and a caller that ran no loop passes neither.
+    public Scorecard Evaluate(
+        IReadOnlyList<ScoredRun> runs,
+        double? batchLatencyMs = null,
+        ModelCostNotes? batchModelCost = null)
     {
         var scores = new List<RecordScore>(runs.Count);
 
@@ -46,7 +54,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         // record states one.
         int? latencyBudgetMs = runs.Min(run => run.ProspectCase.ThresholdsOrEmpty.P95LatencyMs);
 
-        return new Scorecard(scores, latencyBudgetMs);
+        return new Scorecard(scores, latencyBudgetMs, batchLatencyMs, batchModelCost);
     }
 
     private static RecordScore Score(ScoredRun run)

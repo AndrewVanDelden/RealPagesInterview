@@ -23,6 +23,18 @@ public abstract record ComposeOutcome
     {
     }
 
+    // What this record's run spent, on the base type so all three cases answer for it (D66).
+    // ModelCost is the token counts of D62 and NetworkRetries the transport retries of D28.
+    // They are here rather than on CompositionNotes because the notes are an account of a
+    // message that is being returned, and two of the three cases return none: a refused draft
+    // and a composition failure both leave with no notes at all, which is where the counts
+    // used to be dropped even though the vendor had already billed for the calls behind them.
+    // Null on both is the absence of a measurement and never a measured zero, unchanged from
+    // D62 and D28.
+    public ModelCostNotes? ModelCost { get; init; }
+
+    public int? NetworkRetries { get; init; }
+
     // A message to send.
     public sealed record Composed(ComposedMessage Message) : ComposeOutcome;
 

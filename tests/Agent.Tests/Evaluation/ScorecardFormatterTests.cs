@@ -1,3 +1,4 @@
+using Agent.Composition;
 using Agent.Evaluation;
 using Xunit;
 
@@ -126,5 +127,45 @@ public class ScorecardFormatterTests
         int shortRowFirstPipeIndex = lines[1].IndexOf('|');
         int longRowFirstPipeIndex = lines[2].IndexOf('|');
         Assert.Equal(shortRowFirstPipeIndex, longRowFirstPipeIndex);
+    }
+
+    // D61, per batch: one wall-clock elapsed around the record loop, printed beside the p95 it
+    // is not. The p95 is computed from the per-record numbers; this one is measured once.
+    [Fact]
+    public void Format_BatchWasTimed_PrintsTheBatchElapsed()
+    {
+        var scorecard = new Scorecard([PassingScore("t1")], 2000, BatchLatencyMs: 250);
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("Batch latency: 250 ms", report);
+    }
+
+    // --replay runs no record loop (D14), so nothing was timed and nothing was spent. Both
+    // batch lines say so rather than printing a zero nobody measured.
+    [Fact]
+    public void Format_BatchWasNotTimedOrCosted_SaysSoOnBothBatchLines()
+    {
+        var scorecard = new Scorecard([UnmeasuredScore()], null);
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("Batch latency: n/a", report);
+        Assert.Contains("Batch model cost: none", report);
+    }
+
+    // D62, per batch: the totals the batch spent, in tokens, rendered by the one description
+    // the Batch complete log line uses too.
+    [Fact]
+    public void Format_BatchSpentTokens_PrintsEveryCountItMeasured()
+    {
+        var scorecard = new Scorecard(
+            [PassingScore("t1")],
+            2000,
+            BatchModelCost: new ModelCostNotes(Calls: 3, CompletedCalls: 2, InputTokens: 22, OutputTokens: 14));
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("Batch model cost: 3 call(s), 2 completed, 22 input + 14 output token(s)", report);
     }
 }

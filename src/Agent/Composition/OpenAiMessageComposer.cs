@@ -78,6 +78,18 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         {
             completion = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
         }
+        // D62: distinct from the general catch below. The call completed and the vendor's own
+        // usage block already travelled out on the exception, so the real counted call and its
+        // tokens are what this record spent - not the zero an abandoned call reports.
+        catch (NoCompletionChoiceException ex)
+        {
+            string noChoiceFailure = ex.ToRedactedDiagnosticString();
+            log.LogWarning("Completion request failed: {CompletionFailure}.", noChoiceFailure);
+            return new ComposeOutcome.Failed($"Completion request failed: {noChoiceFailure}")
+            {
+                ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 1, ex.InputTokens, ex.OutputTokens),
+            };
+        }
         catch (Exception ex) when (ex is ClientResultException or TimeoutException or HttpRequestException or InvalidOperationException or JsonException)
         {
             // Step 68: the exception is not attached to the entry. LogLineFormatter appends
@@ -87,8 +99,24 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             // LeasingMessageAgent both log Result.Error downstream.
             string failure = ex.ToRedactedDiagnosticString();
             log.LogWarning("Completion request failed: {CompletionFailure}.", failure);
-            return new ComposeOutcome.Failed($"Completion request failed: {failure}");
+
+            // D62's second state. The call was made and it is counted; nothing came back to
+            // measure, because every exception caught here is thrown before or instead of a
+            // completion, so the tokens are zero and CompletedCalls beside them is what says
+            // the zero is not a free call.
+            return new ComposeOutcome.Failed($"Completion request failed: {failure}")
+            {
+                ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0),
+            };
         }
+
+        // D62's third state, for every exit below this line: the call completed, so the vendor's
+        // own counts are what it cost, whether or not what came back was usable.
+        var modelCost = new ModelCostNotes(
+            Calls: 1,
+            CompletedCalls: 1,
+            completion.InputTokens,
+            completion.OutputTokens);
 
         ComposedMessagePayload? payload;
         try
@@ -102,12 +130,20 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             // locates the failure without either (step 68).
             string failure = ex.ToRedactedDiagnosticString();
             log.LogWarning("Model response was not valid JSON: {ResponseFailure}.", failure);
-            return new ComposeOutcome.Failed($"Model response was not valid JSON: {failure}");
+            return new ComposeOutcome.Failed($"Model response was not valid JSON: {failure}")
+            {
+                ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
+            };
         }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.Body) || string.IsNullOrWhiteSpace(payload.CtaType))
         {
-            return new ComposeOutcome.Failed("Model response was missing required fields (body, cta_type).");
+            return new ComposeOutcome.Failed("Model response was missing required fields (body, cta_type).")
+            {
+                ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
+            };
         }
 
         // The response schema already constrains cta_type to exactly requiredCtaType
@@ -124,7 +160,11 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         if (requiredCtaType is not null && !string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
             return new ComposeOutcome.Failed(
-                "Model returned a cta_type other than the one the record's primary_cta required.");
+                "Model returned a cta_type other than the one the record's primary_cta required.")
+            {
+                ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
+            };
         }
 
         // S2 and A21: the link is a fact, so code builds it from the property slug and the
@@ -151,9 +191,17 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         var cta = new Cta(payload.CtaType, options, link);
         var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
-        var composed = new ComposedMessage(message, CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true, completion.NetworkRetries));
+        var composed = new ComposedMessage(
+            message,
+            CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true));
 
-        return new ComposeOutcome.Composed(composed);
+        // D66: what the call spent rides on the outcome rather than on the notes, so the
+        // compose-validate loop reads one property whichever case an attempt returned.
+        return new ComposeOutcome.Composed(composed)
+        {
+            ModelCost = modelCost,
+            NetworkRetries = completion.NetworkRetries,
+        };
     }
 
     // D1: an absent fact is told to the model as unknown, never as a blank string it

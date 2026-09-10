@@ -17,6 +17,15 @@ public class OpenAiCompletionClientTests
          "choices":[{"index":0,"message":{"role":"assistant","content":"{\"body\":\"hi\"}"},"finish_reason":"stop"}]}
         """;
 
+    // The same completion with the vendor's usage block, which a real 200 always carries.
+    // CompletionJson deliberately keeps none, so the two together cover both answers the SDK
+    // can give for ChatCompletion.Usage.
+    private const string UsageCompletionJson = """
+        {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
+         "choices":[{"index":0,"message":{"role":"assistant","content":"{\"body\":\"hi\"}"},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+        """;
+
     private const string EmptyContentJson = """
         {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
          "choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}]}
@@ -172,9 +181,11 @@ public class OpenAiCompletionClientTests
     }
 
     // A 200 with no choice at all is a response shape the API can return and the composer
-    // has to survive: it becomes the same InvalidOperationException an empty message does,
-    // which the composer catches into a Result failure and the loop turns into a fallback.
-    // Anything else escapes the agent and costs the record its output row.
+    // has to survive: it is an InvalidOperationException (NoCompletionChoiceException, a
+    // subtype, so a Failed outcome carrying real tokens is still an InvalidOperationException
+    // to a catch that has not been told about the subtype), which the composer catches into a
+    // Result failure and the loop turns into a fallback. Anything else escapes the agent and
+    // costs the record its output row.
     [Theory]
     [InlineData("""{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""")]
     [InlineData("""{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini"}""")]
@@ -184,6 +195,81 @@ public class OpenAiCompletionClientTests
         using var httpClient = new HttpClient(handler);
         ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync("system", "user"));
+        await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
+    }
+
+    // D62: a 200 with no choice can still carry a real usage block, because the vendor can
+    // bill a call whose output was withheld (a moderation refusal is one live shape of this).
+    // result.Value.Content is what throws when there is no choice, and result.Value.Usage is
+    // already readable at that point, so the tokens must not collapse into the same zero an
+    // abandoned-at-timeout call reports (Claude Code review, PR #26).
+    [Fact]
+    public async Task CompleteAsync_ResponseHasNoChoiceButCarriesUsage_ThrowsWithTheVendorsTokenCounts()
+    {
+        const string responseJson = """
+            {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[],
+             "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+            """;
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Equal(11, exception.InputTokens);
+        Assert.Equal(7, exception.OutputTokens);
+    }
+
+    // The other answer the SDK can give for Usage: no block at all, which is what
+    // CompletionJson (used by the no-choice theory above) carries. Zero is the honest
+    // reading of "nothing measured" here, the same rule a completed call with a choice but
+    // no usage block already follows.
+    [Fact]
+    public async Task CompleteAsync_ResponseHasNoChoiceAndNoUsage_ThrowsWithZeroTokens()
+    {
+        const string responseJson = """{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""";
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Equal(0, exception.InputTokens);
+        Assert.Equal(0, exception.OutputTokens);
+    }
+
+    // D62: cost in the diagnostics is measured tokens, and the measurement is the vendor's own
+    // usage block on the completion. Confirmed by reflection over the restored OpenAI 2.13.0
+    // assembly on 2026-09-09: ChatCompletion.Usage is a ChatTokenUsage with int
+    // InputTokenCount, int OutputTokenCount and int TotalTokenCount, and the wire names it
+    // reads are prompt_tokens and completion_tokens.
+    [Fact]
+    public async Task CompleteAsync_ResponseCarriesUsage_ReportsTheVendorsTokenCounts()
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, UsageCompletionJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(11, completion.InputTokens);
+        Assert.Equal(7, completion.OutputTokens);
+    }
+
+    // A 200 whose body carries no usage block at all: the SDK leaves Usage null, so there is
+    // nothing measured and the counts are zero. The call still completed, and it is
+    // ModelCostNotes.CompletedCalls beside them, not the zeros, that says whether a bill
+    // exists (D62).
+    [Fact]
+    public async Task CompleteAsync_ResponseHasNoUsage_ReportsZeroTokens()
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(0, completion.InputTokens);
+        Assert.Equal(0, completion.OutputTokens);
     }
 }

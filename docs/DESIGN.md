@@ -301,7 +301,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 3 Deterministic core | the deterministic core passes the synthetic set with every fuzzy component stubbed, and the diagnostics explain every decision | 2026-09-08 in Sprint 5, with the rule for what earns a diagnostics object stated (D18, D22, D23) |
 | 4 Fuzzy and external components | with the network disabled, the product completes the full example set using the offline path and the diagnostics say so on every record | 2026-09-08 in Sprint 6, run with outbound HTTPS blocked at the process level; step 60 closed the same day (D31) |
 | 5 Safety, security, and compliance | every validator has a passing test, a failing test, and a false-positive test | 2026-09-09 in Sprint 7, four safety checks and three brand rules, each with all three tests, and the allow-list tested in both directions (D38 to D48) |
-| 6 Structure and narration | the narration is delivered without notes and the orchestrator reads as its steps in order | not passed. The second half landed 2026-09-09 in Sprint 8: three interfaces remain, all with substitutes, and the six steps read in execution order (D57 to D59). The first half is the user's own step |
+| 6 Orchestration, entry points, and operations | the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code | 2026-09-09 in Sprint 9, on the by-hand run of step 81 recorded below: all four artifacts on all three sets, exit codes 0, 0 and 2 (D60, D63). The narration this table previously fused onto this gate is the playbook's step 98, inside Phase 8, and is still owed there (D60) |
 
 | Sprint | Implements | Proof |
 |---|---|---|
@@ -313,6 +313,7 @@ Phase record, from `~/.agent-rules/PROJECT_PLAYBOOK.md`. The live one is at the 
 | 6 Composition (landed 2026-09-08) | the composer named in the diagnostics, the call-to-action payload and its catalog, language sets, the official SDK bounded and counted, the model prompt inputs and its boundary, the judge (D5, D19, D24 to D30) | all three sets complete on the offline path with outbound HTTPS blocked, and the diagnostics name the composer on every record that has a message |
 | 7 Safety and states (landed 2026-09-09) | earned states, violations by category, false-positive tests, the allow-list, the redaction rule, the review queue, and the vendor's retention (D3, D38 to D48) | every validator has a passing, a failing, and a false-positive test; zero violations and zero false-positive suppressions on the synthetic set |
 | 8 Structure and narration (landed 2026-09-09) | the consent gate merged into the channel selector, the six interfaces with no substitute deleted, the orchestrator's six steps numbered in the order it executes them, `docs/NARRATION.md`, final numbers (D7, D57 to D59) | both numbers in the README, and every per-check tally unmoved on all three sets; the narration itself is delivered aloud by the user, which no document can assert |
+| 9 Diagnostics, guards and fault injection (landed 2026-09-09) | Phase 6's check restored to the playbook's, per-record latency and token counts on the diagnostics row, the step 81 by-hand run, a guard on every path the CLI opens in either direction and on every empty argument, the two spend counts moved off `composition`, `docs/FAULT_INJECTION.md` (D60 to D66) | every per-check tally unmoved on all three sets; all four artifacts and the documented exit code on each; six command-line failures that ended the process unhandled now exit 1 with no stack frame; the six faults of step 84 each named with the tests that prove it |
 
 Sprints 2 and 3 were swapped on 2026-09-08 before Sprint 2 started: the harness cannot score a
 file it cannot parse, and playbook steps 25 to 27 (nullable domain types, a per-record reader,
@@ -429,15 +430,32 @@ diagnostics all behaved as the tests said they would, against the live API.
 
 **What the step 60 run cost**, read from the vendor's own usage page rather than estimated.
 About $0.004 for the batch: `gpt-4o-mini` input $0.002 and output $0.002, at the published
-$0.15 and $0.60 per million tokens, against roughly 12,100 tokens. The interesting number is
-the request count. The client made 92 HTTP attempts, 46 model calls each retried once, and the
-vendor recorded about 30 requests: abandoning a call at its 1000 ms timeout stops roughly two
-thirds of them from ever becoming billable requests, while the remaining third complete on the
-server after the client has walked away and are billed in full, output tokens included. So a
-timeout is a partial refund, not a free abort, and a run that times out on every record still
-pays for about a third of what it asked for. The estimate made before the run assumed every
-attempt would bill its input, which was high on both counts. Per record, this is about
-$0.00017 for a record that produced no model text at all.
+$0.15 and $0.60 per million tokens, against roughly 12,100 tokens. Those three numbers do not
+reconcile, and the reconciliation is stated here rather than one of them being quietly
+changed. $0.002 at $0.15 per million is 13,333 input tokens and $0.002 at $0.60 per million is
+3,333 output tokens, which is 16,667 together, not 12,100. Both dollar figures are rounded to
+the tenth of a cent, so each carries about plus or minus $0.0005, which is plus or minus 3,333
+tokens at the input price and 833 at the output price; multiplying a rounded cent figure back
+into tokens cannot give a token count worth stating. The recorded 12,100 is most consistent
+with input tokens only: about 30 billed requests at about 430 prompt tokens each is 12,900. So
+read the dollar figures as the vendor's own rounded charge and the 12,100 as the input side of
+it, and read neither as a measured total. The interesting number is the request count. The
+client made 92 HTTP attempts, 46 model calls each retried once, and the vendor recorded about
+30 requests: abandoning a call at its 1000 ms timeout stops roughly two thirds of them from
+ever becoming billable requests, while the remaining third complete on the server after the
+client has walked away and are billed in full, output tokens included. So a timeout is a
+partial refund, not a free abort, and a run that times out on every record still pays for
+about a third of what it asked for. The estimate made before the run assumed every attempt
+would bill its input, which was high on both counts. Per record, this is about $0.00017 for a
+record that produced no model text at all.
+
+No future run needs that arithmetic. Since Sprint 9 the program measures the counts itself:
+`diagnostics.model_cost` carries the vendor's own input and output token counts per
+record, with a call abandoned at its timeout counted as a call with zero tokens, and the
+scorecard and the `Batch complete` log line print the batch total (D62). Money stays out of
+`src/` and stays dated prose here, because a price constant is a fact about a vendor's web page
+that no test in this suite could tell stale from current; a reader who needs today's money
+multiplies today's published price by the tokens a run reports.
 
 **Numbers after Sprint 7**, the template composer, the same reference times. Every per-check
 tally on all three sets is identical to Sprint 6: `sample.jsonl` 2 of 2 on every check and 2 of
@@ -506,3 +524,119 @@ the first paragraph above and scores with `LatencyMs: null`, so it pins no laten
 
 The suite behind these numbers: 551 tests in `Agent.Tests` and 61 in `Agent.Cli.Tests`, all
 passing, 100 percent line, branch and method coverage on both modules, `.\test.ps1` exit code 0.
+
+**Numbers after Sprint 9**, the template composer, the documented reference times, run
+2026-09-09 from the repo root with `--eval-report`, `--diagnostics` and `--review-queue` on all
+three sets. Every per-check tally is identical to Sprint 8, which is identical to Sprint 7 and
+Sprint 6. `sample.jsonl` at `--now 2025-12-09T00:00:00-06:00`: every check 2 of 2, 2 of 2
+records passing, exit code 0. `holdout_12.jsonl` at the same reference time: channel 12 of 12,
+day 7 of 11, hour 5 of 11, action 7 of 12, opt-out 11 of 11, call-to-action type 7 of 11,
+payload 11 of 11, language 11 of 11, safety 12 of 12, personalization 8 of 8, 4 of 12 records
+passing, exit code 0. `synthetic_12.jsonl` at `--now 2026-03-07T12:00:00Z`: channel 12 of 12,
+day 10 of 10, hour 10 of 10, action 12 of 12, opt-out 10 of 10, call-to-action type 10 of 10,
+payload 10 of 10, language 10 of 10, safety 12 of 12, personalization 9 of 9, 12 of 12 records
+passing, exit code 2 for the malformed line by design. `ActionSem` and `BodySem` read 0 of 0 on
+all three. The safety numbers are unchanged as well: the review queue is written on every run
+and holds 0 rows on all three, every suppression is `no_contact_consent`, 1 on the hold-out and
+2 on the synthetic set, no run recorded a `safety_violation`, and the states map is the same map
+Sprint 8 recorded. Nothing moved, and nothing was meant to: this sprint put two measurements on
+the diagnostics row and a guard in front of four file opens, and neither is on a decision path.
+Measurements, not targets (D6, D9); `BaselineNumbersTests` still pins every tally.
+
+What the sprint adds here is the two numbers the diagnostics did not carry before. Latency: the
+batch p95 reads 22 ms, 22 ms and 19 ms against the 2000 ms budget, all three OK, and every
+diagnostics row now carries the same per-record `latency_ms` that p95 is computed from (D61):
+22.4 ms on the first composed record of `sample.jsonl`, 21.5 ms on the first of
+`holdout_12.jsonl`, 19.5 ms on `synthetic_12.jsonl`'s record 2, which is that file's first
+composed one because record 1 is suppressed for consent, and at most 3.0 ms on every other row
+of all three. That is the one-time just-in-time compilation cost sitting on the batch's first
+composed message, which is where it has sat since Sprint 6. The
+new `Batch latency:` line, one wall-clock measurement around the whole record loop rather than a
+percentile of the rows, reads 27 ms, 29 ms and 29 ms; it is larger than the p95 because it
+counts every record, the input reads and the output writes. Cost: `Batch model cost:` reads
+`none` on all three and `model_cost` is null on all 26 rows, which is D62's first
+state and the correct reading for runs the template composer answered without one request.
+Both counts sit on the `diagnostics` object beside `composition` rather than inside it (D66), so
+the hold-out's one consent-suppressed record and the synthetic set's two carry `composition: null`
+and still carry a `model_cost` and a `network_retries` member of their own.
+Neither is pinned as a tally: latency is wall clock and the token counts are the vendor's, so
+`BaselineNumbersTests` still scores with `LatencyMs: null` and pins no cost.
+
+The suite behind these numbers: 577 tests in `Agent.Tests` and 77 in `Agent.Cli.Tests`, all
+passing, 100 percent line, branch and method coverage on both modules, `.\test.ps1` exit code 0.
+The four output flags were checked by hand on the same day, each given a path whose parent
+directory does not exist: `--output`, `--diagnostics`, `--review-queue` and `--eval-report` each
+wrote one stderr line naming its own flag and exited 1, where the same paths previously ended
+the process on an unhandled exception with an exit code that was none of the three documented
+ones (D64). The six faults of playbook step 84, what each one does and the tests that prove it,
+are in [FAULT_INJECTION.md](FAULT_INJECTION.md).
+
+**Step 81, the Phase 6 check run by hand (2026-09-09).** What a by-hand check is here is D63: a
+per-field re-comparison of every row against its label is exactly what `Evaluator` already does,
+so that half is a deliberate scope-out recorded in [CODE_REVIEW.md](CODE_REVIEW.md), and what is
+recorded below is the half a person adds. Each documented one-line command was run from the repo
+root with `--output`, `--diagnostics`, `--review-queue` and `--eval-report` all given.
+
+| Set | `--now` | Artifacts written | Exit code |
+|---|---|---|---|
+| `sample.jsonl` | `2025-12-09T00:00:00-06:00` | output 2 rows, diagnostics 2 rows, review queue `[]`, scorecard | 0 |
+| `holdout_12.jsonl` | `2025-12-09T00:00:00-06:00` | output 12 rows, diagnostics 12 rows, review queue `[]`, scorecard | 0 |
+| `synthetic_12.jsonl` | `2026-03-07T12:00:00Z` | output 12 rows, diagnostics 12 rows, review queue `[]`, scorecard | 2 |
+
+All four artifacts appeared on every set, and every exit code is the documented one: 2 on the
+synthetic set for its malformed line 11, 0 on the other two. That is Phase 6's check as the
+playbook states it (D60), so Phase 6 passes on this run.
+
+The first thing a person adds, that the scorecard's tally lines agree with its own rows, counted
+by hand off the printed hold-out table rather than recomputed by the scorer. Reading the twelve
+printed rows column by column: Channel 12 OK, so 12 of 12; Day 7 OK, 4 FAIL, 1 `n/a`, 7 of 11;
+Hour 5 OK, 6 FAIL, 1 `n/a`, 5 of 11; Action 7 OK, 5 FAIL, 7 of 12; OptOut 11 OK, 1 `n/a`, 11 of
+11; CTA 7 OK, 4 FAIL, 1 `n/a`, 7 of 11; Payload 11 OK, 1 `n/a`, 11 of 11; Lang 11 OK, 1 `n/a`, 11
+of 11; Safety 12 OK, 12 of 12; Personalization 8 rows `1.00 OK`, 3 rows `1.00 n/a`, 1 `n/a`, 8 of
+8; ActionSem and BodySem `n/a` on all twelve, 0 of 0; four rows read PASS, 4 of 12. Every one of
+those hand counts is the number the `Checks:` line and the `Overall:` line print, and the
+`Latency p95` of 22 ms is the largest of the twelve printed per-row latencies, which read 22, 1,
+0, 0, 0, 0, 0, 0, 0, 0, 1 and 0 ms. No `with` copy has left the totals disagreeing with the rows.
+
+The second, one record read end to end across its four artifacts. `holdout_12.jsonl`'s
+`resident_opt_out_respected` states no consented channel. Its output row is
+`next_message.channel: none` with every other member of the message null, and
+`next_action: {type: no_op, reason: no_contact_consent}`. Its diagnostics row states
+`suppression_reason: no_contact_consent`; `required_states` carrying `consent_verified: earned`
+and nothing else, because the record asserts nothing else; `action_plan: null` and
+`schedule: null`, because neither the planner nor the scheduler ran; `composition: null`, because
+there is no message to account for; and `model_cost: null` and `network_retries: null` beside it,
+which after D66 is a measurement that is absent rather than two members that vanished with the
+composition. Its `ingest_notes` name nine defaulted fields and three unknown members
+(`input.unit`, `input.lease_end_date`, `assertions.constraints.respect_consent`). Its scorecard
+row reads OK on channel, action type and safety, `n/a` on every other check, and PASS overall,
+because the label expects exactly this suppression. Four artifacts, one story.
+
+The numbers this run measured, for comparison with the sprint's own: p95 21 ms, 22 ms and 19 ms
+and batch latency 26 ms, 30 ms and 29 ms, all three p95s OK against the 2000 ms budget, and
+`Batch model cost: none` on all three. They differ from the sprint paragraph above by a
+millisecond or two on two of the sets, which is what wall clock does and why nothing here is
+pinned.
+
+**The six command-line failures, measured 2026-09-09.** The before column is D64's and D65's own
+measurements against the code as it stood before each guard; it is not re-measured here, since
+that would mean reverting `src/`. The after column was measured against the built CLI on the date
+above.
+
+| Case | Before | After |
+|---|---|---|
+| `--input <missing file>` | unhandled `FileNotFoundException`, nine-frame stack trace, exit -532462766 | `Could not open --input '<path>': FileNotFoundException: ...`, no stack frame, exit 1 |
+| `--replay <missing file>` | the same, thrown from the replay reader instead | the same wording naming `--replay`, no stack frame, exit 1 |
+| `--input ""` | unhandled `ArgumentException: The value cannot be an empty string.` | `The argument after '--input' is empty: no argument of this program may be empty.`, exit 1 |
+| `--output ""` | the same, thrown inside the output guard's own try | the same line naming `--output`, exit 1 |
+| `--log-file ""` | the same, thrown from the file logger provider | the same line naming `--log-file`, exit 1 |
+| `--eval-report ""` | the same, thrown from the report write | the same line naming `--eval-report`, exit 1 |
+
+An empty first argument, which follows no flag, reads `Argument 1 is empty: no argument of this
+program may be empty.` and exits 1 as well; those are the only two forms the check emits. One
+difference between the two halves of the table, measured rather than assumed: the two reader
+guards each print the message twice and the empty-value cases print it once. `ReportFailure`
+writes one failure through the logger and through the error writer both, and the console sink is
+the CLI's own `error` stream, so a guarded open produces a timestamped log line and the plain
+stderr line under it; that is unchanged from D64's four output guards. The empty-value scan runs
+before any logger exists and writes to stderr directly, so it has one line to print.

@@ -29,6 +29,15 @@ namespace Agent.Orchestration;
 // compose calls it took (D24, playbook step 57); it is null on a record that has no message,
 // which is no consented channel or a composition failure, and suppression_reason already
 // separates those two.
+//
+// ModelCost and NetworkRetries are what this record's run spent (D66): the token counts of
+// D62 and the transport retries of D28. They are here rather than inside Composition because
+// they are facts about the record and not about a returned message, and Composition is null on
+// every record that has none. A refused draft and a composition failure both made their calls
+// and were both billed for them, so the two counts stay on the row the way latency_ms does
+// (D61). Null on either is the absence of a measurement and never a measured zero, which is
+// the rule D62 and D28 already state; they are last so the key order of every existing
+// diagnostics row is untouched and these two are appended to it.
 public sealed record AgentDiagnostics(
     IReadOnlyDictionary<string, RequiredStateVerdict> RequiredStates,
     int SafetyViolationCount,
@@ -36,4 +45,6 @@ public sealed record AgentDiagnostics(
     SuppressionReason SuppressionReason = SuppressionReason.None,
     ActionPlanNotes? ActionPlan = null,
     ScheduleNotes? Schedule = null,
-    CompositionNotes? Composition = null);
+    CompositionNotes? Composition = null,
+    ModelCostNotes? ModelCost = null,
+    int? NetworkRetries = null);

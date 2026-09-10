@@ -13,9 +13,8 @@ interface. The interview is over; work here is portfolio quality, not graded.
 Universal code rules live at user scope (`~/.claude/CLAUDE.md`). This file holds only
 what is specific to this repo.
 
-This file is rules, not state: it reads the same every session and changes only by a
-deliberate edit reviewed like code. Where the project has got to lives at the top of
-`docs/DECISION_LOG.md` and is replaced every sprint.
+This file is rules, not state: it reads the same every session and changes only by a deliberate edit
+reviewed like code. Where the project has got to is the top of `docs/DECISION_LOG.md`, replaced every sprint.
 
 ## Build, test, run
 
@@ -115,10 +114,11 @@ sets it. Never read, print, or write the value.
 - A golden test normalizes line endings on both sides. A raw string literal carries whatever
   endings git checked the file out with, so a golden compared raw passes on one checkout and
   fails on another.
-- The composer's own `Attempts` is overwritten by the compose-validate loop, which is the only
-  code that knows the count (D24 addendum). Do not set it at a composer.
-- Quiet hours and semantic fair-housing checks are deliberate scope-outs. See
-  `docs/CODE_REVIEW.md` before flagging either.
+- `Attempts` is stamped by the compose-validate loop, never at a composer (D24 addendum), and
+  `CompositionNotes` is `(Composer, Attempts, LocaleApplied)` and nothing else. The two spend
+  counts ride `ComposeOutcome` to the wire on `AgentDiagnostics`, so a null `composition` does
+  not take them with it (D66); the loop sums them and `CliRunner` owns the batch total.
+- Every deliberate scope-out is in `docs/CODE_REVIEW.md`. Read it before flagging one.
 
 ## Review criteria
 

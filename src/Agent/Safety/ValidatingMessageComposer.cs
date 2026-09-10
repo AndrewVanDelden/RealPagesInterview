@@ -37,11 +37,21 @@ public sealed class ValidatingMessageComposer(
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
         // D28 addendum: a retry a discarded attempt spent is still a retry this record
-        // spent. An attempt that carries no ComposedMessage at all (the composer never
-        // built one) has no retry count to capture, so only a validation-rejected attempt's
-        // retries are capturable here; that is the discard case D28's own visibility goal is
-        // about.
-        int discardedNetworkRetries = 0;
+        // spent, whether or not that attempt built a message. D66 put NetworkRetries on the
+        // ComposeOutcome base type for all three cases, so a NoMessage attempt (a wrong
+        // cta_type, a malformed completion) can carry a real retry count too, and it is
+        // captured here the same way a validation-rejected Composed attempt's is below.
+        // Nullable, and not an int starting at zero: a record whose attempts made no network
+        // call at all has no measurement, and a template-composed draft the loop refuses would
+        // otherwise report a measured zero retries for calls that never happened (D28, D62).
+        int? discardedNetworkRetries = null;
+
+        // D62: this loop owns the per-record cost sum, for the reason D24's addendum gives for
+        // Attempts. A composer knows what its own call cost and nothing about the calls the
+        // attempts beside it made, so the total is a fact only the code that ran every attempt
+        // has. It counts the attempts this loop threw away, message or no message: an attempt
+        // abandoned at its timeout produced nothing to ship and the vendor billed for it anyway.
+        ModelCostNotes? discardedModelCost = null;
 
         for (int attempt = 1; attempt <= MaxComposeAttempts; attempt++)
         {
@@ -53,7 +63,7 @@ public sealed class ValidatingMessageComposer(
 
                 if (validation.Violations.Count == 0)
                 {
-                    return WithAttempts(attemptComposed.Message, attempt, discardedNetworkRetries);
+                    return WithAttempts(attemptComposed, attempt, discardedNetworkRetries, discardedModelCost);
                 }
 
                 log.LogWarning(
@@ -61,7 +71,8 @@ public sealed class ValidatingMessageComposer(
                     attempt,
                     string.Join("; ", validation.Violations));
                 violationsForNextAttempt = validation.Violations;
-                discardedNetworkRetries += attemptComposed.Message.Notes.NetworkRetries ?? 0;
+                discardedNetworkRetries = AddRetries(discardedNetworkRetries, attemptComposed.NetworkRetries);
+                discardedModelCost = ModelCostNotes.Add(discardedModelCost, attemptComposed.ModelCost);
             }
             else
             {
@@ -78,43 +89,78 @@ public sealed class ValidatingMessageComposer(
                 // message to ship and a reason for the next attempt, and no composer in this
                 // program does it, so a branch of its own would be one no test could reach.
                 log.LogWarning("Compose attempt {Attempt} failed: the composer returned a failure result.", attempt);
-                violationsForNextAttempt = [((ComposeOutcome.NoMessage)attemptOutcome).Error];
+                var noMessage = (ComposeOutcome.NoMessage)attemptOutcome;
+                violationsForNextAttempt = [noMessage.Error];
+                discardedNetworkRetries = AddRetries(discardedNetworkRetries, noMessage.NetworkRetries);
+                discardedModelCost = ModelCostNotes.Add(discardedModelCost, noMessage.ModelCost);
             }
         }
 
         log.LogWarning("Both compose attempts were rejected; falling back to the safe fallback composer.");
         ComposeOutcome fallbackOutcome = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
+        // D66: the two exits below return no message, so there are no notes to stamp, and
+        // before D66 that is where the accumulation above was dropped. Both counts go on the
+        // outcome itself instead.
         if (fallbackOutcome is not ComposeOutcome.Composed fallbackComposed)
         {
             // No draft anywhere: the fallback built no message either. Nothing to review, so
             // this stays a failure rather than becoming an empty queue row.
             log.LogError("Fallback composer produced no message; suppressing.");
-            return new ComposeOutcome.Failed(((ComposeOutcome.NoMessage)fallbackOutcome).Error);
+            return new ComposeOutcome.Failed(((ComposeOutcome.NoMessage)fallbackOutcome).Error)
+            {
+                ModelCost = discardedModelCost,
+                NetworkRetries = discardedNetworkRetries,
+            };
         }
 
         if (validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
         {
-            return WithAttempts(fallbackComposed.Message, MaxComposeAttempts + 1, discardedNetworkRetries);
+            return WithAttempts(fallbackComposed, MaxComposeAttempts + 1, discardedNetworkRetries, discardedModelCost);
         }
 
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
-        return new ComposeOutcome.Refused(fallbackComposed.Message.Message, RefusalError);
+        return new ComposeOutcome.Refused(fallbackComposed.Message.Message, RefusalError)
+        {
+            ModelCost = discardedModelCost,
+            NetworkRetries = discardedNetworkRetries,
+        };
     }
 
     // D24: the composer that answered keeps its own name, and this loop supplies the count,
     // because the number of calls it took is the loop's fact and not the composer's.
     // discardedNetworkRetries carries retries spent on attempts this loop rejected: added
     // into the winning attempt's own count rather than lost with the attempt that made them.
-    private static ComposeOutcome WithAttempts(ComposedMessage composed, int attempts, int discardedNetworkRetries)
+    // discardedModelCost is the same fact for D62's token counts, and it matters most where the
+    // winning attempt has no cost of its own: the template fallback answering after two
+    // abandoned model calls would otherwise report a record that never called a model.
+    private static ComposeOutcome WithAttempts(
+        ComposeOutcome.Composed composed,
+        int attempts,
+        int? discardedNetworkRetries,
+        ModelCostNotes? discardedModelCost)
     {
-        int? networkRetries = composed.Notes.NetworkRetries switch
+        return composed with
         {
-            null when discardedNetworkRetries == 0 => null,
-            null => discardedNetworkRetries,
-            int current => current + discardedNetworkRetries,
+            Message = composed.Message with { Notes = composed.Message.Notes with { Attempts = attempts } },
+            NetworkRetries = AddRetries(discardedNetworkRetries, composed.NetworkRetries),
+            ModelCost = ModelCostNotes.Add(discardedModelCost, composed.ModelCost),
         };
+    }
 
-        return new ComposeOutcome.Composed(composed with { Notes = composed.Notes with { Attempts = attempts, NetworkRetries = networkRetries } });
+    // The rule ModelCostNotes.Add states, for the retry count: null plus anything is that
+    // thing, so an attempt that made no network call adds no measurement and a record whose
+    // every attempt stayed offline still reports null rather than a zero nobody measured.
+    // O(1).
+    private static int? AddRetries(int? left, int? right)
+    {
+        if (left is null)
+        {
+            return right;
+        }
+
+        // Both .Value, not `left + right`: the lifted operator re-tests both for null, which is
+        // a branch the two returns above have already answered and no input can reach.
+        return right is null ? left : left.Value + right.Value;
     }
 }

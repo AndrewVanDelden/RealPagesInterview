@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using Agent.Cli;
 using Agent.Cli.Tests.TestSupport;
+using Agent.Composition;
 using Agent.Evaluation;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -647,6 +649,256 @@ public class CliRunnerTests
         }
     }
 
+    // D64: --output gets the guard --log-file already has. An unwritable path ended the
+    // process on an unhandled DirectoryNotFoundException with an exit code that is none of
+    // the three documented ones (playbook step 79). ThrowingComposer proves the other half,
+    // step 77's fail fast before work that costs time or money: it throws for t1, so a run
+    // that reached the record loop would say "Injected fault" on stderr and exit 2.
+    [Fact]
+    public async Task RunAsync_OutputPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "out.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --output '{outputPath}'", errorWriter.ToString());
+            Assert.DoesNotContain("Injected fault", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // D64, --diagnostics: its own flag in its own message. A guard that named --output for
+    // every unwritable path would send an operator to the wrong flag.
+    [Fact]
+    public async Task RunAsync_DiagnosticsPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "diag.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --diagnostics '{diagnosticsPath}'", errorWriter.ToString());
+            Assert.DoesNotContain("Injected fault", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D64, --review-queue: same guard, its own flag, and still before the record loop.
+    [Fact]
+    public async Task RunAsync_ReviewQueuePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string reviewQueuePath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "queue.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --review-queue '{reviewQueuePath}'", errorWriter.ToString());
+            Assert.DoesNotContain("Injected fault", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D64, --eval-report: the report describes the batch, so it is written after the batch
+    // and its guard is at the write rather than before the loop. The batch's own output file
+    // is still complete; only the report the run asked for could not be written, and that is
+    // exit code 1 with one stderr line naming the flag, not a stack trace.
+    [Fact]
+    public async Task RunAsync_EvalReportPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "eval.txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --eval-report '{evalReportPath}'", errorWriter.ToString());
+            Assert.Contains("next_message", await File.ReadAllTextAsync(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D64: --replay writes its scorecard through the same method, so the unwritable
+    // --eval-report rule holds there too. A guard that reported the failure and still let the
+    // run exit 0 would tell a caller the report is on disk when it is not.
+    [Fact]
+    public async Task RunAsync_ReplayEvalReportPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string evalReportPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "eval.txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --eval-report '{evalReportPath}'", errorWriter.ToString());
+            Assert.Contains("Overall:", outputWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    // D65: --input gets the guard the four output flags got in D64. It opened unguarded, so a
+    // path that names no file ended the process on an unhandled FileNotFoundException with a
+    // stack trace on stderr and an exit code that is none of the three documented ones. Exit 1
+    // and not 2: 2 means some records were processed and some were not, and a file that never
+    // opened has no records at all.
+    [Fact]
+    public async Task RunAsync_InputPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "in.jsonl");
+        string outputPath = TempFilePath();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains($"Could not open --input '{inputPath}'", errorWriter.ToString());
+        Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(outputPath));
+    }
+
+    // D65: the second reader path, --replay, opened unguarded in the same way and gets the
+    // same guard with its own flag in its own message.
+    [Fact]
+    public async Task RunAsync_ReplayPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "out.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --replay '{replayPath}'", errorWriter.ToString());
+            Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // D65's second half: an empty value threw ArgumentException, which is not the IOException
+    // the open guards filter on, so every path guarded in D64 still ended the process
+    // unhandled when its flag was given "". It is closed in the argument parsing instead of by
+    // widening a catch filter, because no value any flag of this program takes means anything
+    // when empty. The message names the argument the empty one follows, so an operator with
+    // six flags on the line knows which one to fix.
+    [Fact]
+    public async Task RunAsync_OptionGivenAnEmptyValue_WritesCleanErrorAndReturnsUsageError()
+    {
+        string outputPath = TempFilePath();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        int exitCode = await runner.RunAsync(["--input", string.Empty, "--output", outputPath]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("--input", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(outputPath));
+    }
+
+    // A whitespace-only value is not the empty string the Length check above catches, but it
+    // resolves to the same "no real path" fact: Path.GetFullPath throws ArgumentException on
+    // it, which is not the IOException the open guards filter on, so it escaped as an
+    // unhandled exception the same way "" did before D65 (Antigravity review, PR #26).
+    [Fact]
+    public async Task RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError()
+    {
+        string outputPath = TempFilePath();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        int exitCode = await runner.RunAsync(["--input", "   ", "--output", outputPath]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("--input", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(outputPath));
+    }
+
+    // The same rule where there is no preceding argument to name: the position is the only
+    // identity the empty argument has.
+    [Fact]
+    public async Task RunAsync_FirstArgumentIsEmpty_WritesCleanErrorAndReturnsUsageError()
+    {
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        int exitCode = await runner.RunAsync([string.Empty, "--input", "in.jsonl", "--output", "out.json"]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("Argument 1 is empty", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task RunAsync_NoLogFilePathProvided_DoesNotThrow()
     {
@@ -957,7 +1209,9 @@ public class CliRunnerTests
 
             Assert.Equal(CliExitCodes.PartialFailure, exitCode);
             string logContent = await File.ReadAllTextAsync(logFilePath);
-            Assert.Contains("Batch complete: 2 record(s), 1 failure(s).", logContent);
+            // The elapsed and the model cost D61 and D62 added to this line follow the counts,
+            // which are what this test is about; the comma is where they start.
+            Assert.Contains("Batch complete: 2 record(s), 1 failure(s),", logContent);
         }
         finally
         {
@@ -1205,6 +1459,269 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(replayPath);
             File.Delete(reviewQueuePath);
+        }
+    }
+
+    // D61: the per-record number is the wall-clock elapsed of exactly one RunAsync call, and
+    // it is on the diagnostics row from now on. Shape and presence only: it is wall clock and
+    // moves between runs on unchanged code (DESIGN.md section 9), so no test pins a
+    // millisecond count.
+    [Fact]
+    public async Task RunAsync_DiagnosticsPathProvided_EveryRowCarriesItsOwnLatency()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(
+            inputPath,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z") + Environment.NewLine +
+            RecordJson("t2", "2026-01-11", "2025-12-08T16:04:00Z"));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal(2, diagnostics.RootElement.GetArrayLength());
+
+            foreach (JsonElement row in diagnostics.RootElement.EnumerateArray())
+            {
+                JsonElement latency = row.GetProperty("latency_ms");
+                Assert.Equal(JsonValueKind.Number, latency.ValueKind);
+                Assert.True(latency.GetDouble() >= 0);
+            }
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
+    // D61 option (c): one measurement with two readers. The diagnostics row and the scorecard
+    // row state the same number for the same record, because the loop hands both the same
+    // variable. Two stopwatches around the same call would disagree here.
+    [Fact]
+    public async Task RunAsync_DiagnosticsAndEvalReport_StateTheSameLatencyForEachRecord()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(
+            inputPath,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine +
+            RecordJson("t2", "2026-01-11", "2025-12-08T16:04:00Z", includeExpected: true));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--eval-report", evalReportPath]);
+
+            string[] reportLines = (await File.ReadAllTextAsync(evalReportPath)).Split(Environment.NewLine);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+
+            foreach (JsonElement row in diagnostics.RootElement.EnumerateArray())
+            {
+                string taskId = row.GetProperty("task_id").GetString()!;
+                string scored = Assert.Single(reportLines, line => line.StartsWith(taskId + " ", StringComparison.Ordinal));
+                string[] cells = scored.Split('|');
+
+                Assert.Equal(
+                    row.GetProperty("latency_ms").GetDouble().ToString("0", CultureInfo.InvariantCulture),
+                    cells[^2].Trim());
+            }
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D61, per batch: one wall-clock elapsed around the record loop, on the two artifacts that
+    // are already per batch. It is not a row in the diagnostics array, which stays one row per
+    // unit of work. The pattern pins the shape and never a duration.
+    [Fact]
+    public async Task RunAsync_AnyBatch_ReportsTheBatchElapsedOnTheLogLineAndTheScorecard()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Matches(@"Batch complete: 1 record\(s\), 0 failure\(s\), [0-9.]+ms elapsed", errorWriter.ToString());
+            Assert.Matches(@"Batch latency: [0-9]+ ms", await File.ReadAllTextAsync(evalReportPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D62, the first state through the whole program: the default composer issues no request,
+    // so every row states no measurement and the batch has none to total.
+    [Fact]
+    public async Task RunAsync_TemplateComposer_BatchLineAndScorecardStateNoModelCall()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--eval-report", evalReportPath]);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement row = diagnostics.RootElement[0].GetProperty("diagnostics");
+
+            Assert.Equal(JsonValueKind.Null, row.GetProperty("model_cost").ValueKind);
+            Assert.Contains("model cost none.", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Batch model cost: none", await File.ReadAllTextAsync(evalReportPath), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D62, the third state through the whole program, and the batch total over it: two records,
+    // one completed call each, and a batch line that adds them up. The client is fake, so no
+    // network call and no key are involved; what is real is the composer, the compose-validate
+    // loop, the agent and the writer the counts travel through.
+    [Fact]
+    public async Task RunAsync_ModelComposerWithCompletedCalls_TotalsTheTokensEveryRecordSpent()
+    {
+        const string completionJson = """{"subject":null,"body":"Hi Taylor! Book a tour. Reply STOP to opt out.","cta_type":"schedule_tour","cta_options":["Thu","Fri"]}""";
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string diagnosticsPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(
+            inputPath,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine +
+            RecordJson("t2", "2026-01-11", "2025-12-08T16:04:00Z", includeExpected: true));
+        var errorWriter = new StringWriter();
+        var composer = new OpenAiMessageComposer(new CostingCompletionClient(completionJson, inputTokens: 11, outputTokens: 7));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, composer);
+
+        try
+        {
+            await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--eval-report", evalReportPath]);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement modelCost = diagnostics.RootElement[0].GetProperty("diagnostics").GetProperty("model_cost");
+
+            Assert.Equal(1, modelCost.GetProperty("calls").GetInt32());
+            Assert.Equal(1, modelCost.GetProperty("completed_calls").GetInt32());
+            Assert.Equal(11, modelCost.GetProperty("input_tokens").GetInt32());
+            Assert.Equal(7, modelCost.GetProperty("output_tokens").GetInt32());
+
+            const string total = "2 call(s), 2 completed, 22 input + 14 output token(s)";
+            Assert.Contains("model cost " + total + ".", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Batch model cost: " + total, await File.ReadAllTextAsync(evalReportPath), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D66 through the whole program, on D48's steering record. The model answers both
+    // attempts with a body that repeats the record's own steering language, so both are
+    // rejected on safety; the template fallback writes the same language out of the record's
+    // own city_interest and is refused too. Nothing ships, so the record has no composition
+    // notes - and the two completed calls the vendor billed for are on the row beside its
+    // latency, where a suppression cannot take them with it.
+    [Fact]
+    public async Task RunAsync_SuppressedRecordThatCalledTheModel_KeepsTheCostOnItsDiagnosticsRow()
+    {
+        const string steeringCompletionJson = """{"subject":null,"body":"This community is families only. Reply STOP to opt out.","cta_type":"schedule_tour","cta_options":["Thu","Fri"]}""";
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, SteeringRecordJson("t1"));
+        var composer = new OpenAiMessageComposer(new CostingCompletionClient(steeringCompletionJson, inputTokens: 11, outputTokens: 7));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath]);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement row = diagnostics.RootElement[0].GetProperty("diagnostics");
+
+            Assert.Equal("safety_violation", row.GetProperty("suppression_reason").GetString());
+            Assert.Equal(JsonValueKind.Null, row.GetProperty("composition").ValueKind);
+
+            JsonElement modelCost = row.GetProperty("model_cost");
+            Assert.Equal(2, modelCost.GetProperty("calls").GetInt32());
+            Assert.Equal(2, modelCost.GetProperty("completed_calls").GetInt32());
+            Assert.Equal(22, modelCost.GetProperty("input_tokens").GetInt32());
+            Assert.Equal(14, modelCost.GetProperty("output_tokens").GetInt32());
+            Assert.Equal(0, row.GetProperty("network_retries").GetInt32());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
+    // The second rule the same record proves: the batch total is summed off the rows the loop
+    // writes, so a record whose cost survives its suppression changes the batch number too.
+    // Before D66 both the row and the total read as a run that never called a model.
+    [Fact]
+    public async Task RunAsync_SuppressedRecordThatCalledTheModel_CountsTowardTheBatchTotal()
+    {
+        const string steeringCompletionJson = """{"subject":null,"body":"This community is families only. Reply STOP to opt out.","cta_type":"schedule_tour","cta_options":["Thu","Fri"]}""";
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, SteeringRecordJson("t1"));
+        var errorWriter = new StringWriter();
+        var composer = new OpenAiMessageComposer(new CostingCompletionClient(steeringCompletionJson, inputTokens: 11, outputTokens: 7));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, composer);
+
+        try
+        {
+            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            const string total = "2 call(s), 2 completed, 22 input + 14 output token(s)";
+            Assert.Contains("model cost " + total + ".", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Batch model cost: " + total, await File.ReadAllTextAsync(evalReportPath), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
         }
     }
 }

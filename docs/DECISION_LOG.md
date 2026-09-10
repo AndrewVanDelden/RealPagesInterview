@@ -9,21 +9,22 @@ sets.
 
 ## Current phase
 
-Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Structure and narration.
-Check: the narration is delivered without notes and the orchestrator reads as its steps in
-order. Status: not passed. The second half is met and shown: the orchestrator reads as six
-numbered steps in the order it executes them (D59), three seams remain and the six interfaces
-with no substitute are gone (D58), the consent gate is merged into the selector (D57), and
-`docs/NARRATION.md` holds Appendix B's script with one record walked file by file. The first
-half this file cannot assert: narrating aloud without notes is the user's own step, and a
-document existing is not that step having happened. Phase 5 passed 2026-09-09 in Sprint 7.
-Next step: the user narrates one record aloud from the rehearsal section of
-[NARRATION.md](NARRATION.md) and reports the two Appendix B signals; Phase 6 passes on that.
-Open decisions: two, the D31 open question on how a real model-versus-template comparison could
-be run at all, and whether D32 to D37 get a sprint of their own; both need the requester.
+Phase 7 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Test the way it will be judged.
+Check: the scorecard on the synthetic set, the variance report and the fault-injection results
+are all files in the repo. Status: not passed. `docs/FAULT_INJECTION.md` is there; the other two
+are not, and the scorecard is written today only to a path `.gitignore` excludes, which is an
+open question of its own before any of the three can be a file in the repo.
+Phase 6 passed 2026-09-09 in Sprint 9, against the playbook's check and not this log's (D60):
+the documented one-line command produced the output file, the diagnostics file, the review queue
+and the scorecard on all three sets and exited 0, 0 and 2, checked by hand and recorded in
+DESIGN.md section 9 (D63). The narration this block used to gate Phase 6 on is step 98, inside
+Phase 8, and is still owed there.
+Next step: decide where a committed scorecard and a variance report live, then produce them.
+Open decisions: three. D31's question on how a real model-versus-template comparison could be
+run at all and whether D32 to D37 get a sprint of their own need the requester; D67 is the third.
 
-Replace these four lines at the end of every sprint. Never append to them. A phase that passed,
-the proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
+Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
+proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
 below and in DESIGN.md section 9, which is where the phase record lives.
 
 ## Starting decisions (2026-09-07)
@@ -1313,3 +1314,553 @@ Line 34 declared the deleted `IMessageAgent`, so one token changed, `IMessageAge
 suite moved from 553 tests to 551 for a separate reason, D57: three `ConsentGateTests` cases
 duplicated `ChannelSelectorTests` and were dropped, and one case `ChannelSelectorTests` did not
 prove was merged into it.
+
+## Sprint 9 decisions, the Phase 6 remainder and fault injection (2026-09-09)
+
+Playbook steps 80 and 81, then Phase 7 step 84. Numbered from D60 because D59 is the last
+number Sprint 8 took. Nothing below is implemented: these are the decisions that scope the
+sprint, written before any task (Pillar 3, DBT).
+
+**D60. Phase 6's check is the playbook's, not this log's (2026-09-09).** Question: the
+"Current phase" block at the top of this file states Phase 6's check as "the narration is
+delivered without notes and the orchestrator reads as its steps in order";
+`~/.agent-rules/PROJECT_PLAYBOOK.md` states it as "the documented one-line command produces
+the output file, the diagnostics file, and the scorecard, and exits with the documented
+code". Two checks on one gate is one open question, not one rule, and the log has been
+holding the phase open against the check that is not the playbook's. Options: keep this
+log's check and treat the playbook's as wording it grew out of; or adopt the playbook's and
+put the narration back where the playbook puts it. Recommendation: the second. Evidence: the
+playbook's Phase 6 is titled "Orchestration, entry points, and operations" and holds steps 72
+to 81, none of which is a narration; delivering the narration aloud without notes is step 98,
+inside Phase 8, "Documentation and review". This log and DESIGN.md section 9 both retitle
+Phase 6 "Structure and narration", both state the fused check, and Sprint 8 was named for that
+title while implementing steps 72 to 79. So the divergence is a phase renamed after the half
+of step 72 it implemented, with step 98's rehearsal pulled forward onto its gate. What
+changes: Phase 6 passes on the playbook's check once steps 80 and 81 land, and stops waiting
+on a rehearsal the playbook does not gate it on; the narration rehearsal moves to Phase 8 step
+98, where it is still owed. What does not change: `docs/NARRATION.md` stands as written, and
+AGENTS.md's workflow rule that one record is narrated aloud before a PR merges is a project
+rule that was never the phase gate and is untouched. No file under `src/` or `tests/` is
+affected. Scopes: the Current phase block, replaced at the end of Sprint 9 and not before;
+DESIGN.md section 9's phase table row for Phase 6; the order of Sprint 9, which is steps 80
+and 81 and then step 84. Assumption: none.
+
+**D61. What latency in the diagnostics means (2026-09-09).** Question: steps 75 and 80 name
+latency per unit of work and per batch in the diagnostics record, and
+`src/Agent/Orchestration/TaskDiagnostics.cs` is `(TaskId, Diagnostics, IngestNotes)` with no
+latency member; latency exists only on the scorecard. What the number is, what it is measured
+around, and how it relates to the scorecard's p95. Options: (a) leave latency on the scorecard
+alone and read steps 75 and 80 as already satisfied by `--eval-report`; (b) start a second
+stopwatch inside the agent and put its number on the diagnostics row; (c) put the number
+`CliRunner` already measures on the diagnostics row, one measurement with two readers.
+Recommendation: (c). Per record, `latency_ms` is the wall-clock elapsed of exactly one
+`LeasingMessageAgent.RunAsync` call: the `Stopwatch` started at `CliRunner.cs:229` and stopped
+at `:245`. Stated rather than implied, it excludes reading and parsing the input line,
+`IngestNotes.Describe`, every output write, and the evaluator; it includes channel selection,
+the plan, every compose attempt with any model call and its retry inside it, the schedule, and
+the final safety gate. It is the same `double` already handed to `ScoredRun.LatencyMs` at
+`:260`, passed to both from one variable, so the diagnostics file and the eval report can
+never state two different latencies for one record. A record whose `RunAsync` threw gets no
+diagnostics row at all and keeps getting none, so the member is non-nullable. Per batch: one
+wall-clock elapsed around the record loop, and it does not go in the diagnostics file. That
+file is a single JSON array of one row per unit of work, and a batch number in it needs either
+an envelope around the array, which breaks every reader and every test built on the array
+shape, or a synthetic row that is not a unit of work; it goes instead on the two artifacts
+that are already per batch, the `Batch complete` log line at `CliRunner.cs:262` and the
+scorecard, beside the p95 it already prints. Relation to the p95: the p95 is computed from
+these same per-record numbers in `Scorecard.ComputeLatencyP95Ms`, so the diagnostics member is
+its input and not a second opinion. It is wall clock and it moves: DESIGN.md section 9 records
+18 ms in Sprint 6 and 22, 20 and 19 ms in Sprint 8 on unchanged code, and README records 19 to
+23 ms across repeated runs of the same commands. So no test pins it.
+`BaselineNumbersTests` scores with `LatencyMs: null` (line 41) and keeps doing so, and any
+golden or round-trip test over a diagnostics row compares with the latency member excluded or
+replaced by a fixed value, never with a number a run produced; a test asserting a latency
+under a bound fails on a slow machine and proves nothing about this code. Scopes:
+`TaskDiagnostics`, `CliRunner`'s record loop and its batch log line, `ScorecardFormatter`, the
+`--diagnostics` row of OPERATIONS.md section 1, and README's latency paragraph. Evidence:
+playbook steps 75 and 80; `CliRunner.cs:229`, `:245`, `:260`, `:262`; `Scorecard.cs` lines 32
+to 37; DESIGN.md section 9's Sprint 8 paragraph; README's Latency paragraph. Assumption: A15.
+
+**D62. What cost in the diagnostics means (2026-09-09).** Question: steps 75 and 80 name cost
+per unit of work, and cost exists today only as dated prose in DESIGN.md section 9 and README.
+What a cost member says on a record that made no model call, on one whose call was abandoned at
+its timeout, and on one whose call completed; and whether the number is measured or derived
+from a published price. Options: (a) a money member computed in code from a per-model price
+constant; (b) a measured token member and no money anywhere in `src/`; (c) nothing, leaving
+cost as prose. Recommendation: (b). Money is not computed in code, because a price constant is
+a number no test in this suite can check: the check would be "is this still the vendor's list
+price", which is a fact about a web page and not about this program, so the constant would go
+stale silently and be believed. The dollar figure stays where it already is, dated and read
+off the vendor's own usage page rather than estimated: DESIGN.md section 9's cost paragraph
+($0.004 for the 2026-09-08 run, about $0.00017 per record) and README, each naming the model,
+the date, and the published per-million rates it was priced at. A reader who needs today's
+money multiplies today's price by the tokens the diagnostics measured. What is measured is the
+token counts the vendor returns: `OpenAI.Chat.ChatCompletion.Usage` is an
+`OpenAI.Chat.ChatTokenUsage` carrying `int InputTokenCount`, `int OutputTokenCount` and `int
+TotalTokenCount`, confirmed on 2026-09-09 by reflection over the restored OpenAI 2.13.0
+assembly rather than from documentation (playbook step 50, SCS). `OpenAiCompletionClient` does
+not read it today, so the counts travel out on `ModelCompletion` beside `NetworkRetries` and
+reach the diagnostics on `CompositionNotes` the way `NetworkRetries` already does, as a small
+record of `Calls`, `CompletedCalls`, `InputTokens` and `OutputTokens`, from which abandoned
+calls are `Calls` minus `CompletedCalls`. The three cases are three different facts and must
+not collapse into one zero. No call made: the template composer issues no request, so the
+member is null, which is the rule `CompositionNotes.NetworkRetries` already states for a
+composer that makes no network call at all; null here means no model path ran, and the money
+is a known zero stated once in README, not an unknown. Call abandoned at its timeout:
+`OpenAiCompletionClient.CompleteAsync` throws its `TimeoutException` before it ever reads
+`result.Value`, so there is no `Usage` to read, and the client cannot measure what an
+abandoned call cost, while DESIGN.md section 9 records that the vendor billed roughly a third
+of them in full, output tokens included. The member is therefore present with `Calls` counted
+and `CompletedCalls` and both token counts zero, and the counted call is what stops zero
+tokens from reading as free. Every record of the 2026-09-08 live run would read exactly that
+way: calls made, no tokens returned, and a real bill. Call completed: the member carries that
+call's input and output token counts, summed across the compose-validate loop's attempts the
+way `NetworkRetries` is already summed
+(`ValidatingMessageComposerTests.ComposeAsync_FirstAttemptHasRetriesThenFailsValidation_SecondAttemptSucceeds_SumsNetworkRetries`).
+Per batch, D61's rule holds unchanged: the diagnostics file stays one row per unit of work and
+the batch totals go on the scorecard and the `Batch complete` log line. Scopes:
+`ModelCompletion`, `OpenAiCompletionClient.CompleteAsync`, `CompositionNotes`,
+`ValidatingMessageComposer`'s accumulation, the `--diagnostics` row of OPERATIONS.md section
+1, README's money paragraph. Out of scope, explicitly: any dollar arithmetic under `src/`.
+Evidence: playbook steps 75 and 80; the reflection probe above; `OpenAiCompletionClient.cs`
+lines 79 to 87, where the timeout is thrown before `result.Value` is read; `CompositionNotes.cs`'s
+`NetworkRetries` rule; DESIGN.md section 9's cost paragraph. Assumption: A18.
+
+**D63. Step 81 is the Phase 6 check run, not a second scoring pass (2026-09-09).** Question:
+step 81 says run the examples end to end from the documented command and check the output by
+hand against the expected records, and no result for it is recorded anywhere in `docs/`,
+searched 2026-09-09. What a by-hand check is here, what artifact records it, and what it adds
+over the evaluator, which is automated and already runs. Options: (a) a per-field manual
+comparison of every output row against its `expected`, written up; (b) name that comparison as
+the one the evaluator already makes, scope it out with the reason, and keep only what a person
+checks that the scorer cannot; (c) leave step 81 unrecorded. Recommendation: (b). Per field,
+per record, against the label is exactly what `Evaluator` does: D13 d fixes the label as the
+oracle and forbids scoring against the product's own tables, DESIGN.md section 6 names the
+checks, and `--eval-report` prints one verdict per check per record plus a per-check tally. A
+person redoing that across 26 rows would be running the same comparison less reliably, and any
+disagreement would mean the scorer is wrong, which is what `ScorerProofTests` exists to rule
+out. So the per-field re-comparison is a deliberate scope-out and is recorded in
+docs/CODE_REVIEW.md with that reason rather than performed as ceremony. What is kept is the
+half of step 81 the scorer cannot do, and it is Phase 6's check itself: run each documented
+one-line command from the repo root, confirm the output file, the diagnostics file, the review
+queue and the scorecard all appear, and confirm the exit code is the documented one, 0 on
+`sample.jsonl`, 0 on `holdout_12.jsonl` and 2 on `synthetic_12.jsonl` for its malformed line.
+Two things a person adds there that no automated check makes today. First, that the
+scorecard's tally lines agree with its own rows: `Scorecard` computes its tallies and its p95
+once, in field initializers, so a `with` copy that replaces `RecordScores` prints a report
+whose rows and totals disagree, a failure mode this repo has already recorded and no test
+watches for across the CLI's own printed output. Second, that one record read end to end, its
+input line, its output row, its diagnostics row and its scorecard row, tells one consistent
+story. The artifact: a dated subsection of DESIGN.md section 9, where every other run record
+in this project lives, naming per set the exact command, the files that appeared, the exit
+code, and the two confirmations above. Not a new file: the run record has one home and a
+second one splits it. Scopes: DESIGN.md section 9 and its phase table row for Phase 6,
+docs/CODE_REVIEW.md. Evidence: playbook step 81 and Phase 6's check; D13 d; `ScorerProofTests`;
+AGENTS.md's `Scorecard` gotcha; the absence of any step 81 record in `docs/`. Assumption: A19,
+which is why the by-hand check reports what the sets do and never moves a rule to make a row
+match.
+
+**D64. Fault injection: five faults are already proved, one is not (2026-09-09).** Question:
+playbook step 84 names six faults, network down, rate limit, malformed response, unknown
+locale, corrupt input line, and disk full on output, and asks for graceful degradation and
+correct diagnostics for each. Which are already proved, which Sprint 9 proves, which are
+scoped out, and what file carries the results Phase 7's check asks for. Options: write a new
+fault-injection test class covering all six; or audit the suite by test name first and add
+only what is not proved. Recommendation: the second, on the audit below, run 2026-09-09.
+Network down is proved: `OpenAiMessageComposerTests.ComposeAsync_CompletionClientThrowsHttpRequestException_ReturnsFailureNotException`
+turns a transport failure into a `ComposeOutcome.Failed` naming the exception category and not
+its text, and `ValidatingMessageComposerTests.ComposeAsync_ComposerKeepsFailing_FallsBackToSafeComposer`
+plus `ComposeAsync_BothAttemptsBad_ReportsTheFallbackComposerAndEveryAttempt` prove the
+degradation and the diagnostics, `composition.composer: template` with the attempts counted on
+a run that asked for `openai`; the whole-set run with outbound HTTPS blocked at the process
+level is the Phase 4 check and is recorded in DESIGN.md section 9. Rate limit is proved:
+`OpenAiCompletionClientTests.CompleteAsync_TransientFailureThenSuccess_RetriesOnceAndReportsIt`
+injects a 429 then a 200 and asserts one retry reported and two HTTP calls, and
+`CompleteAsync_TransientFailureEveryTime_StopsAfterTheBoundedRetry` proves the retry is
+bounded at two attempts, on a 503 rather than a 429; the SDK retry policy is status-agnostic
+across the transient set it knows, so the exhaustion path is proved once and not per status.
+Malformed response is proved:
+`OpenAiMessageComposerTests.ComposeAsync_MalformedJson_ReturnsFailureNotException`,
+`ComposeAsync_MissingRequiredFields_ReturnsFailure`, `ComposeAsync_NullJsonBody_ReturnsFailure`
+and `ComposeAsync_ModelReturnsWrongCtaType_ReturnsFailure` at the composer, and
+`OpenAiCompletionClientTests.CompleteAsync_ResponseHasNoContent_ThrowsInvalidOperationException`
+and `CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException` at the client, where a
+200 carrying no choice is named rather than escaping as an `ArgumentOutOfRangeException`.
+Unknown locale is proved in all three of the forms this product has: an unserved language tag
+by `TemplateMessageComposerTests.ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied`
+(A13, `locale_applied: false`); an unrecognized timezone id by
+`SendSchedulerTests.Resolve_UnknownTimeZoneId_ResolvesInUtc`,
+`TimeZonesTests.ResolveOrUtc_UnknownId_ReturnsUtc`, `TimeZonesTests.ToLocalDate_UnknownZone_UsesTheUtcDate`
+and, for the diagnostics half, `IngestNotesTests.Describe_UnrecognizedTimezone_NamesItAsDefaultedWithoutTheRecordsOwnValue`
+(A6); and an unrecognized channel name by
+`JsonlRecordReaderTests.ReadAll_UnrecognizedChannelName_ParsesAsUnknownChannel`,
+`ReadAll_ChannelPreferenceEntriesNotChannelNames_ParseAsUnknown` and
+`ReadAll_ChannelPreferenceNumericStringMatchingARealOrdinal_ParsesAsUnknown` (A3). Corrupt
+input line is proved end to end:
+`JsonlRecordReaderTests.ReadAll_ReturnsFailureWithLineNumber_WhenLineIsMalformedJson`,
+`...WhenLineDeserializesToNull`, `...WhenLineIsValidJsonButNotAnObject`,
+`ReadAll_OneBadLineAmongGoodOnes_ReturnsEveryOtherRecord`,
+`ReadAll_BlankLinesBeforeFailingLine_CountTowardTheLineNumber`,
+`ReadAll_MalformedUndeclaredMember_FailureNamesTheLineAndNoTextTheRecordWrote` and
+`ReadAll_ParsesSyntheticTwelve_TwelveSuccessRowsAndOneFailureNamingLineEleven` at the reader,
+and `CliRunnerTests.RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure`
+and `RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure` at the entry point, where
+the documented `synthetic_12.jsonl` run exits 2 by design. Disk full on output is the one
+fault that is not proved, and the audit found a real gap behind it rather than a missing test:
+`--log-file` fails fast on `IOException` or `UnauthorizedAccessException` with a clean stderr
+line and exit code 1 (`CliRunner.cs:105`, proved by
+`CliRunnerTests.RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError`),
+while `--output`, `--diagnostics` and `--review-queue` open unguarded at `CliRunner.cs:195` to
+`:197` and `--eval-report` writes unguarded at `:381`, and `Program.cs` installs no handler, so
+a full or unwritable volume ends the process on an unhandled exception with a stack trace on
+stderr and an exit code that is none of 0, 1 or 2. That contradicts step 79's documented codes
+and step 77's fail fast on bad paths before doing work that costs time or money. In scope for
+Sprint 9: give the three output streams the guard `--log-file` already has, opened before the
+record loop so a bad path costs nothing, and give the scorecard write the same guard where it
+is. Scoped out: producing a genuinely full volume. The portable and testable form of disk full
+is the open that fails, which the guard answers identically for every cause of a failed open, a
+volume that is already full included. Narrowed on 2026-09-09 from "the write that fails, which
+the guard answers identically for every cause", which claimed more than the guard does: all
+three batch guards sit at the open and the stream stays open across the record loop, so a volume
+that fills mid-batch throws from inside the writer, downstream of every guard in `CliRunner`,
+and that run still ends on an unhandled exception. `--eval-report` is the exception on both
+counts, being one guarded `File.WriteAllTextAsync` rather than a stream held open, so its own
+write is covered. An actual out-of-space condition, at the open or after it, needs a virtual
+disk or a filesystem quota, a machine setup this suite cannot carry and CI cannot reproduce.
+That scope-out is recorded in docs/CODE_REVIEW.md and in fault 6 of docs/FAULT_INJECTION.md in
+the narrowed form, which is the form this paragraph now states. The results file Phase 7's check asks for is `docs/FAULT_INJECTION.md`, one row
+per fault naming the injection, what the product did, what the diagnostics said, the exit
+code, and the test that pins it. Not at the repo root: `.gitignore` ignores `/out*.json`,
+`/diag*.json`, `/q_*.json`, `/eval*.txt` and `/*.log` there, so an artifact a run writes at the
+root is not a file in the repo, which is what the check asks for. Not DESIGN.md section 9
+either: section 9 records what a run measured, and this records what a fault did, six rows
+with no tallies. Scopes: Sprint 9's test work, `CliRunner`'s output path handling,
+`docs/FAULT_INJECTION.md`, `docs/CODE_REVIEW.md`, and the exit-code table in OPERATIONS.md
+section 2. Evidence: the audit above by test name; `CliRunner.cs:105` against `:195` to `:197`
+and `:381`; `Program.cs`; `.gitignore`; playbook steps 77, 79 and 84 and Phase 7's check.
+Assumption: none.
+
+**D65. The input paths get the guard the output paths got (2026-09-09).** Question: D64 gave
+`--output`, `--diagnostics` and `--review-queue` the guard `--log-file` already had, and gave
+`--eval-report` the same guard at its write, so an unwritable path is one stderr line naming the
+flag and exit code 1. `--input` and `--replay` were left out, because D64's subject is the
+disk-full fault and it names only the paths a run writes. Both still open unguarded: `ReadInput`
+builds `new StreamReader(inputPath)` at `CliRunner.cs:396`, reached from `RunAsync` at `:140`
+and again from `ReplayAsync` at `:362`, and `ReplayAsync` builds `new StreamReader(replayPath)`
+at `:365`; `Program.cs` installs no handler. Measured on 2026-09-09 against the built CLI rather
+than reasoned about: `--input` naming a file that does not exist ends the process with
+`Unhandled exception. System.IO.FileNotFoundException`, a nine-frame stack trace on stderr whose
+top frame is `CliRunner.cs:line 396`, and exit code -532462766 (0xE0434352, the CLR's
+unhandled-exception code), which is none of 0, 1 or 2; `--replay` naming a file that does not
+exist does the same from `:365`. So the question is whether the two reader paths get the same
+guard, and what exit code an input file that will not open deserves, given that the documented
+codes are 0 success, 1 usage error and 2 partial failure.
+
+Options: (a) leave them unguarded and treat a bad input path as an operator error the operating
+system already reports; (b) guard both with `OpenOutputStream`'s mirror and return 1 for every
+input path that will not open; (c) guard both but split the code, 1 for a path the user typed
+wrongly and 2 for a file that exists and cannot be read, on the ground that the second is a
+failure of the run rather than of the command line. Recommendation: (b). Exit 2 is a per-record
+fact everywhere else it is used: `JsonlRecordReader.ReadAll` returns one failure row per bad
+line and `ReadInput` counts them, so 2 means some records were processed and some were not. A
+file that never opened has no lines and no records, so 2 would report a partial success that did
+not happen, and anything scripting on the code would retry the good half of a batch that has no
+good half. (c) also asks the exception type to draw a line it does not draw:
+`FileNotFoundException` and `DirectoryNotFoundException` both derive from `IOException`, and a
+locked file, a full volume, a bad drive letter and a denied ACL all arrive as `IOException` or
+`UnauthorizedAccessException` without saying which of the two stories they are. The four output
+flags already answer 1 for that whole class, a locked or full volume included, so a reader path
+answering 2 for the same operating-system fact would make one program say two things about one
+kind of failure.
+
+The shape, stated so it is not chosen again while building: `private static Result<StreamReader>
+OpenInputReader(string flag, string path)`, the mirror of `OpenOutputStream` at `:472`, with the
+same message text (`Could not open {flag} '{path}': {ex.ToDiagnosticString()}`), the same filter
+(`IOException or UnauthorizedAccessException`, unchanged from D64: a wider one here and a
+narrower one there is the thing to avoid), reported through `ReportFailure` so the log line and
+the stderr line keep one wording. `ReadInput` takes the opened reader instead of the path and
+keeps its tuple return; its two callers own the `using` and the `return CliExitCodes.UsageError`.
+Nothing moves in the order: the input open stays where `ReadInput` is called today, which is
+already before the composer is built, so a bad path still costs no time and no money (step 77).
+`--replay` is guarded at `:365`, in place.
+
+One hole found while measuring this, closed here rather than left for the next reader to find: an
+option given an empty value ends the process the same way, and every guard D64 wrote has the same
+hole, because an empty path throws `ArgumentException` and not `IOException`. Measured, all four
+on 2026-09-09: `--input ""` throws `System.ArgumentException: The value cannot be an empty string.
+(Parameter 'path')` at `:396`, `--output ""` throws it at `:481` inside `OpenOutputStream`'s try,
+`--log-file ""` at `:103`, and `--eval-report ""` at `:446`. It is not closed by widening a catch
+filter to `ArgumentException`, which would ask three guards to swallow an exception a bug in the
+same try block could also throw; it is closed in the argument parsing, before the existing usage
+check at `:64`, by the rule that no argument of this program may be empty. Every flag either
+takes a value or is a presence flag, and no value any of them takes has a meaning when empty:
+`--composer ""` is already an invalid composer name and `--now ""` an unparsable date-time, both
+exit 1 today. So one scan of `args` for a zero-length entry, reporting the flag that precedes it
+when there is one and the position when there is not, is one check with no list of flags to keep
+in sync. Exit code 1, one stderr line, no stack trace.
+
+Tests, named after `RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError`,
+which is the case this copies: `RunAsync_InputPathDoesNotExist_WritesCleanErrorAndReturnsUsageError`,
+`RunAsync_ReplayPathDoesNotExist_WritesCleanErrorAndReturnsUsageError`,
+`RunAsync_OptionGivenAnEmptyValue_WritesCleanErrorAndReturnsUsageError` and
+`RunAsync_FirstArgumentIsEmpty_WritesCleanErrorAndReturnsUsageError`, each written failing against
+the current code first and each asserting the exit code, the one stderr line, and the absence of a
+stack trace in it. Scopes: `CliRunner`'s argument parsing and both reader opens,
+`Agent.Cli.Tests/CliRunnerTests.cs`, the exit-code table in OPERATIONS.md section 2, and the
+by-hand paragraph of DESIGN.md section 9 that already records the four output flags checked on
+2026-09-08, which gains the reader paths beside them. Not `docs/FAULT_INJECTION.md`: step 84 names
+six faults and an unreadable input path is not one of them, so that file stays six rows (D64).
+Evidence: the four measured failures above; `CliRunner.cs:396`, `:365`, `:362`, `:140`, `:481`,
+`:472`, `:446`, `:103`, `:64`; `Program.cs`; playbook steps 77 and 79; D64. Assumption: none.
+
+**D66. The model cost vanishes on exactly the records that failed (2026-09-09).** Question: D62
+put the token counts on `CompositionNotes.ModelCost`, and `CompositionNotes` is the one
+diagnostics member that is absent on every record with no message. `LeasingMessageAgent` nulls it
+at `:127` for a refused draft and at `:197` for a safety-suppressed one, and `Suppressed` never
+sets it, at `:75` for no consented channel and at `:133` for a composition failure. The loss
+starts a layer lower than that: `ValidatingMessageComposer` accumulates `discardedModelCost`
+across every attempt (`:72` for a draft it rejected, `:91` for an attempt that produced none) and
+then drops the accumulation at `:103`, where the fallback produced no message and the `Failed` it
+builds takes the default `ModelCost: null`, and at `:112`, where `ComposeOutcome.Refused` cannot
+carry one at all, being defined with `ModelCost: null` at `ComposeOutcome.cs:49` on the stated
+ground that a refused record carries no composition notes and so has nowhere to report it. A
+record that made two model calls and ended with no message therefore reports no model call, and
+`CliRunner.cs:292` sums the batch total off `result.Diagnostics.Composition?.ModelCost`, so the
+batch total loses the same tokens. `NetworkRetries` is dropped at the same two lines by the same
+mechanism. The question is what carries the cost of a record whose run produced no message.
+
+The evidence, stated exactly, because the number in a file today is not yet wrong. No documented
+run understates: on all three sets `composition.model_cost` is null on all 26 rows, the review
+queue is empty, and every suppression is `no_contact_consent`, which is step 1 returning before
+the composer runs, so there is no cost to lose (DESIGN.md section 9, step 71's numbers). The
+2026-09-08 live run does not understate either: every call was abandoned at its timeout, the
+template fallback answered every record, and `WithAttempts` at `:108` carries a discarded
+attempt's cost into the winner, so the abandoned calls survive; that run also predates the field.
+What loses is a record that ends with no message on a run that called the model, and the
+constructed steering record of D48, whose own `city_interest` reads `families only`, is that
+record: under `--composer openai` its two abandoned calls accumulate into `discardedModelCost`,
+the template fallback reproduces the steering language from the record's own data, `:112` refuses,
+and the row reports no model call and no retries while the vendor billed for roughly a third of
+what was asked (D31 addendum). So the understatement is structural and preventive rather than a
+figure to correct, and it lands on the failing record every time.
+
+Options: (a) move the two numbers off `CompositionNotes` onto `AgentDiagnostics`, so they survive
+a nulled composition; (b) keep the carrier and stop nulling it; (c) keep the carrier, accept the
+understatement, and document it as a known limit of the field. (a) costs two members on
+`AgentDiagnostics`, two on the `ComposeOutcome` base, and moving two keys out of the `composition`
+object to the diagnostics row's own level in every golden over one
+(`AgentDiagnosticsTests.cs:177`, `:193`, `:215`, `CliRunnerTests.cs:1490`, `:1529`), plus every
+prose citation of the two keys by their path: the `--diagnostics` row of OPERATIONS.md section 1
+and the `composition` walkthrough of its section 2, DESIGN.md's Sprint 9 cost paragraph and its
+live-run paragraph, README's money paragraph, and three rows of `docs/FAULT_INJECTION.md`. It
+re-opens
+nothing: D62's null-is-not-zero rule is unchanged, and so is D24's rule for what the notes are. A
+reader of a diagnostics file would see a suppressed row with no `composition` object and
+`model_cost: {calls: 2, completed_calls: 0, input_tokens: 0, output_tokens: 0}` beside its
+`latency_ms`. (b) costs more than it looks: `Composer` is a non-nullable string and `LocaleApplied`
+a non-nullable bool, so a record with no message must be handed a composer name and a locale
+verdict for a message that does not exist, or those three members become nullable and every reader
+learns a fourth state. It re-opens D3's addendum, which nulled `Composition` on the final-safety
+branch precisely so that a record with nothing on the wire cannot name a composer as if its draft
+had shipped, and with it D24, D48's rule that a refused draft carries no notes, and
+`AgentDiagnostics`'s own stated contract. A reader would see `composition.composer: template` on a
+record that sent nothing, which is the exact misreading D3's addendum was written to remove. (c)
+costs nothing to build, and a reader would see a `safety_violation` row with no `composition`
+object, from which the only available reading is that no model call was made, on a record that
+made two. That is word for word the misreading D62 named and fixed for the template-fallback case
+("the record would fall back to the template composer and read as a run that never called a model,
+while the vendor billed for the abandoned attempts anyway"), so (c) fixes that reading where the
+run succeeded and leaves it where the money actually went.
+
+Recommendation: (a), and `NetworkRetries` moves with `ModelCost` in the same change. It is the
+same class of fact, what this record's run spent, which is what `latency_ms` is and why D61 put
+that on `TaskDiagnostics` where every row carries it whatever the outcome; it is dropped at the
+same two lines by the same mechanism; and D28's own visibility goal, that a retry a discarded
+attempt spent is still a retry this record spent, fails there exactly as the token count does.
+Splitting the pair would leave two adjacent numbers on two carriers and make a reader know which
+of them survives a suppression. What stays on `CompositionNotes` is `Composer`, `Attempts` and
+`LocaleApplied`, which are properties of a returned message and not of the record: which
+implementation wrote it, how many calls it took to get it, whether its language was served. A
+record with no message has no answer to those three, so `Composition` stays null there exactly as
+D24, D3's addendum and D48 left it, and that is the answer to the question (a) raises about what
+else on the notes belongs to the record.
+
+The shape, so nothing below is decided again while building. `ComposeOutcome` gains
+`ModelCostNotes? ModelCost` and `int? NetworkRetries` as init-only properties on the base type, so
+D48's private constructor and closed three-case hierarchy stay as they are and all three cases
+answer for both; `NoMessage.ModelCost` and `Failed`'s positional `ModelCost` go away in favour of
+them, and `Refused`'s comment about having no cost of its own is rewritten, because the reason it
+gives stops being true. `ValidatingMessageComposer` stays the one place that stamps the totals,
+the way it already stamps `Attempts` (D24): `WithAttempts` sets both on the `Composed` it returns,
+and `:103` and `:112` set them from `discardedModelCost` and `discardedNetworkRetries` instead of
+dropping them. Not closed here, and still stated: an attempt that built no `ComposedMessage` has
+no capturable retry count, because that count rides on `ModelCompletion` and an abandoned call
+returns none, which is the gap D28's addendum already names. `CompositionNotes` becomes
+`(Composer, Attempts, LocaleApplied)` and `ForComposer` loses its two optional parameters.
+`AgentDiagnostics` gains `ModelCostNotes? ModelCost = null` and `int? NetworkRetries = null` as its
+last two positional members, so the existing key order of a diagnostics row is untouched and the
+two keys are appended to it. `LeasingMessageAgent` reads both off `composeOutcome` once, at `:109`
+before the switch, and passes them into every `AgentDiagnostics` it builds, including `Suppressed`,
+which gains the two parameters: null and null at `:75`, where the composer never ran, and the
+outcome's own at `:133`. `CliRunner.cs:292` sums `result.Diagnostics.ModelCost`.
+
+The test that proves it, written failing against the current code first: the steering record driven
+through `LeasingMessageAgent` with a composer that abandons both attempts and a fallback that
+reproduces the violation, asserting the suppressed record's diagnostics carry two calls, zero
+completed and zero tokens, where today they carry no cost at all; and a `CliRunner` case asserting
+the batch total counts that record. Scopes: `ComposeOutcome`, `CompositionNotes`,
+`AgentDiagnostics`, `ValidatingMessageComposer`, `LeasingMessageAgent`, `CliRunner`'s batch sum,
+the five goldens named above, the `--diagnostics` row of OPERATIONS.md section 1 and the
+`network_retries` sentence of its section 2, DESIGN.md's cost paragraphs, README's money
+paragraph, and `docs/FAULT_INJECTION.md`'s citations of the two keys. Out of scope, unchanged
+from D62: any
+dollar arithmetic under `src/`. Evidence: the line numbers above, all read on 2026-09-09;
+DESIGN.md section 9's step 71 numbers and its cost paragraph; D31's addendum for the third of
+abandoned calls billed in full; D28's addendum for the retry gap this does not close; D62, which
+this corrects. Assumption: A18, D62's own.
+
+**D66 addendum, what building it changed (2026-09-09).** One member of the shape above came out
+differently and the paragraph is amended rather than left reading as though it had not.
+`discardedNetworkRetries` in `ValidatingMessageComposer` is `int?` initialised to null, not an
+`int` initialised to zero, and the attempts are folded together by a private `AddRetries` helper
+that mirrors `ModelCostNotes.Add`: null plus anything is that thing. An `int` starting at zero
+cannot distinguish "no call was made" from "calls were made and measured zero retries", and a
+record whose every attempt stayed offline would have reported a measured zero for calls that
+never happened, which is the null-is-not-zero rule D62 and D28 both state and this decision was
+written to preserve, not to break. `ModelCost` needed no equivalent because `ModelCostNotes?` was
+already nullable and `Add` already stated the rule. Everything else landed as the shape says:
+`ComposeOutcome` carries both as init-only properties on the base type, `CompositionNotes` is
+`(Composer, Attempts, LocaleApplied)` with `ForComposer(composer, localeApplied)`,
+`AgentDiagnostics` carries `ModelCost` and `NetworkRetries` as its last two positional members so
+the two keys are appended to the existing key order, and `Suppressed` takes null and null where
+the composer never ran. Three line numbers in the paragraph above are pre-change and have moved
+with the code: the batch sum is `CliRunner.cs:328`, and the two no-message exits that now stamp
+the accumulations are `ValidatingMessageComposer.cs:109` for `Failed` and `:122` for `Refused`.
+On the wire the two keys sit on the `diagnostics` object, beside `composition` and not beside
+`latency_ms`, which is one level out; the paragraph above says "beside its `latency_ms`" and that
+is loose. Evidence: `ValidatingMessageComposer.cs:47`, `:66`, `:74`, `:109`, `:122`, `:136` and
+`:154` to `:164`; `ModelCostNotes.cs:27`; `CompositionNotes.cs`; `AgentDiagnostics.cs`;
+`CliRunner.cs:328`; a diagnostics file written by the documented `sample.jsonl` run, all read
+2026-09-09.
+
+**D65 addendum, the six failures measured after (2026-09-09).** D65 recorded what each case did
+before the guard. Measured against the built CLI after it, from the repo root: `--input` naming a
+file that does not exist writes `Could not open --input '<path>': FileNotFoundException: Could
+not find file '<absolute path>'.` and exits 1, with no stack frame anywhere in its output, where
+before it ended the process on an unhandled `FileNotFoundException` with a nine-frame stack trace
+and exit -532462766; `--replay` naming a file that does not exist does the same, naming
+`--replay`. Each of `--input ""`, `--output ""`, `--log-file ""` and `--eval-report ""` writes
+`The argument after '<flag>' is empty: no argument of this program may be empty.` and exits 1,
+where before each ended the process on an unhandled `ArgumentException: The value cannot be an
+empty string. (Parameter 'path')`. An empty first argument, which follows no flag, writes
+`Argument 1 is empty: no argument of this program may be empty.` and also exits 1; those are the
+only two forms the scan emits. One difference between the two halves, measured rather than
+assumed and unchanged from D64: the two reader guards print the failure twice and the empty-value
+cases print it once. `ReportFailure` writes one failure through the logger and through the error
+writer both, and the console sink is the CLI's own `error` stream (OPERATIONS.md section 3), so a
+guarded open produces a timestamped `[Error] Agent.Cli.CliRunner:` line and the plain stderr line
+under it, exactly as D64's four output guards do. The empty-value scan runs before any logger
+exists, at `CliRunner.cs:72` to `:83`, and writes to `error` directly, so it has one line to
+print. Neither form carries a stack frame, which is what the tests assert. Evidence: the runs
+above; `CliRunner.cs:72` to `:83`, `:164`, `:399`, `:413`, `:512` to `:516`, `:548`; D64; D65's
+own before measurements, which are not re-measured here because that would mean reverting `src/`.
+
+**D67 (open). The fallback outcome's own spend is dropped at both no-message exits
+(2026-09-09).** Question: D66 moved the two spend counts onto `ComposeOutcome` so the
+compose-validate loop's two no-message exits could carry them, and both now do. What they carry
+is the accumulation and only the accumulation. At `ValidatingMessageComposer.cs:109` the `Failed`
+is built with `ModelCost = discardedModelCost` and `NetworkRetries = discardedNetworkRetries`,
+and the `NoMessage` the fallback composer returned is read for its `Error` alone, so whatever
+that outcome measured is dropped; at `:122` the `Refused` does the same to the `Composed` the
+fallback returned. `WithAttempts` at `:136` is not symmetric with either: it adds the winning
+attempt's own counts to the accumulation through `ModelCostNotes.Add` and `AddRetries`. So one
+path in this class sums both sources and two paths sum one. Nothing in the shipped wiring
+produces the difference: `CliRunner.cs:182` builds one `TemplateMessageComposer` and passes it as
+the fallback at `:210`, and `TemplateMessageComposer.ComposeAsync` returns
+`new ComposeOutcome.Composed(composed)` with neither property set, so both are null on every
+fallback outcome this program can construct and adding null changes nothing. The `Failed` exit is
+further unreachable today, because that composer never returns a `NoMessage` at all. Options,
+none taken: (a) add the fallback outcome's own counts at both exits, which makes the three paths
+read alike; (b) state on `ComposeOutcome` that a fallback composer is one that never spends, and
+assert it; (c) leave it and record the asymmetry here. Recommendation: not made. Each option is a
+decision about what a fallback composer is allowed to be, and DBT puts that decision before the
+task rather than patching a line whose behavior no input can currently reach. Recorded so the
+next reader of that method does not have to rediscover it, and so it cannot be flagged as an
+unrecorded defect. Scopes: nothing yet; whichever option is taken scopes
+`ValidatingMessageComposer`'s two no-message exits and their tests. Evidence:
+`ValidatingMessageComposer.cs:104` to `:126` and `:136` to `:148`; `TemplateMessageComposer.cs:55`;
+`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none.
+
+**Run and debug fact, five review findings fixed (2026-09-10).** A Claude Code review of PR #26
+and an Antigravity (Gemini 3.8 Flash) review of the same PR together found five real defects,
+none of them D67 (which both reviews independently read and left alone, since it is already
+recorded above as open). Each is fixed here with a failing test written first and confirmed to
+fail against the unfixed code before the fix landed, per this repo's TDD rule; none is a new
+decision, since none chooses between options DBT would gate.
+
+The whitespace-only argument crash (Antigravity). The D65 empty-argument scan at
+`CliRunner.cs:72` checked `args[index].Length != 0`, so `--input "   "` passed the scan, reached
+`OpenInputReader`, and `Path.GetFullPath` threw `ArgumentException: The path is empty.` unhandled
+- the exact D65 was meant to close, just on a blank string instead of an empty one. Confirmed by
+running `RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError` before the
+fix: it failed with that stack trace. Fixed by widening the condition to
+`!string.IsNullOrWhiteSpace(args[index])`; the message text is unchanged, since a blank path is
+the same operator-facing fact an empty one is.
+
+NetworkRetries dropped on three of four `OpenAiMessageComposer` `Failed` exits, and on the
+compose-validate loop's own `NoMessage` accumulation branch (Claude Code). Once a completion
+succeeds, `completion.NetworkRetries` was in scope at the JSON-parse-failure, missing-fields, and
+wrong-`cta_type` exits (`OpenAiMessageComposer.cs:136`, `:145`, `:166`) but only the `Composed`
+exit (`:203`) read it; `ValidatingMessageComposer.cs`'s loop separately accumulated
+`discardedModelCost` from a `NoMessage` attempt but never `discardedNetworkRetries` (`:94`). A
+transport retry spent on an attempt that later failed downstream (a real, not abandoned, call)
+read as `network_retries: null` instead of the count it actually spent. `SequenceMessageComposer`
+(`tests/Agent.Tests/TestSupport/SequenceMessageComposer.cs`) had the identical gap on its own
+`Failed` case, which is why no existing test could reach the scenario; fixed there first so the
+production fix could be tested at all. Four new tests pin the fix:
+`ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletionsRetries`,
+`ComposeAsync_CompletedCallMissingRequiredFields_FailureCarriesTheCompletionsRetries` and
+`ComposeAsync_CompletedCallReturnsWrongCtaType_FailureCarriesTheCompletionsRetries` in
+`OpenAiMessageComposerTests.cs`, and
+`ComposeAsync_FirstAttemptFailsWithRetriesThenSecondSucceeds_SumsNetworkRetriesFromTheFailedAttempt`
+in `ValidatingMessageComposerTests.cs`; all four failed before the fix (0 instead of the expected
+count) and pass after it.
+
+A 200 with no completion choice discarded a real usage block (Claude Code). `result.Value` is
+already read by the time `ChatCompletion.get_Content()` throws `ArgumentOutOfRangeException` on
+an empty `Choices` list (`OpenAiCompletionClient.cs`), so `result.Value.Usage` was readable but
+the old code threw a bare `InvalidOperationException` without reading it, and
+`OpenAiMessageComposer`'s catch folded the case into the same zero-tokens bucket a genuinely
+abandoned timeout gets, contrary to D62's own rule that the three cost states "must not collapse
+into one zero." Fixed with a new type, `NoCompletionChoiceException` (still an
+`InvalidOperationException`, so every catch that does not know about it keeps working), which
+reads `result.Value.Usage` before throwing and carries the tokens on itself; `OpenAiMessageComposer`
+gets a new catch clause ahead of its general one that turns them into a `ModelCostNotes` with
+`CompletedCalls: 1` and the real counts. Making the exception type more specific broke
+`CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException`'s exact-type assertion (xUnit's
+`Assert.ThrowsAsync<T>` requires an exact match, not a subtype), so that test now asserts
+`NoCompletionChoiceException` instead; two new tests,
+`CompleteAsync_ResponseHasNoChoiceButCarriesUsage_ThrowsWithTheVendorsTokenCounts` and
+`CompleteAsync_ResponseHasNoChoiceAndNoUsage_ThrowsWithZeroTokens`, pin the token-carrying and
+zero-token cases, and
+`ComposeAsync_CompletedCallHadNoChoiceButCarriedUsage_FailureCountsTheCompletedCallAndItsTokens`
+pins the composer-level outcome.
+
+Four independent file-open guard bodies in `CliRunner.cs`, and six near-identical
+Result-unwrap-then-return blocks at their call sites (Claude Code, altitude and simplification).
+The `--log-file` guard, `OpenOutputStream`, `OpenInputReader`, and the `--eval-report` write each
+restated the same `catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)`
+filter and the same message template independently, past this repo's own "extract on the third
+occurrence" rule. Collapsed into three shared private methods - `TryOpen<T>` (a synchronous open
+returning `Result<T>`), `TryOpenOptional<T>` (the same for a flag whose absence is success, not
+failure), and `TryPerformAsync` (the write-shaped sibling, for `--eval-report`) - all built on one
+filter and one message format, at `CliRunner.cs:514`, `:528` and `:544`. The six call sites that
+unwrapped a `Result<T>` and returned `CliExitCodes.UsageError` on failure collapsed onto one
+instance helper, `ReportIfFailed<T>` (`:561`; an instance method rather than static, because it
+calls `this.ReportFailure`). Pure refactor, not a behavior change: no new test was needed or
+added, and the existing suite (which already exercised both the success and failure path of every
+guard) is what verifies it.
+
+Evidence for all five: `dotnet build` clean, `.\test.ps1` exit code 0, 662 tests (584 in
+`Agent.Tests`, up from 577; 78 in `Agent.Cli.Tests`, up from 77) all passing, 100 percent line,
+branch and method coverage on both modules.
