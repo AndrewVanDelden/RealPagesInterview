@@ -61,17 +61,17 @@ public sealed class CliRunner(
         // chosen per run (playbook step 31).
         bool judgeRequested = args.Contains("--judge", StringComparer.Ordinal);
 
-        // D65: no argument of this program may be empty. An empty path throws
-        // ArgumentException, which is not the IOException filter every open guard here uses,
-        // so `--input ""`, `--output ""`, `--log-file ""` and `--eval-report ""` all ended the
-        // process unhandled. Closed here rather than by widening those filters, which would
-        // ask a guard to swallow an exception a bug in the same try block could also throw.
-        // One scan and no list of flags to keep in sync: every flag either takes a value or is
-        // a presence flag, and no value any of them takes has a meaning when empty.
-        // O(n) in the argument count.
+        // D65: no argument of this program may be empty or all whitespace. A blank path
+        // throws ArgumentException, which is not the IOException filter every open guard
+        // here uses, so `--input ""`, `--output "   "`, `--log-file ""` and `--eval-report ""`
+        // all ended the process unhandled. Closed here rather than by widening those filters,
+        // which would ask a guard to swallow an exception a bug in the same try block could
+        // also throw. One scan and no list of flags to keep in sync: every flag either takes
+        // a value or is a presence flag, and no value any of them takes has a meaning when
+        // blank. O(n) in the argument count.
         for (int index = 0; index < args.Length; index++)
         {
-            if (args[index].Length != 0)
+            if (!string.IsNullOrWhiteSpace(args[index]))
             {
                 continue;
             }
@@ -118,17 +118,16 @@ public sealed class CliRunner(
         // is not one the DI container underneath LoggerFactory.Create constructed itself,
         // and is therefore not reliably disposed alongside it - a real leak this project
         // hit first as a locked log file in its own tests, not as a hypothetical.
-        FileLoggerProvider? fileLoggerProvider;
-        try
+        // There is no ILogger yet at this point in the run, so the failure goes straight to
+        // error rather than through ReportFailure.
+        Result<FileLoggerProvider?> fileLoggerOpen = TryOpenOptional("--log-file", logFilePath, path => new FileLoggerProvider(path));
+        if (!fileLoggerOpen.IsSuccess)
         {
-            fileLoggerProvider = logFilePath is not null ? new FileLoggerProvider(logFilePath) : null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            error.WriteLine($"Could not open --log-file '{logFilePath}': {ex.ToDiagnosticString()}");
+            error.WriteLine(fileLoggerOpen.Error);
             return CliExitCodes.UsageError;
         }
 
+        FileLoggerProvider? fileLoggerProvider = fileLoggerOpen.Value;
         using FileLoggerProvider? disposableFileLoggerProvider = fileLoggerProvider;
 
         // AgentLog.Configure covers the whole run, including the JsonlRecordReader parse
@@ -162,9 +161,8 @@ public sealed class CliRunner(
         // before the composer is built - so a path that will not open still costs no time and
         // no money (playbook step 77).
         Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
-        if (!inputOpen.IsSuccess)
+        if (ReportIfFailed(inputOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, inputOpen.Error);
             return CliExitCodes.UsageError;
         }
 
@@ -233,27 +231,24 @@ public sealed class CliRunner(
         // outputPath is non-null here: the usage check above requires it when there is no
         // --replay, and the replay path has already returned, so the open cannot return null.
         Result<StreamWriter?> outputOpen = OpenOutputStream("--output", outputPath);
-        if (!outputOpen.IsSuccess)
+        if (ReportIfFailed(outputOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, outputOpen.Error);
             return CliExitCodes.UsageError;
         }
 
         await using StreamWriter outputStream = outputOpen.Value!;
 
         Result<StreamWriter?> diagnosticsOpen = OpenOutputStream("--diagnostics", diagnosticsPath);
-        if (!diagnosticsOpen.IsSuccess)
+        if (ReportIfFailed(diagnosticsOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, diagnosticsOpen.Error);
             return CliExitCodes.UsageError;
         }
 
         await using StreamWriter? diagnosticsStream = diagnosticsOpen.Value;
 
         Result<StreamWriter?> reviewQueueOpen = OpenOutputStream("--review-queue", reviewQueuePath);
-        if (!reviewQueueOpen.IsSuccess)
+        if (ReportIfFailed(reviewQueueOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, reviewQueueOpen.Error);
             return CliExitCodes.UsageError;
         }
 
@@ -397,9 +392,8 @@ public sealed class CliRunner(
     {
         // D65: both reader paths get the guard, in the order they are read.
         Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
-        if (!inputOpen.IsSuccess)
+        if (ReportIfFailed(inputOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, inputOpen.Error);
             return CliExitCodes.UsageError;
         }
 
@@ -411,9 +405,8 @@ public sealed class CliRunner(
         }
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
-        if (!replayOpen.IsSuccess)
+        if (ReportIfFailed(replayOpen, log))
         {
-            ReportFailure(log, LogLevel.Error, replayOpen.Error);
             return CliExitCodes.UsageError;
         }
 
@@ -490,16 +483,13 @@ public sealed class CliRunner(
 
         if (evalReportPath is not null)
         {
-            // D64: the same guard the three batch output streams get, at the write instead of
-            // before the loop. The report is a report on the batch, so there is no earlier
-            // moment at which it could be written.
-            try
+            // D64: the same guard mechanism the three batch output streams get, at the write
+            // instead of before the loop. The report is a report on the batch, so there is no
+            // earlier moment at which it could be written.
+            Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(evalReportPath, report, cancellationToken));
+            if (!written.IsSuccess)
             {
-                await File.WriteAllTextAsync(evalReportPath, report, cancellationToken);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                ReportFailure(log, LogLevel.Error, $"Could not open --eval-report '{evalReportPath}': {ex.ToDiagnosticString()}");
+                ReportFailure(log, LogLevel.Error, written.Error);
                 return false;
             }
         }
@@ -515,28 +505,75 @@ public sealed class CliRunner(
         error.WriteLine(message);
     }
 
-    // D64: one guard for every output file the batch writes, so all three fail the same way
-    // and each names the flag the caller passed. A null path is the flag not being passed at
-    // all, which is a success carrying no stream, not a failure. The filter is the one
-    // --log-file uses: a path the caller can fix (missing directory, no permission, a locked
-    // or full volume) is an expected failure, and anything else stays a bug and keeps
-    // throwing.
-    private static Result<StreamWriter?> OpenOutputStream(string flag, string? path)
+    // D64/D65, generalized after the Claude Code review of PR #26 found the filter and the
+    // message template independently restated at four call sites (--log-file, the three
+    // output streams, and --eval-report's write): one exception-to-Result mechanism for every
+    // path this program opens, shared instead of copied. A path the caller can fix (missing
+    // directory, no permission, a locked or full volume) is an expected failure, and anything
+    // else stays a bug and keeps throwing.
+    private static Result<T> TryOpen<T>(string flag, string path, Func<string, T> open)
     {
-        if (path is null)
-        {
-            return Result<StreamWriter?>.Success(null);
-        }
-
         try
         {
-            return Result<StreamWriter?>.Success(new StreamWriter(path));
+            return Result<T>.Success(open(path));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Result<StreamWriter?>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
+            return Result<T>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
         }
     }
+
+    // The same mechanism for a flag whose absence is success, not failure: a null path is the
+    // caller not passing the flag at all, which carries no stream rather than an error.
+    private static Result<T?> TryOpenOptional<T>(string flag, string? path, Func<string, T> open)
+        where T : class
+    {
+        if (path is null)
+        {
+            return Result<T?>.Success(null);
+        }
+
+        Result<T> opened = TryOpen(flag, path, open);
+        return opened.IsSuccess ? Result<T?>.Success(opened.Value) : Result<T?>.Failure(opened.Error);
+    }
+
+    // TryOpen's write-shaped sibling: an operation with no resource to hand back, just success
+    // or the same translated failure. --eval-report's write goes through this rather than a
+    // stream held open across the batch (D64's own distinction between the two), sharing the
+    // filter and the message wording instead of restating them.
+    private static async Task<Result<bool>> TryPerformAsync(string flag, string path, Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return Result<bool>.Success(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Result<bool>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
+        }
+    }
+
+    // Collapses the Result-unwrap-then-early-return shape this file used to write out by hand
+    // at every open: reports the failure through the usual channel and tells the caller
+    // whether to bail. Instance method, not static: it calls this.ReportFailure, which writes
+    // to the instance's own error stream.
+    private bool ReportIfFailed<T>(Result<T> result, ILogger log)
+    {
+        if (result.IsSuccess)
+        {
+            return false;
+        }
+
+        ReportFailure(log, LogLevel.Error, result.Error);
+        return true;
+    }
+
+    // D64: one guard for every output file the batch writes, so all three fail the same way
+    // and each names the flag the caller passed. A null path is the flag not being passed at
+    // all, which is a success carrying no stream, not a failure.
+    private static Result<StreamWriter?> OpenOutputStream(string flag, string? path) =>
+        TryOpenOptional(flag, path, p => new StreamWriter(p));
 
     // D65: the mirror of OpenOutputStream for the two paths a run reads, --input and --replay.
     // Same filter and same wording deliberately: a path the caller can fix is one class of
@@ -545,17 +582,8 @@ public sealed class CliRunner(
     // the caller's half of that: 2 means some records were processed and some were not, and a
     // file that never opened has no records at all. No null path to answer for, unlike the
     // output flags: both callers reach this only with a path the usage check required.
-    private static Result<StreamReader> OpenInputReader(string flag, string path)
-    {
-        try
-        {
-            return Result<StreamReader>.Success(new StreamReader(path));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return Result<StreamReader>.Failure($"Could not open {flag} '{path}': {ex.ToDiagnosticString()}");
-        }
-    }
+    private static Result<StreamReader> OpenInputReader(string flag, string path) =>
+        TryOpen(flag, path, p => new StreamReader(p));
 
     private static string? GetOption(string[] cliArgs, string name)
     {

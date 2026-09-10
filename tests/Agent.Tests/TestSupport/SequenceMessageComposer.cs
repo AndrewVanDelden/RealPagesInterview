@@ -49,6 +49,6 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
                 NetworkRetries = networkRetries,
                 ModelCost = modelCost,
             }
-            : new ComposeOutcome.Failed(result.Error) { ModelCost = modelCost });
+            : new ComposeOutcome.Failed(result.Error) { NetworkRetries = networkRetries, ModelCost = modelCost });
     }
 }

@@ -78,6 +78,18 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         {
             completion = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
         }
+        // D62: distinct from the general catch below. The call completed and the vendor's own
+        // usage block already travelled out on the exception, so the real counted call and its
+        // tokens are what this record spent - not the zero an abandoned call reports.
+        catch (NoCompletionChoiceException ex)
+        {
+            string noChoiceFailure = ex.ToRedactedDiagnosticString();
+            log.LogWarning("Completion request failed: {CompletionFailure}.", noChoiceFailure);
+            return new ComposeOutcome.Failed($"Completion request failed: {noChoiceFailure}")
+            {
+                ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 1, ex.InputTokens, ex.OutputTokens),
+            };
+        }
         catch (Exception ex) when (ex is ClientResultException or TimeoutException or HttpRequestException or InvalidOperationException or JsonException)
         {
             // Step 68: the exception is not attached to the entry. LogLineFormatter appends
@@ -118,12 +130,20 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             // locates the failure without either (step 68).
             string failure = ex.ToRedactedDiagnosticString();
             log.LogWarning("Model response was not valid JSON: {ResponseFailure}.", failure);
-            return new ComposeOutcome.Failed($"Model response was not valid JSON: {failure}") { ModelCost = modelCost };
+            return new ComposeOutcome.Failed($"Model response was not valid JSON: {failure}")
+            {
+                ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
+            };
         }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.Body) || string.IsNullOrWhiteSpace(payload.CtaType))
         {
-            return new ComposeOutcome.Failed("Model response was missing required fields (body, cta_type).") { ModelCost = modelCost };
+            return new ComposeOutcome.Failed("Model response was missing required fields (body, cta_type).")
+            {
+                ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
+            };
         }
 
         // The response schema already constrains cta_type to exactly requiredCtaType
@@ -143,6 +163,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
                 "Model returned a cta_type other than the one the record's primary_cta required.")
             {
                 ModelCost = modelCost,
+                NetworkRetries = completion.NetworkRetries,
             };
         }
 

@@ -1790,3 +1790,77 @@ unrecorded defect. Scopes: nothing yet; whichever option is taken scopes
 `ValidatingMessageComposer`'s two no-message exits and their tests. Evidence:
 `ValidatingMessageComposer.cs:104` to `:126` and `:136` to `:148`; `TemplateMessageComposer.cs:55`;
 `CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none.
+
+**Run and debug fact, five review findings fixed (2026-09-10).** A Claude Code review of PR #26
+and an Antigravity (Gemini 3.8 Flash) review of the same PR together found five real defects,
+none of them D67 (which both reviews independently read and left alone, since it is already
+recorded above as open). Each is fixed here with a failing test written first and confirmed to
+fail against the unfixed code before the fix landed, per this repo's TDD rule; none is a new
+decision, since none chooses between options DBT would gate.
+
+The whitespace-only argument crash (Antigravity). The D65 empty-argument scan at
+`CliRunner.cs:72` checked `args[index].Length != 0`, so `--input "   "` passed the scan, reached
+`OpenInputReader`, and `Path.GetFullPath` threw `ArgumentException: The path is empty.` unhandled
+- the exact D65 was meant to close, just on a blank string instead of an empty one. Confirmed by
+running `RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError` before the
+fix: it failed with that stack trace. Fixed by widening the condition to
+`!string.IsNullOrWhiteSpace(args[index])`; the message text is unchanged, since a blank path is
+the same operator-facing fact an empty one is.
+
+NetworkRetries dropped on three of four `OpenAiMessageComposer` `Failed` exits, and on the
+compose-validate loop's own `NoMessage` accumulation branch (Claude Code). Once a completion
+succeeds, `completion.NetworkRetries` was in scope at the JSON-parse-failure, missing-fields, and
+wrong-`cta_type` exits (`OpenAiMessageComposer.cs:136`, `:145`, `:166`) but only the `Composed`
+exit (`:203`) read it; `ValidatingMessageComposer.cs`'s loop separately accumulated
+`discardedModelCost` from a `NoMessage` attempt but never `discardedNetworkRetries` (`:94`). A
+transport retry spent on an attempt that later failed downstream (a real, not abandoned, call)
+read as `network_retries: null` instead of the count it actually spent. `SequenceMessageComposer`
+(`tests/Agent.Tests/TestSupport/SequenceMessageComposer.cs`) had the identical gap on its own
+`Failed` case, which is why no existing test could reach the scenario; fixed there first so the
+production fix could be tested at all. Four new tests pin the fix:
+`ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletionsRetries`,
+`ComposeAsync_CompletedCallMissingRequiredFields_FailureCarriesTheCompletionsRetries` and
+`ComposeAsync_CompletedCallReturnsWrongCtaType_FailureCarriesTheCompletionsRetries` in
+`OpenAiMessageComposerTests.cs`, and
+`ComposeAsync_FirstAttemptFailsWithRetriesThenSecondSucceeds_SumsNetworkRetriesFromTheFailedAttempt`
+in `ValidatingMessageComposerTests.cs`; all four failed before the fix (0 instead of the expected
+count) and pass after it.
+
+A 200 with no completion choice discarded a real usage block (Claude Code). `result.Value` is
+already read by the time `ChatCompletion.get_Content()` throws `ArgumentOutOfRangeException` on
+an empty `Choices` list (`OpenAiCompletionClient.cs`), so `result.Value.Usage` was readable but
+the old code threw a bare `InvalidOperationException` without reading it, and
+`OpenAiMessageComposer`'s catch folded the case into the same zero-tokens bucket a genuinely
+abandoned timeout gets, contrary to D62's own rule that the three cost states "must not collapse
+into one zero." Fixed with a new type, `NoCompletionChoiceException` (still an
+`InvalidOperationException`, so every catch that does not know about it keeps working), which
+reads `result.Value.Usage` before throwing and carries the tokens on itself; `OpenAiMessageComposer`
+gets a new catch clause ahead of its general one that turns them into a `ModelCostNotes` with
+`CompletedCalls: 1` and the real counts. Making the exception type more specific broke
+`CompleteAsync_ResponseHasNoChoice_ThrowsInvalidOperationException`'s exact-type assertion (xUnit's
+`Assert.ThrowsAsync<T>` requires an exact match, not a subtype), so that test now asserts
+`NoCompletionChoiceException` instead; two new tests,
+`CompleteAsync_ResponseHasNoChoiceButCarriesUsage_ThrowsWithTheVendorsTokenCounts` and
+`CompleteAsync_ResponseHasNoChoiceAndNoUsage_ThrowsWithZeroTokens`, pin the token-carrying and
+zero-token cases, and
+`ComposeAsync_CompletedCallHadNoChoiceButCarriedUsage_FailureCountsTheCompletedCallAndItsTokens`
+pins the composer-level outcome.
+
+Four independent file-open guard bodies in `CliRunner.cs`, and six near-identical
+Result-unwrap-then-return blocks at their call sites (Claude Code, altitude and simplification).
+The `--log-file` guard, `OpenOutputStream`, `OpenInputReader`, and the `--eval-report` write each
+restated the same `catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)`
+filter and the same message template independently, past this repo's own "extract on the third
+occurrence" rule. Collapsed into three shared private methods - `TryOpen<T>` (a synchronous open
+returning `Result<T>`), `TryOpenOptional<T>` (the same for a flag whose absence is success, not
+failure), and `TryPerformAsync` (the write-shaped sibling, for `--eval-report`) - all built on one
+filter and one message format, at `CliRunner.cs:514`, `:528` and `:544`. The six call sites that
+unwrapped a `Result<T>` and returned `CliExitCodes.UsageError` on failure collapsed onto one
+instance helper, `ReportIfFailed<T>` (`:561`; an instance method rather than static, because it
+calls `this.ReportFailure`). Pure refactor, not a behavior change: no new test was needed or
+added, and the existing suite (which already exercised both the success and failure path of every
+guard) is what verifies it.
+
+Evidence for all five: `dotnet build` clean, `.\test.ps1` exit code 0, 662 tests (584 in
+`Agent.Tests`, up from 577; 78 in `Agent.Cli.Tests`, up from 77) all passing, 100 percent line,
+branch and method coverage on both modules.

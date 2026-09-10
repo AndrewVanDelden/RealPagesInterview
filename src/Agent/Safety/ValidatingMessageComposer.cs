@@ -37,10 +37,10 @@ public sealed class ValidatingMessageComposer(
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
         // D28 addendum: a retry a discarded attempt spent is still a retry this record
-        // spent. An attempt that carries no ComposedMessage at all (the composer never
-        // built one) has no retry count to capture, so only a validation-rejected attempt's
-        // retries are capturable here; that is the discard case D28's own visibility goal is
-        // about.
+        // spent, whether or not that attempt built a message. D66 put NetworkRetries on the
+        // ComposeOutcome base type for all three cases, so a NoMessage attempt (a wrong
+        // cta_type, a malformed completion) can carry a real retry count too, and it is
+        // captured here the same way a validation-rejected Composed attempt's is below.
         // Nullable, and not an int starting at zero: a record whose attempts made no network
         // call at all has no measurement, and a template-composed draft the loop refuses would
         // otherwise report a measured zero retries for calls that never happened (D28, D62).
@@ -91,6 +91,7 @@ public sealed class ValidatingMessageComposer(
                 log.LogWarning("Compose attempt {Attempt} failed: the composer returned a failure result.", attempt);
                 var noMessage = (ComposeOutcome.NoMessage)attemptOutcome;
                 violationsForNextAttempt = [noMessage.Error];
+                discardedNetworkRetries = AddRetries(discardedNetworkRetries, noMessage.NetworkRetries);
                 discardedModelCost = ModelCostNotes.Add(discardedModelCost, noMessage.ModelCost);
             }
         }

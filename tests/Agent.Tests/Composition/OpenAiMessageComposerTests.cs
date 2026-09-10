@@ -733,6 +733,23 @@ public class OpenAiMessageComposerTests
         Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.ModelCost);
     }
 
+    // Different from a timeout: a NoCompletionChoiceException means the call completed and the
+    // vendor's own usage block was already readable when OpenAiCompletionClient threw, so the
+    // real tokens travel with it instead of collapsing into the same zero an abandoned call
+    // reports (Claude Code review, PR #26).
+    [Fact]
+    public async Task ComposeAsync_CompletedCallHadNoChoiceButCarriedUsage_FailureCountsTheCompletedCallAndItsTokens()
+    {
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(
+            throwException: new NoCompletionChoiceException(11, 7, new ArgumentOutOfRangeException())));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), result.ModelCost);
+    }
+
     // A call that completed and came back unusable is still a call the vendor billed for: the
     // completed count and the tokens are what it measured, and the record's message came from
     // the fallback instead.
@@ -746,5 +763,49 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
         Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 9, OutputTokens: 3), result.ModelCost);
+    }
+
+    // A completed call's transport retries are just as real when the response comes back
+    // unusable as when it comes back clean: the retry already happened before the JSON was
+    // ever read, so it belongs on every exit past the completion, not only the Composed one
+    // (Claude Code review, PR #26).
+    [Fact]
+    public async Task ComposeAsync_CompletedCallReturnedMalformedJson_FailureCarriesTheCompletionsRetries()
+    {
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient("not json", networkRetries: 1));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(1, result.NetworkRetries);
+    }
+
+    // The same fact on the two other post-completion Failed exits: a response missing its
+    // required fields, and one whose cta_type does not match what the record required.
+    [Fact]
+    public async Task ComposeAsync_CompletedCallMissingRequiredFields_FailureCarriesTheCompletionsRetries()
+    {
+        const string json = """{"subject":"Tour","body":"","cta_type":""}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json, networkRetries: 1));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(1, result.NetworkRetries);
+    }
+
+    [Fact]
+    public async Task ComposeAsync_CompletedCallReturnsWrongCtaType_FailureCarriesTheCompletionsRetries()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"call_now","cta_options":null,"cta_link":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json, networkRetries: 1));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "book_tour");
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(1, result.NetworkRetries);
     }
 }

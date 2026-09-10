@@ -863,6 +863,26 @@ public class CliRunnerTests
         Assert.False(File.Exists(outputPath));
     }
 
+    // A whitespace-only value is not the empty string the Length check above catches, but it
+    // resolves to the same "no real path" fact: Path.GetFullPath throws ArgumentException on
+    // it, which is not the IOException the open guards filter on, so it escaped as an
+    // unhandled exception the same way "" did before D65 (Antigravity review, PR #26).
+    [Fact]
+    public async Task RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError()
+    {
+        string outputPath = TempFilePath();
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        int exitCode = await runner.RunAsync(["--input", "   ", "--output", outputPath]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("--input", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(outputPath));
+    }
+
     // The same rule where there is no preceding argument to name: the position is the only
     // identity the empty argument has.
     [Fact]

@@ -284,6 +284,28 @@ public class ValidatingMessageComposerTests
         Assert.Equal(2, outcome.NetworkRetries);
     }
 
+    // The Composed-then-rejected branch above already sums a discarded attempt's retries onto
+    // the winner; this is the other branch, an attempt that made no message at all (a
+    // Result.Failure, the same shape a wrong-cta_type or malformed-JSON response takes on the
+    // OpenAI path). A retry that attempt spent is still a retry this record spent, whether or
+    // not the attempt produced a message (Claude Code review, PR #26).
+    [Fact]
+    public async Task ComposeAsync_FirstAttemptFailsWithRetriesThenSecondSucceeds_SumsNetworkRetriesFromTheFailedAttempt()
+    {
+        var innerComposer = new SequenceMessageComposer(
+            Result<NextMessage>.Failure("boom"),
+            Result<NextMessage>.Success(CleanMessage()))
+        {
+            NetworkRetries = [2, 0],
+        };
+        var composer = new ValidatingMessageComposer(innerComposer, Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(2, outcome.NetworkRetries);
+    }
+
     // The fallback composer makes no network call of its own (NetworkRetries stays null),
     // but retries spent on the two rejected attempts before it are still real: they carry
     // through onto the fallback's notes rather than disappearing because the composer that
