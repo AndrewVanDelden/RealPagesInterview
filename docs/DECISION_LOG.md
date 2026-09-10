@@ -15,8 +15,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
 Check: the README's run command and the runbook's steps both work from the tagged commit. Passed 2026-09-10 at `v1.0.0`.
-Next step: the owner's step 94 read of the nine files the release PR names, and step 98 delivered aloud; then D77.
-Open decisions: D77, whether the retrospective of 2026-09-06 already meets Phase 9.
+Next step: the owner's step 94 read of the nine files `docs/RELEASE_v1.0.0.md` names, step 98 delivered aloud, and D78; then D77.
+Open decisions: D77, whether the retrospective of 2026-09-06 already meets Phase 9; D78, where the release narrative is published.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -98,10 +98,10 @@ changes. Four agents ran these steps at once, a Phase First departure on record.
 this sprint's diff, the one no PR had reviewed (D76), and found nothing; the second reviewer is
 owed.
 
-**D77, Sprint 13, the release (2026-09-10).** The owner marked step 93 complete with its second
-reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`, and the release PR into `main`
-carries step 97's narrative and names the nine files step 94 has the owner read by hand.
+**D77 and D78, Sprint 13, the release (2026-09-10).** The owner marked step 93 complete with
+its second reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`; step 97's narrative is
+`docs/RELEASE_v1.0.0.md`, which names the nine files step 94 has the owner read by hand.
 `docs/NARRATION.md` opens with a 150-word script, one minute spoken, answering all seven
-questions. The Phase 8 check passed from a worktree at the tag; that run and the rehearsal's
-values matching are a run and debug fact. D77 asks whether the retrospective of 2026-09-06
-already meets Phase 9, and is open.
+questions. The Phase 8 check passed from a worktree at the tag, a run and debug fact. D77 asks
+whether the retrospective of 2026-09-06 already meets Phase 9; D78 asks where the narrative is
+published, since `dev` shares no history with `main`. Both are open.

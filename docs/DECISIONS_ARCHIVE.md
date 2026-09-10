@@ -2355,12 +2355,13 @@ on the Sprint 12 PR and has not run.
 
 **Run and debug fact, playbook steps 93, 94, 97 and 98 and the Phase 8 check (2026-09-10).** The
 owner marked step 93 complete with its second reviewer, Gemini under Antigravity, not run: PR #29
-merged with no review and no comment on GitHub. Step 94 is the owner's read: the release PR from
-`dev` into `main` names nine files, `SafetyValidator.cs`, `SafetyTextNormalizer.cs`,
+merged with no review and no comment on GitHub. Step 94 is the owner's read: `docs/RELEASE_v1.0.0.md` names nine
+files, `SafetyValidator.cs`, `SafetyTextNormalizer.cs`,
 `OptOutInstructions.cs` and `ValidatingMessageComposer.cs` under `src/Agent/Safety/`,
 `ChannelSelector.cs`, `LeasingMessageAgent.cs`, `OpenAiMessageComposer.cs`,
 `ExceptionFormatting.cs`, and the two key reads in `CliRunner.cs`. Step 97: the annotated tag
-`v1.0.0` is on `ccf3c5c`, the PR #29 merge into `dev`, and the release PR carries the narrative.
+`v1.0.0` is on `ccf3c5c`, the PR #29 merge into `dev`, and the narrative is
+`docs/RELEASE_v1.0.0.md`, because the release PR could not open (D78).
 Step 98: `docs/NARRATION.md` opens with a 150-word script that answers all seven questions in one
 minute spoken, written in the owner's voice at the owner's request; the delivery aloud is the
 owner's. The rehearsal was rerun at the tag and every value it states matched. The check ran from
@@ -2382,3 +2383,15 @@ remains; (b) a fresh judged set labeled by someone other than its author, and st
 against `v1.0.0`; (c) close the project at Phase 8. Recommendation: (a), since the interview is
 over and (b) needs a labeler the project does not have. Scopes: Phase 9, steps 99 to 104.
 Evidence: `docs/RETROSPECTIVE_2026-09-06.md`; DESIGN.md section 4. Assumptions: none. Open.
+
+**D78. Where the release narrative is published (proposed 2026-09-10).** Question: step 97 writes
+the narrative as the release PR's description, and `gh pr create --base main --head dev` failed
+with "The dev branch has no history in common with main": `main` holds one commit, `a7a76ae
+Initial commit`, a README, and the repository's default branch is `dev`. Options: (a) a GitHub
+release on the tag `v1.0.0` whose notes are `docs/RELEASE_v1.0.0.md`, leaving `main` as it is;
+(b) a branch joining the two histories with `--allow-unrelated-histories`, the README conflict
+taken from `dev`, and a PR from it into `main`; (c) the file in the repository and nothing
+published. Recommendation: (a), since `dev` is what a visitor already sees and a release is where
+a tag's narrative lives on GitHub; publishing it is the owner's call. Scopes: step 97. Evidence:
+the failed `gh pr create`; `gh repo view` reads `dev` as the default branch. Assumptions: none.
+Open.
