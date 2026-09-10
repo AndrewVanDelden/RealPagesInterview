@@ -2382,7 +2382,8 @@ carries the honest number, and step 104, updating the playbook from this project
 remains; (b) a fresh judged set labeled by someone other than its author, and steps 99 to 104 run
 against `v1.0.0`; (c) close the project at Phase 8. Recommendation: (a), since the interview is
 over and (b) needs a labeler the project does not have. Scopes: Phase 9, steps 99 to 104.
-Evidence: `docs/RETROSPECTIVE_2026-09-06.md`; DESIGN.md section 4. Assumptions: none. Open.
+Evidence: `docs/RETROSPECTIVE_2026-09-06.md`; DESIGN.md section 4. Assumptions: none. Taken
+2026-09-10 by the owner: (a).
 
 **D78. Where the release narrative is published (proposed 2026-09-10).** Question: step 97 writes
 the narrative as the release PR's description, and `gh pr create --base main --head dev` failed
@@ -2394,4 +2395,48 @@ taken from `dev`, and a PR from it into `main`; (c) the file in the repository a
 published. Recommendation: (a), since `dev` is what a visitor already sees and a release is where
 a tag's narrative lives on GitHub; publishing it is the owner's call. Scopes: step 97. Evidence:
 the failed `gh pr create`; `gh repo view` reads `dev` as the default branch. Assumptions: none.
-Open.
+Taken 2026-09-10 by the owner: (a). The release is
+https://github.com/AndrewVanDelden/RealPagesInterview/releases/tag/v1.0.0, published with
+`gh release create v1.0.0 --verify-tag --notes-file docs/RELEASE_v1.0.0.md`, not a draft and not
+a prerelease.
+
+**Run and debug fact, the end of Phase 8 (2026-09-10).** The owner reported steps 94 and 98 done:
+the nine files `docs/RELEASE_v1.0.0.md` names were read by hand, and the one-minute script in
+`docs/NARRATION.md` was delivered aloud. PR #30 merged into `dev` as `9461f4f`. With D78 taken and
+the release published, every Phase 8 step is done or an exception on record (step 93's second
+reviewer, D75's 150 lines), and the check passed at `v1.0.0`.
+
+**Run and debug fact, playbook step 101 (2026-09-10).** Section 10 of
+`docs/RETROSPECTIVE_2026-09-06.md` maps each of its sixteen findings to the playbook step whose
+text would have caught it, with the first commit of that clause in `~/.agent-rules` found by
+`git log -S`: fourteen map to existing steps; finding 7, two components answering one question,
+maps to no step and names a new one; finding 8 is declined by D55. No commit shows playbook text
+on 2026-09-04, the build day; the root commit `be974c4` is dated 2026-09-05. The mapping also
+found D55 citing D43 for the orchestrator's own gate, which D43 does not mention; that correction
+is a separate task. Phase 9's check passed.
+
+**D79. Which step 104 changes land in the playbook (proposed 2026-09-10).** Question: step 104
+adds a step for every failure no step would have caught and cuts every step that never earned its
+place, in `~/.agent-rules/PROJECT_PLAYBOOK.md`, the owner's repository. A read-only audit of this
+archive from 2026-09-07 on, plus section 10 of the retrospective, proposes eight additions and
+four cuts or rewrites. Additions: finding 7's step, one owner per question, a value two
+components compute being a finding; a Phase 6 step after 75, test every count per unit of work on
+every exit, refusal, failure and fallback included, and in the test substitutes (the D28
+addendum, D66, D67); step 49 amended to measure one real call before setting a timeout and to
+bound the whole call with its retries (the D28 addendum's 4828 ms, D31, D32); step 25 amended to
+cover every collection's elements (D47); step 71 amended to drive one violating record through
+the production wiring before reporting a zero (D48); step 21 amended to prove each hook fails on
+a planted violation of every rule it claims (the D68 review fact); a step beside 22 to grep code,
+tests and docs for any deleted, renamed or renumbered name and number (the Sprint 8 and D68
+facts); step 16 amended to confirm `git merge-base main dev` returns a commit (D78). Cuts or
+rewrites: step 81 to confirm the artifacts and exit codes and read one record across them, field
+comparison being step 28's (D63); step 88 cut where CI builds a fresh clone on every push (the
+step 88 run and debug fact, which found nothing); step 93 met when no diff escaped a step 22
+review (D76); step 31 amended to schedule the judge on a scorecard a phase check commits, or not
+to build it (every committed scorecard reads `ActionSem 0/0, BodySem 0/0`). Options: (a) all
+twelve; (b) the eight additions and no cuts; (c) finding 7's step only; (d) none.
+Recommendation: (b), since each addition has a failure behind it while each cut rests on one
+project, and the cut rule is better applied when a second project shows the same. Scopes: step
+104; `~/.agent-rules` only, no file in this repository. Evidence: the citations above.
+Assumptions: none. Taken 2026-09-10 by the owner: (d), none. The rules stay as they are; the
+twelve items stand only as this project's record, and step 104 is closed with no change.

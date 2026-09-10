@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
-Check: the README's run command and the runbook's steps both work from the tagged commit. Passed 2026-09-10 at `v1.0.0`.
-Next step: the owner's step 94 read of the nine files `docs/RELEASE_v1.0.0.md` names, step 98 delivered aloud, and D78; then D77.
-Open decisions: D77, whether the retrospective of 2026-09-06 already meets Phase 9; D78, where the release narrative is published.
+Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, met by the retrospective of 2026-09-06 (D77).
+Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-10: its section 10.
+Next step: none. Step 104 closed with no change to `~/.agent-rules` (D79); the project is complete at `v1.0.0`.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -105,3 +105,11 @@ its second reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`; step 97
 questions. The Phase 8 check passed from a worktree at the tag, a run and debug fact. D77 asks
 whether the retrospective of 2026-09-06 already meets Phase 9; D78 asks where the narrative is
 published, since `dev` shares no history with `main`. Both are open.
+
+**D79, Sprint 14, Phase 9 (2026-09-10).** D77 and D78 were taken as (a): Phase 9 rests on the
+retrospective of 2026-09-06, and the release is published on GitHub from
+`docs/RELEASE_v1.0.0.md`. The owner read the nine step 94 files and delivered the narration,
+closing Phase 8, a run and debug fact. The retrospective's new section 10 names the playbook step
+for each of its sixteen findings: fourteen existing steps, one new step for finding 7, and finding
+8 declined by D55. A step 104 audit of the failures since then found seven with no step and four
+steps that earned nothing here; D79 took none of them, and the rules stay as they are.
