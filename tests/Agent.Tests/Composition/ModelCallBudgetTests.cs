@@ -64,14 +64,4 @@ public class ModelCallBudgetTests
 
         Assert.Equal(TimeSpan.FromSeconds(30), timeout);
     }
-
-    // D28 as corrected: the budget bounds one client call including its retry, so the client
-    // divides it by the number of attempts it may make. A budget that bounded a single
-    // attempt would be exceeded by the retry beside it, which is a bound that is documented
-    // and not enforced.
-    [Fact]
-    public void PerAttemptTimeout_WholeCallBudget_IsDividedByTheAttemptsTheClientMayMake()
-    {
-        Assert.Equal(TimeSpan.FromMilliseconds(1000), OpenAiCompletionClient.PerAttemptTimeout(TimeSpan.FromMilliseconds(2000)));
-    }
 }

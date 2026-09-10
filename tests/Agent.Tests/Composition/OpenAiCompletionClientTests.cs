@@ -109,6 +109,49 @@ public class OpenAiCompletionClientTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    // D35: a timeout is not retried (D33), so dividing the budget by the attempts the client may
+    // make only halved the one attempt that actually happens. D32 measured a completion at about
+    // 1.5 to 4.5 s, so an attempt that needs 1200 ms of a 2000 ms budget is the case that
+    // matters: it completes, where the division abandoned it at 1000 ms.
+    [Fact]
+    public async Task CompleteAsync_AttemptNeedsMoreThanHalfTheBudget_StillCompletes()
+    {
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromMilliseconds(1200) };
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(2000));
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal("{\"body\":\"hi\"}", completion.Content);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // D35's stated cost: the attempt after a transient status is given the whole budget too, so
+    // a call that met a 429 can take the first attempt, the backoff and a second full budget.
+    // The call completes rather than being cut at the budget it has already exceeded.
+    [Fact]
+    public async Task CompleteAsync_TransientStatusThenASlowAttempt_GivesTheRetryTheWholeBudgetToo()
+    {
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref requests) == 1)
+            {
+                return (HttpStatusCode.TooManyRequests, """{"error":{"message":"slow down"}}""");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(1200), cancellationToken);
+            return (HttpStatusCode.OK, CompletionJson);
+        });
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(2000));
+
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(1, completion.NetworkRetries);
+        Assert.Equal(2, handler.CallCount);
+    }
+
     // D33 retries only a transient status, so a request that fails with no response at all is
     // not retried either: the SDK would otherwise make it twice and hand the composer an
     // AggregateException of the two, a type its catch list does not name, which escapes the

@@ -40,7 +40,15 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     private readonly CountingRetryPolicy retryPolicy;
     private readonly TimeSpan callBudget;
 
-    // callBudget bounds one call including its retry, not one attempt: see PerAttemptTimeout.
+    // D35: callBudget is the timeout of each attempt, whole, not a share of it. A timeout is
+    // never retried (D33), so the attempt that times out is the only attempt its call makes,
+    // and D28's division by 1 + MaxRetries only halved it: D32 measured one completion at about
+    // 1.5 to 4.5 s. The cost, stated rather than hidden: after a transient status the retry is
+    // given the whole budget again, so such a call can take up to twice the budget plus the
+    // SDK's backoff between the two attempts. Nor does this bound the compose-validate loop
+    // above: after a failed call it composes once more before falling back, so a record can
+    // spend twice that again before the template composer answers, which the p95 check then
+    // measures and reports.
     public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
     {
         retryPolicy = new CountingRetryPolicy(MaxRetries);
@@ -49,7 +57,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         var options = new OpenAIClientOptions
         {
             Transport = new HttpClientPipelineTransport(httpClient),
-            NetworkTimeout = PerAttemptTimeout(this.callBudget),
+            NetworkTimeout = this.callBudget,
             RetryPolicy = retryPolicy,
         };
 
@@ -129,15 +137,6 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
             : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
-
-    // NetworkTimeout bounds one attempt, and the policy above may make MaxRetries more of
-    // them, so a budget handed straight to it would be exceeded by the retry beside it: a
-    // bound that is documented and not enforced. Dividing makes the whole call, its retry
-    // included, fit inside the budget the record stated. What this does not bound is the
-    // compose-validate loop above: after a failed call it composes once more before falling
-    // back, so a record that fails composition can spend up to twice its budget before the
-    // template composer answers, which the p95 check then measures and reports.
-    public static TimeSpan PerAttemptTimeout(TimeSpan callBudget) => callBudget / (1 + MaxRetries);
 
     // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.
     // When the caller supplies a schema, Structured Outputs (strict) makes the API itself
