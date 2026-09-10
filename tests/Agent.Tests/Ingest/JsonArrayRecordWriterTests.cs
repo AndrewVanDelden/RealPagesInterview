@@ -46,7 +46,7 @@ public class JsonArrayRecordWriterTests
 
         await Writer.WriteAllAsync(writer, records);
 
-        Assert.Contains(Environment.NewLine, writer.ToString());
+        Assert.Contains(writer.ToString().Split('\n'), line => line.StartsWith("  {", StringComparison.Ordinal));
     }
 
     [Fact]

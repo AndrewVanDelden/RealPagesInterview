@@ -45,9 +45,14 @@ public sealed record RecordScore(
         _ => throw new ArgumentOutOfRangeException(nameof(check), check, "Unknown evaluation check."),
     };
 
-    // A case that could not be scored at all (no labeled expected outcome, or a scoring
-    // bug), distinct from a case that was scored and failed. Keeps every attempted case
-    // visible in the scorecard instead of aborting the batch (playbook step 34).
+    // D71: the task id cell of a row for an input line that did not parse, whose task id is
+    // what failed to parse.
+    private const string DidNotParseTaskId = "(did not parse)";
+
+    // A case that could not be scored at all (no labeled expected outcome, a scoring bug, or,
+    // since D71, an input the batch never processed), distinct from a case that was scored and
+    // failed. Keeps every attempted case visible in the scorecard instead of aborting the
+    // batch (playbook step 34).
     public static RecordScore Unscoreable(string taskId, string reason) =>
         new(
             TaskId: taskId,
@@ -64,4 +69,9 @@ public sealed record RecordScore(
             Personalization: CheckResult.NotMeasured,
             LatencyMs: null,
             ScoringError: reason);
+
+    // D71: the row for an input line that did not parse. The reader's own failure text names
+    // the line number and a byte position and never the line's content (step 68), so it is the
+    // row's reason as it stands.
+    public static RecordScore DidNotParse(string readFailure) => Unscoreable(DidNotParseTaskId, readFailure);
 }

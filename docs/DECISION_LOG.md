@@ -13,19 +13,16 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 7 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Test the way it will be judged.
-Check: the scorecard on the synthetic set, the variance report and the fault-injection results
-are all files in the repo. Status: not passed. `docs/FAULT_INJECTION.md` is there; the other two
-are not, and the scorecard is written today only to a path `.gitignore` excludes, which is an
-open question of its own before any of the three can be a file in the repo.
-Phase 6 passed 2026-09-09 in Sprint 9, against the playbook's check and not this log's (D60):
-the documented one-line command produced the output file, the diagnostics file, the review queue
-and the scorecard on all three sets and exited 0, 0 and 2, checked by hand and recorded in
-DESIGN.md section 9 (D63). The narration this block used to gate Phase 6 on is step 98, inside
-Phase 8, and is still owed there.
-Next step: decide where a committed scorecard and a variance report live, then produce them.
-Open decisions: three. D31's question on how a real model-versus-template comparison could be
-run at all and whether D32 to D37 get a sprint of their own need the requester; D67 is the third.
+Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review.
+Check: the README's run command and the runbook's steps both work from the tagged commit.
+Status: not passed. `docs/RUNBOOK.md` exists and ran clean from a fresh clone (step 88), but
+nothing is tagged.
+Phase 7 passed 2026-09-10 in Sprint 11: the synthetic scorecard, the variance report and the
+fault-injection results are files in the repo, `docs/scorecards/`, `docs/VARIANCE.md` and
+`docs/FAULT_INJECTION.md` (D69 to D71), and its steps 86 to 88 are done. The narration of step
+98 is still owed.
+Next step: Phase 8 from step 90, the README.
+Open decisions: none. D67 and D32 to D37 were settled in Sprint 11.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -54,8 +51,8 @@ amend them.
 than from preference: measure one successful call before tuning anything (D32), stop retrying a
 timeout (D33), retry only a safety rejection in the compose-validate loop (D34), what one
 attempt may take (D35), what `p95_latency_ms` is (D36), and batch concurrency (D37). D35 and D36
-take no recommendation, and prompt caching is recorded there as not a lever. Their scheduling
-call is still not taken, so a task citing any of them is not scheduled until it is.
+take no recommendation, and prompt caching is recorded there as not a lever. All six were
+settled in Sprint 11: D32 measured, D33 to D35 and D37 taken, D36 closed by D70.
 
 **D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check
 rather than one boolean (D38), all four checks hard gates and brand style a diagnostic (D39),
@@ -89,3 +86,12 @@ check that no cited number dangles move out of prose into `check-instruction-fil
 CI runs. Executed 2026-09-10. A run and debug fact of the same day records seven review findings
 fixed: what the check counts as a definition, the S numbers and the archive it did not scan, and
 four lines of stale prose.
+
+**D69 to D73, Sprint 11, the Phase 7 evidence (2026-09-10).** The scorecard is committed under
+`docs/scorecards/` (D69); `--model-call-budget-ms` lets the model answer on evaluation runs
+(D70); a line that did not parse or a record that threw is an `ERROR` row, so the synthetic set
+reads 12 of 13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7; code then took
+the opt-out sentence and an unstated call to action (D72, D73), and refusals fell from 33 to 0.
+The sprint also took D67, D34, D33, D35 and D37 (the fallback's spend on every exit, a retry only
+after a safety rejection, none after a timeout, the whole budget per attempt, four records at
+once) and did steps 86 to 88.

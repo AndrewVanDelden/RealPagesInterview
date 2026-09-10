@@ -109,6 +109,184 @@ public class CliRunnerTests
         }
     }
 
+    // D70: the budget an evaluation run states for the composer's model calls is a positive whole
+    // number of milliseconds; anything else bounds nothing a call could satisfy.
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("0")]
+    [InlineData("-5")]
+    [InlineData("1.5")]
+    public async Task RunAsync_ModelCallBudgetNotAPositiveWholeNumber_WritesCleanErrorAndReturnsUsageError(string value)
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai", "--model-call-budget-ms", value]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"--model-call-budget-ms '{value}' is not a positive whole number of milliseconds.", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D70: on any composer but openai the flag would bound nothing, and a flag that silently
+    // does nothing is a flag someone trusts.
+    [Fact]
+    public async Task RunAsync_ModelCallBudgetWithoutTheOpenAiComposer_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--model-call-budget-ms", "30000"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--model-call-budget-ms applies only to --composer openai.", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D70: the flag changes what bounds a model call, never whether the key a call needs is
+    // required.
+    [Fact]
+    public async Task RunAsync_ModelCallBudgetWithTheOpenAiComposerAndNoKey_StillRefusesOnTheMissingKey()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai", "--model-call-budget-ms", "30000"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("OpenAI:ApiKey is not configured", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D71: a line that did not parse is a failure the scorecard shows, not only the exit code:
+    // one ERROR row naming the line, counted in the overall and never passed.
+    [Fact]
+    public async Task RunAsync_OneLineFailsToParse_ScorecardCarriesAnErrorRowCountedInTheOverall()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            "{not valid json",
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("(did not parse)", report);
+            Assert.Contains("ERROR: Line 1 failed to parse", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D71: a record that threw inside the agent left the batch loop by a continue and vanished
+    // from the scorecard the same way. It is a row under its own task id, its reason the
+    // exception type alone (D46), since the message of an exception is not known to be safe.
+    [Fact]
+    public async Task RunAsync_OneRecordThrows_ScorecardCarriesAnErrorRowUnderItsTaskId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), new ThrowingComposer("t2"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains(
+                report.Split('\n'),
+                line => line.StartsWith("t2 ", StringComparison.Ordinal) && line.Contains("ERROR: Record failed: InvalidOperationException", StringComparison.Ordinal));
+            Assert.DoesNotContain("Injected fault", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D71: replay reads --input through the same reader, so a line that did not parse is the
+    // same row there.
+    [Fact]
+    public async Task RunAsync_ReplayWithAnUnparsableInputLine_ScorecardCarriesAnErrorRow()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
+        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("(did not parse)", report);
+            Assert.Contains("ERROR: Line 2 failed to parse", report);
+            Assert.Contains("/2 passed", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_TemplateComposerTwoValidRecords_WritesTwoOutputRecordsAndReturnsSuccess()
     {
@@ -197,6 +375,139 @@ public class CliRunnerTests
             using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
             Assert.Equal(1, output.RootElement.GetArrayLength());
             Assert.Contains("t2", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D37 and D14: records run at the same time and finish in whatever order they finish, and
+    // every file the batch writes still lists them in input order, because --replay pairs output
+    // rows with input records by position. StaggeredComposer holds the three records until all
+    // are composing at once, which only a concurrent loop reaches, and releases the last input
+    // record first. t1 and t2 are refused at the safety gate and t3 is not, so the output, the
+    // diagnostics, the review queue and the scorecard each carry an order that can be read.
+    [Fact]
+    public async Task RunAsync_RecordsFinishInReverseInputOrder_EveryFileKeepsInputOrder()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string evalReportPath = TempFilePath(".txt");
+        string content = string.Join(
+            Environment.NewLine,
+            SteeringRecordJson("t1"),
+            SteeringRecordJson("t2"),
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), new StaggeredComposer(["t1", "t2", "t3"]));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(
+                ["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--review-queue", reviewQueuePath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(
+                new[] { "none", "none", "sms" },
+                output.RootElement.EnumerateArray().Select(row => row.GetProperty("next_message").GetProperty("channel").GetString()).ToArray());
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal(
+                new[] { "t1", "t2", "t3" },
+                diagnostics.RootElement.EnumerateArray().Select(row => row.GetProperty("task_id").GetString()).ToArray());
+
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(
+                new[] { "t1", "t2" },
+                queue.RootElement.EnumerateArray().Select(row => row.GetProperty("task_id").GetString()).ToArray());
+
+            string[] scorecardTaskIds = (await File.ReadAllLinesAsync(evalReportPath))
+                .Select(line => line.Split('|')[0].Trim())
+                .Where(cell => cell is "t1" or "t2" or "t3")
+                .ToArray();
+            Assert.Equal(new[] { "t1", "t2", "t3" }, scorecardTaskIds);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(reviewQueuePath);
+            File.Delete(evalReportPath);
+        }
+    }
+
+    // D37 and D16: the TaskId scope is per record while records overlap. StaggeredComposer holds
+    // three records composing at once and then fails each with a fault naming it, so every
+    // failure is logged while another record's scope is still open. Each "Record failed." entry
+    // ends in its own TaskId and no other, and the stderr lines, written once the batch is done,
+    // follow input order rather than the reverse order the records failed in.
+    [Fact]
+    public async Task RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, new StaggeredComposer(["t1", "t2", "t3"], throwInjectedFault: true));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string errorText = errorWriter.ToString();
+            string[] lines = errorText.Split(Environment.NewLine);
+            foreach (string taskId in new[] { "t1", "t2", "t3" })
+            {
+                int entry = Array.FindIndex(lines, line => line.EndsWith($": Record failed. TaskId={taskId}", StringComparison.Ordinal));
+                Assert.True(entry >= 0, $"No 'Record failed.' entry scoped to {taskId} alone.");
+                Assert.Contains($"Injected fault for '{taskId}'", lines[entry + 1], StringComparison.Ordinal);
+            }
+
+            int t1Line = errorText.IndexOf("Record 't1' failed", StringComparison.Ordinal);
+            int t2Line = errorText.IndexOf("Record 't2' failed", StringComparison.Ordinal);
+            int t3Line = errorText.IndexOf("Record 't3' failed", StringComparison.Ordinal);
+            Assert.True(t1Line >= 0 && t1Line < t2Line && t2Line < t3Line, "stderr's record failures are not in input order.");
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // D37: cancellation still stops the batch once records run concurrently. The first record
+    // cancels the run; the loop starts no record after that, so fewer records compose than the
+    // batch holds, the run throws, and nothing is written to --output.
+    [Fact]
+    public async Task RunAsync_CancelledWhileRecordsAreInFlight_StartsNoFurtherRecordAndThrows()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string[] records = Enumerable.Range(1, 8).Select(number => RecordJson($"t{number}", "2026-01-10", "2025-12-08T15:04:00Z")).ToArray();
+        await File.WriteAllTextAsync(inputPath, string.Join(Environment.NewLine, records));
+        using var cancellation = new CancellationTokenSource();
+        var composer = new CancelOnFirstComposeComposer(cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
+
+            Assert.InRange(composer.Calls, 1, records.Length - 1);
+            Assert.Equal(string.Empty, await File.ReadAllTextAsync(outputPath));
         }
         finally
         {
@@ -397,6 +708,7 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Composer: openai, model gpt-4o-mini.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -423,29 +735,7 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
-    public async Task RunAsync_NoDiagnosticsPath_DoesNotThrow()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
-
-            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Composer: openai, model gpt-4o.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -900,29 +1190,6 @@ public class CliRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_NoLogFilePathProvided_DoesNotThrow()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
-
-            Assert.Equal(CliExitCodes.Success, exitCode);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-        }
-    }
-
-    [Fact]
     public async Task RunAsync_UnknownComposer_LogFileStillWritesTheComposerSelectionFailure()
     {
         string inputPath = TempFilePath();
@@ -981,33 +1248,38 @@ public class CliRunnerTests
         }
     }
 
+    // Claude Code review of PR #28: a record's own cancellation is not a bug, so it must not be
+    // logged as one. LeasingMessageAgent's own catch already excludes OperationCanceledException
+    // for that reason; RunRecordAsync's catch did not, so a run cancelled while a record was
+    // genuinely in flight (not merely between dispatches, which CancelOnFirstComposeComposer
+    // above covers) logged "Record failed." for a clean shutdown.
     [Fact]
-    public async Task RunAsync_EvalReportRecordUnscoreable_LogFileCapturesTheWarning()
+    public async Task RunAsync_RecordCancelledMidFlight_LogFileDoesNotRecordItAsAFailure()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        string evalReportPath = TempFilePath(".txt");
         string logFilePath = TempFilePath(".log");
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: false));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        using var cancellation = new CancellationTokenSource();
+        var composer = new CancelsWhileComposingComposer(cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
 
         try
         {
-            await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath, "--log-file", logFilePath]);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath], cancellation.Token));
 
             string logContent = await File.ReadAllTextAsync(logFilePath);
-            Assert.Contains("could not be scored", logContent);
+            Assert.DoesNotContain("Record failed.", logContent);
         }
         finally
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
-            File.Delete(evalReportPath);
             TestFiles.DeleteWithRetry(logFilePath);
         }
     }
+
     // D14: --replay re-scores an existing output file against --input without running the
     // agent. The composer injected here throws on the only record, so a run that reached
     // the agent would exit 2; exit 0 proves nothing ran but the scorer.
@@ -1120,32 +1392,6 @@ public class CliRunnerTests
         }
     }
 
-    // A line that did not parse is still one failure row in replay: it produced no output
-    // when the file was written, so the rows that remain still align by position.
-    [Fact]
-    public async Task RunAsync_ReplayWithAnUnparsableInputLine_ReturnsPartialFailure()
-    {
-        string inputPath = TempFilePath();
-        string replayPath = TempFilePath(".json");
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
-        await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
-
-            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            Assert.Contains("Line 2", errorWriter.ToString());
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(replayPath);
-        }
-    }
 
     [Fact]
     public async Task RunAsync_InputWithoutOutputOrReplay_WritesUsageAndReturnsUsageError()

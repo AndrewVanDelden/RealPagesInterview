@@ -485,6 +485,9 @@ transport. Fixed by dividing: `OpenAiCompletionClient.PerAttemptTimeout` is the 
 still not bounded is stated rather than hidden: after a failed call the compose-validate loop
 composes once more before falling back, so a record that fails composition can spend up to
 twice its budget before the template composer answers, and the p95 check measures that.
+Superseded 2026-09-10 by D33 and D35: a timeout is no longer retried, so the division bought
+nothing and is gone, and one attempt is given the whole budget; the retry after a transient
+status may now exceed it, which `OpenAiCompletionClient`'s constructor states.
 
 **D28 addendum, PR #21 review, part two (2026-09-08).** `CompositionNotes.NetworkRetries` read
 only the winning compose attempt's own count; a retry spent on an attempt
@@ -588,7 +591,8 @@ call's retries mixed in"). Parallelizing the loop before that attribution is mad
 concurrency would corrupt `CompositionNotes.NetworkRetries` rather than only speed up the
 batch, so this is a design change ahead of a review-fix round, not a matter of confidence in
 the finding. Scopes: any future concurrency work on the batch loop, which opens by replacing
-the shared-counter retry attribution.
+the shared-counter retry attribution. Resolved 2026-09-10 by D37, which replaced that
+attribution first and then made the loop concurrent.
 
 **Evidence, PR #21 review round (2026-09-08).** `.\test.ps1`: 443 tests in `Agent.Tests`, 49 in
 `Agent.Cli.Tests`, all passing, 100 percent line, branch and method on both modules. Four of
@@ -624,7 +628,19 @@ attempts complete server-side and are billed in full, so a futile retry is a pai
 Scopes: `OpenAiCompletionClient`'s retry policy, `CountingRetryPolicy`, and D35, which only
 exists because retries are counted into the budget. Evidence: the step 60 logs, four
 timeout-terminated attempts per record; the usage page, about 30 billable requests from 92
-attempts. Assumption: A15.
+attempts. Assumption: A15. Taken 2026-09-10 on the requester's "dont defer do now", the second
+option. `CountingRetryPolicy` overrides `ClientRetryPolicy.ShouldRetryAsync`, whose signature was
+confirmed by reflection over the restored System.ClientModel 1.14.0: an attempt that ended in an
+exception is never retried, and a response is retried only when
+`PipelineMessageClassifier.Default` calls its status transient, which the package's own docs and
+a probe through a fake transport both give as 408, 429, 500, 502, 503 and 504, the base still
+capping it at `MaxRetries`. Read literally, "never a timeout" became "never an exception", so a
+request that got no response at all is not retried either, by the requester's acceptance; that
+also closed a gap in which two such failures reached the composer as an `AggregateException` its
+catch list does not name, and the record became an ERROR row. A timeout is one HTTP attempt and
+arrives as one `TaskCanceledException`, so `IsTimeout`'s `AggregateException` branch went.
+Test-first: the timeout test saw two attempts and the no-response test an `AggregateException`
+before the change; `.\test.ps1` exit 0, 593 and 87 tests, 100 percent on both modules.
 
 **D34. What the compose-validate loop retries (2026-09-08).** Question: `ValidatingMessageComposer`
 composes a second time after any failure, including a transport failure. Options: keep it; or
@@ -637,7 +653,21 @@ always available, so the record still gets a message either way. Scopes:
 `ValidatingMessageComposer`, and `CompositionNotes.Attempts`, which would read 2 rather than 3
 on a transport-failed record; that changes a pinned test and how a diagnostics row reads.
 Evidence: the step 60 run, `attempts` 3 on every one of 23 records, two of the three failing for
-transport reasons. Assumption: A18.
+transport reasons. Assumption: A18. Taken 2026-09-10 on the requester's "dont defer do now", the
+second option. In `ValidatingMessageComposer`, an attempt that returns `ComposeOutcome.NoMessage`
+(a transport failure, a timeout, a malformed or wrong completion) leaves the loop for the
+fallback composer; only a safety-validation rejection is retried, with its violations in the
+second prompt. D66's accounting is unchanged: what that attempt spent still rides onto the
+outcome. The fallback's `Attempts` stamp is the number of model attempts made plus one, so a
+record whose first attempt returned no message reads `attempts` 2 and `model_cost.calls` 1 where
+it read 3 and 2; two safety rejections still read 3. The fallback warning now reads `No compose
+attempt produced a clean message; falling back to the safe fallback composer.` Evidence: seven
+tests in `ValidatingMessageComposerTests.cs` and `LeasingMessageAgentTests.cs`, changed to the new
+behavior, failed on the unfixed loop and pass after, and
+`ComposeAsync_FirstAttemptFails_RetryReceivesFailureReasonAsCorrection` is replaced by
+`ComposeAsync_FirstAttemptReturnsNoMessage_TheFallbackAnswersOnTheSecondCall`, since the retry it
+tested no longer exists; `.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both modules.
+Older paragraphs below that name the renamed tests record what existed when they were written.
 
 **D35. What one attempt is allowed to take, once a timeout is not retried (2026-09-08).**
 Question: D28 divides the stated budget by 1 + `MaxRetries` so that a call and its retry both
@@ -649,7 +679,15 @@ Recommendation: none taken, because it needs D32's measurement. If a successful 
 under 2000 ms, the second option roughly doubles the chance of success at no cost to the common
 path; if it lands over 2000 ms, no division scheme helps and D36 is the real question. Scopes:
 `OpenAiCompletionClient.PerAttemptTimeout`, D28 and its addendum. Evidence: none yet, which is
-the point of D32.
+the point of D32. Taken 2026-09-10, the second option, on D32's measurement of about 1.5 to 4.5
+seconds a completion (the run and debug fact of that date, the first model calls that
+answered). `OpenAiCompletionClient` hands the whole call budget to `NetworkTimeout`, and
+`PerAttemptTimeout`, which would have become a function returning its input, is removed with the
+test that pinned the division. The cost is stated in the constructor's comment: after a
+transient status the retry gets the whole budget again, so such a call can take up to twice the
+budget plus the SDK's backoff. Test-first: an attempt needing 1200 ms of a 2000 ms budget, and a
+429 followed by such an attempt, both timed out at the old 1000 ms attempt before the change;
+`.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both modules.
 
 **D36. What `p95_latency_ms` is (2026-09-08).** Question: D28 reads the records' stated threshold
 as a bound on the model call; D31's third way out reads it as a reporting threshold that the
@@ -662,6 +700,9 @@ step 60 run measured at 0 of 23; as a reporting threshold the product can use th
 p95 check simply fails and says so, which is honest but means shipping a configuration that
 misses a stated threshold on purpose; the override keeps both and adds a flag whose only user is
 an evaluation run. Scopes: D28, D31, `ModelCallBudget`, the CLI. Evidence: the step 60 run.
+Closed 2026-09-10 by D70, which is this decision's third option: the records' threshold still
+bounds the call and is still what the p95 check reads, and `--model-call-budget-ms` overrides
+the bound for an evaluation run.
 
 **D37. Batch concurrency (2026-09-08).** Question: `CliRunner`'s batch loop is sequential, so a
 batch's wall-clock is the sum of its per-record latencies, and with a model in the path that is
@@ -673,7 +714,25 @@ This decision adds a second prerequisite that addendum does not name: D14 pairs 
 input records by position, and the per-record log scope assumes one record at a time, so both
 have to survive out-of-order completion. Scopes: `CliRunner`'s batch loop, `CountingRetryPolicy`,
 D14. Evidence: the D31 addendum's measurement of retries reported as 2 and 0 for two concurrent
-calls; the step 60 run's 63 seconds of wall-clock for 12 records.
+calls; the step 60 run's 63 seconds of wall-clock for 12 records. Taken 2026-09-10 on the
+requester's "dont defer do now", with both prerequisites landed first. Retry attribution:
+`CountingRetryPolicy` counts into a holder the client opens per call, carried by an instance
+`AsyncLocal`; this is per-call state inside one object, not a static accessor standing in for
+constructor injection, so the AGENTS.md rule that reserves the latter for `AgentLog` is not
+touched. Proved by two calls in flight on one client, which reported 2 retries for the retried
+call before the change and 1 and 0 after. The loop: `CliRunner` runs records through
+`Parallel.ForEachAsync` with at most four in flight, a constant, because one record's calls are
+sequential and four requests in flight is a margin under a vendor rate limit this project has
+never measured; each record's `RecordRun` is written to its input position and folded afterwards,
+single-threaded and in input order, into the output, the diagnostics, the review queue, the
+scored runs, the batch cost, the failure count, the ERROR row and the stderr line, so D14's
+pairing by position holds. D16's scope is opened per record inside its own async flow, still only
+in `CliRunner`. Proved by records forced to overlap and finish in reverse input order, which keep
+input order in every file, and a fold in completion order was checked to fail that test; by three
+records failing while others are in flight, whose log entries each carry their own `TaskId`
+alone; and by a run cancelled from inside its first record, which starts no further record. The
+template run on `synthetic_12.jsonl` writes a byte-identical `--output` before and after.
+`.\test.ps1` exit 0, 595 and 90 tests, 100 percent on both modules.
 
 **Not a lever, recorded so it is not proposed again.** Prompt caching does not apply here.
 Automatic caching engages above a prompt-prefix threshold these prompts do not reach, about 430
@@ -1751,7 +1810,7 @@ is loose. Evidence: `ValidatingMessageComposer.cs:47`, `:66`, `:74`, `:109`, `:1
 `CliRunner.cs:328`; a diagnostics file written by the documented `sample.jsonl` run, all read
 2026-09-09.
 
-**D67 (open). The fallback outcome's own spend is dropped at both no-message exits
+**D67. The fallback outcome's own spend is dropped at both no-message exits
 (2026-09-09).** Question: D66 moved the two spend counts onto `ComposeOutcome` so the
 compose-validate loop's two no-message exits could carry them, and both now do. What they carry
 is the accumulation and only the accumulation. At `ValidatingMessageComposer.cs:109` the `Failed`
@@ -1775,7 +1834,19 @@ next reader of that method does not have to rediscover it, and so it cannot be f
 unrecorded defect. Scopes: nothing yet; whichever option is taken scopes
 `ValidatingMessageComposer`'s two no-message exits and their tests. Evidence:
 `ValidatingMessageComposer.cs:104` to `:126` and `:136` to `:148`; `TemplateMessageComposer.cs:55`;
-`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none.
+`CliRunner.cs:182` and `:207` to `:212`, all read 2026-09-09. Assumption: none. Taken
+2026-09-10 on the requester's "dont defer do now", option (a): both no-message exits after the
+fallback now add the fallback outcome's own counts to what the rejected attempts spent, the
+`Failed` through `ModelCostNotes.Add(discardedModelCost, fallbackOutcome.ModelCost)` and
+`AddRetries(discardedNetworkRetries, fallbackOutcome.NetworkRetries)`, the `Refused` the same with
+the fallback's `Composed`, so all three exits sum both sources as `WithAttempts` does. This
+decides what a fallback composer may be: one that spends is billed on every exit, not only on the
+one that ships. No shipped output moves, because `TemplateMessageComposer`, the only fallback
+`CliRunner` wires, sets neither count. Evidence: two new tests in
+`ValidatingMessageComposerTests.cs` with a fallback that reports its own spend failed on the
+unfixed code, reporting the attempts' sum (2, 2, 22, 14) where (3, 3, 27, 17) and (3, 2, 22, 14)
+were expected, and pass after; `.\test.ps1` exit 0, 594 and 87 tests, 100 percent on both
+modules. The line numbers cited above are the file as it stood on 2026-09-09.
 
 **Run and debug fact, five review findings fixed (2026-09-10).** A Claude Code review of PR #26
 and an Antigravity (Gemini 3.8 Flash) review of the same PR together found five real defects,
@@ -1948,3 +2019,248 @@ reporting 150 lines, 1,111 words of 2,000 and 72 cited numbers resolving among 7
 clean with 0 warnings; `.\test.ps1` exit code 0 with 584 tests in `Agent.Tests` and 78 in
 `Agent.Cli.Tests`, all passing, 100 percent line, branch and method coverage on both modules,
 unmoved. Nothing under `src/` or `tests/` changed.
+
+## Sprint 11 decisions, the Phase 7 evidence (2026-09-10)
+
+**D69. Where the committed scorecard lives (2026-09-10).** Question: Phase 7's check asks for
+the scorecard on the synthetic set as a file in the repo, and today `--eval-report` writes it
+only where `.gitignore` excludes it (`/eval*.txt` at the root), so no documented run leaves one
+behind. Options: (a) the CLI writes it straight into a tracked folder, `docs/scorecards/`, one
+file per set and composer, never edited by hand; (b) un-ignore the root report, so a tracked file
+sits where every documented run in OPERATIONS.md overwrites it and dirties the tree; (c) paste
+the table into DESIGN.md section 9, a hand copy that can drift from what the CLI printed and is a
+section rather than a file; (d) (a), plus a golden test that regenerates the file and fails on
+any difference. Recommendation: (a). Option (d) cannot hold as stated: two offline runs of the
+synthetic set on 2026-09-10 at 7d7bb17 wrote byte-identical output files and scorecards that
+differed only on wall clock, record 2 at 19 ms against 20 ms, p95 19 against 20 and batch 29
+against 30, so a golden either fails on noise or masks the latency cells, and every tally it
+would pin `BaselineNumbersTests` already pins. The file is therefore a dated snapshot: DESIGN.md
+section 9 names the command, the commit and the date that wrote it, and a sprint that moves a
+tally on that set rewrites it. Scopes: `docs/scorecards/`, DESIGN.md section 9, and the variance
+report of D70, which is built from files of the same kind. Evidence: the two runs above.
+Assumption: none.
+
+**D70. What the variance report measures (2026-09-10).** Question: playbook step 83 says
+to run the synthetic set with the real model three times and report the variance. D31 measured
+that on these sets the model answers nothing: the call timeout is derived from the strictest
+stated `p95_latency_ms`, 2000 ms, split into two 1000 ms attempts (D28), and no completion of
+this size returned inside 1000 ms on any of 46 calls. Options: (a) run `--composer openai` three
+times as the product stands, where every record falls back to the template, so every check
+column is identical across runs by construction and only latency and token counts vary: the
+variance of the shipped configuration, which says nothing about the model's prose; (b) take
+D31's second way out, which is D36's third option, a documented flag that sets the per-call
+timeout for an evaluation run in place of the budget-derived one, built test-first, then three
+runs, so the model answers and the report measures what step 83 asks about, and the first
+successful call is also D32's measurement; (c) take D36's second option, `p95_latency_ms` read as
+a reporting threshold with the timeout configured separately, which reverses D28 for every run
+rather than for evaluation runs and ships a configuration that fails the p95 check on purpose.
+Recommendation: (b), weakly over (a). Option (a) costs no code and is honest, but three runs that
+cannot differ measure the fallback, which FAULT_INJECTION.md section 1 already proves. Under any
+option the report is `docs/VARIANCE.md`, written by hand from the three runs' scorecards in
+`docs/scorecards/` and their diagnostics, with no new code for the report itself. Cost of (b),
+estimated and not measured: D31's addendum priced 46 abandoned calls at about $0.004 with roughly
+a third of them billed; three runs over the ten records that get a message are about 30 to 60
+calls billed in full at `gpt-4o-mini`, on the order of a cent. Options (b) and (c) close D31's
+open question and D36; (a) leaves both open. The judge (`--judge`, `gpt-4o`) is out of all three,
+since step 83 does not ask for its variance. Needs the requester: D31 reserves (b) and (c) for
+the requester as product changes, and every option spends on the requester's key and sends the
+synthetic records to the vendor under D44's retention. Scopes: `docs/VARIANCE.md`,
+`docs/scorecards/`, and under (b) `CliRunner`, `ModelCallBudget`, OPERATIONS.md, D28, D31, D32
+and D36. Evidence: D31 and its addendum. Assumptions: A15, A18. Taken 2026-09-10 by the
+requester, whose answer was to get the model runs working first and settle how many runs the
+report needs afterward, so step 83's count of three waits on a working run. Option (b), in this
+form: `--model-call-budget-ms <n>` replaces the budget D28 derives from the records, for the
+composer's model calls only, where `n` is a positive whole number of milliseconds. The flag is
+refused with exit code 1 when `n` is not one, and when the composer is not `openai`, because on
+any other composer it would bound nothing, and a flag that silently does nothing is a flag
+someone trusts. The scorecard's p95 check keeps the records' own stated budget, so a run under
+the flag reports its p95 against 2000 ms and fails it, which is D36's cost stated rather than
+hidden. The judge keeps its own default. D32's measurement is the run and debug fact at the end
+of this section, taken with a scratch copy of the set before the flag existed. This closes D31's
+open question and D36 for evaluation runs only; D33 to D35 and D37 stay unscheduled.
+
+**D71. What the scorecard says about an input line that did not parse (2026-09-10).**
+Question: step 82 is to read every scorecard row. The synthetic set's scorecard, run 2026-09-10
+at 7d7bb17, has 12 rows and reads `Overall: 12/12 passed`, and it says nothing about line 11,
+which is malformed by design (DESIGN.md section 4, item 10). The line is reported, but
+elsewhere: `JsonlRecordReader.ReadAll` returns a failure for it, the error stream and the log
+carry `Line 11 failed to parse`, the log's `Batch complete` line reads `13 record(s), 1
+failure(s)`, and the exit code is 2. None of that reaches the scorecard, and the scorecard is the
+file D69 commits, so a reader of that file alone sees a clean 12 of 12 for a 13-line input.
+Options: (a) the scorecard gains one line naming every input line that did not parse, by line
+number and never by content, with `Overall` still stated over the records that parsed; (b) the
+same line, with `Overall` stated over every line read; (c) a table row per unparsed line reading
+`n/a` across; (d) leave the scorecard and state beside the committed file that the exit code and
+the error stream carry it. Recommendation: (a). A line that did not parse has no `expected` that
+could be read, so it can be neither passed nor failed, and counting it in `Overall` (b) would
+lower a tally `BaselineNumbersTests` pins for a line no check measured; a row (c) puts a task id
+column on the one thing whose task id is what failed to parse; (d) keeps the fact out of the only
+file the check names. Under (a) no pinned tally moves. `--replay` reads `--input` through the
+same reader, so the line applies there too. Scopes: `Scorecard` and its formatter, `CliRunner`
+where the parse failures are known, the `--eval-report` row of OPERATIONS.md, and the committed
+scorecard of D69, which is written after this is settled. Evidence: the run above and its error
+stream. Assumption: none. Taken 2026-09-10 by the requester, in a form none of the four options
+named: a line that did not parse is a failure, and the scorecard says so. It becomes one row
+reading `(did not parse)` in the task id column, because its task id is what failed to parse,
+and `ERROR:` plus the reader's own failure text in the result column, which names the line
+number and a byte position and never the line's content (step 68). That is the form an
+unscoreable record already takes (step 34), so the row counts in `Overall`, never passes and
+measures no check, which leaves every per-check tally where it was; it is the split JUnit's XML
+report keeps between an error and a failure, both counted among the tests. The synthetic set
+now reads `Overall: 12/13 passed`, and `BaselineNumbersTests` pins that drop deliberately, on
+this decision. The same reading found a second gap of the same kind: a record that throws inside
+the agent leaves the batch loop by a `continue` and is missing from the scorecard too, so it gets
+the same row under its own task id, its reason redacted to the exception type as D46 requires.
+The rows are appended after the judge, which pairs rows with runs by position, through
+`Scorecard.AppendUnprocessed`, which builds a new scorecard rather than copying one; its three
+callers are the run path, the replay path and `BaselineNumbersTests`.
+
+**Run and debug fact, the first model calls that answered (2026-09-10).** D32's measurement,
+taken before any code changed. A scratch copy of `synthetic_12.jsonl` with every
+`p95_latency_ms` raised from 2000 to 30000, kept outside the repo and never committed, was run
+at 7d7bb17 with `--composer openai --now 2026-03-07T12:00:00Z`, so D28 gave each call 30000 ms
+and each attempt 15000 ms. Exit code 2, for line 11. The model answered: 19 calls, 19 completed,
+7,479 input and 2,135 output tokens, zero network retries. Of the ten records that get a
+message, seven read `composition.composer: openai` (one at `attempts` 1, six at 2) and three read
+`template` at 3, after both model drafts were rejected (`synthetic_02`, `_04`, `_12`). What one
+completion costs in wall clock: `synthetic_13`, the one record that made a single call, took
+1,855 ms end to end; the two-call records took 4,467 to 8,302 ms, about 2.2 to 4.2 s a call.
+No completion fits D28's 1000 ms attempt, and few would fit the whole 2000 ms, which is D35's
+second case: no division scheme helps, and D36 is the real question. The scorecard: CTA 9 of 10
+(`synthetic_05` FAIL), every other check unmoved, 11 of 12 overall, p95 9,218 ms against the
+file's 30000. Three findings the run opened, none a decision yet: the first model draft failed
+the safety gate for `Missing required opt-out instructions` on nine of the ten records, every
+one but `synthetic_13`; `synthetic_05`'s call-to-action type is wrong under the model and right
+under the template; and brand style reported `ExclamationLimit` on `_03`, `_05` and `_09`.
+Money was not read from the vendor's usage page, so none is stated.
+
+**Run and debug fact, D70 and D71 executed (2026-09-10).** Test-first: eight new CLI tests
+failed before the change, the four invalid budgets and the template-composer refusal because the
+flag did not exist and the three scorecard tests because no `ERROR` row was printed; the no-key
+guard test passed before and after, as a rule the change had to keep; and the library tests
+failed to compile on exactly the three missing members, `RecordScore.DidNotParse`,
+`Scorecard.AppendUnprocessed` and the two-argument `ModelCallBudget.PerCallBudget`. After:
+`.\test.ps1` exit code 0, 587 tests in `Agent.Tests` and 87 in `Agent.Cli.Tests`, all passing,
+100 percent line, branch and method coverage on both modules; `check-instruction-files.ps1` exit
+0 over 75 cited numbers. The two committed scorecards, both written by the CLI from the Sprint 11
+working tree on 7d7bb17 with `--now 2026-03-07T12:00:00Z` and never edited:
+`docs/scorecards/synthetic_12_template.txt`, every check unmoved, `Overall: 12/13 passed`, p95
+19 ms, exit 2; and `docs/scorecards/synthetic_12_openai_run1.txt`, with `--composer openai
+--model-call-budget-ms 30000`, exit 2, 19 calls, 19 completed, 7,479 input and 2,129 output
+tokens, eight of the ten messages written by the model (`synthetic_13` at one attempt, seven at
+two) and two by the template after both drafts were rejected (`synthetic_02`, `_04`), CTA 9 of 10
+(`synthetic_05`), p95 8,043 ms against 2000 ms and so FAIL, `Overall: 11/13 passed`. Against the
+scratch run earlier the same day, `synthetic_12` moved from the template to the model, the first
+run-to-run variance this project has observed; eleven drafts across the run were rejected, every
+one for `Missing required opt-out instructions`. One cosmetic effect of D71: the formatter pads
+the last column to its widest cell, so every row of a scorecard with an `ERROR` row carries
+trailing spaces to the width of the reader's failure text, as an unscoreable row always did.
+Nothing is pinned for the live run: its prose, its latency and its token counts are the vendor's.
+
+**D72. The model's drafts refused for missing opt-out instructions (2026-09-10).**
+Question: across the three runs of VARIANCE.md the safety gate refused 33 of the model's drafts,
+11, 10 and 12, every one for `Missing required opt-out instructions`, and the first draft failed
+on nine of the ten records on every run. The prompt says only `Opt-out instructions: required.`
+(`OpenAiMessageComposer.BuildUserPrompt`), while the gate accepts a narrow definition
+(`OptOutInstructions`: STOP in capitals, `reply stop` or `text stop`, `opt out`, `opt-out`,
+`unsubscribe`); the corrective retry carries the violation reason and usually passes, at the
+cost of a second call on almost every record. `synthetic_04`, the Spanish record, was refused on
+both attempts on all three runs and the template wrote it each time. Why is not read, because no
+artifact carries a draft refused inside the compose-validate loop: the review queue holds only
+what the final gate refuses (D43) and a log line never carries prose (step 68). Options: (a) state
+the accepted forms in the prompt, which is prompt text and a golden-test change and still leaves
+the model to comply; (b) have code append the opt-out sentence after the model writes, from the
+per-language sets the template composer already uses, so a required disclosure is owned by code
+the way the link is (S2); (c) leave it and pay the second call. Recommendation: (b), because a
+required disclosure is a reproducible decision and S2 gives those to code, and it removes the
+refusal rather than making it rarer; its effect is measured by rerunning VARIANCE.md's three
+runs. Scopes: `OpenAiMessageComposer`, the language sets, the prompt's golden test, VARIANCE.md.
+Evidence: VARIANCE.md and the three runs' error streams. Assumption: A18. Taken 2026-09-10 by
+the requester ("fix the issues. dont defer"), option (b): when a record requires opt-out
+instructions and the model's body carries none by `OptOutInstructions`, the composer appends the
+record's own language set's sentence, `SmsOptOut` after a space or `EmailOptOut` on its own line,
+the sentence the template writes; a body that already carries one is left as the model wrote it,
+so none is doubled. The prompt says `Opt-out instructions: the system appends them, so do not
+write any.` where it said `required`. A language with no set gets the English sentence, the same
+fallback the template takes with `LocaleApplied` false. `OptOutInstructions` stays the one
+definition: the composer reads it, the first reference from Composition into Safety.
+
+**D73. The model's call to action on a record that states none (2026-09-10).** Question:
+`synthetic_05` states no `primary_cta`, the prompt then says `No specific call to action is
+required; choose one reasonable for this message.`, and the model chose `contact` on both runs
+where it wrote the message. The label expects `reply`, which is what the template writes under
+A9's generic call to action, so the one scored check that varied across VARIANCE.md's three runs
+passed only when both model drafts were refused and the fallback answered. Options: (a) name
+A9's generic type in the prompt when the record states none; (b) have code set the type from A9
+and leave the model only the options prose; (c) leave it, since the label is one reading of an
+unstated constraint. Recommendation: (b), keyed on the absence of the input field as A9 already
+is and not on this label, which D9 forbids fitting to: the type is a decision, and S2 gives
+decisions to code. Scopes: `OpenAiMessageComposer`'s call-to-action instruction and its response
+schema. Evidence: VARIANCE.md's per-record table. Assumption: A9. Taken 2026-09-10, option
+(b): the required type is `CallToActionCatalog.Resolve(primary_cta).Type` on every record, so an
+absent or blank `primary_cta` requires A9's `reply` as the template does, the schema's enum is set
+on every call, and a model returning any other type is a failure the compose-validate loop
+retries. The email link follows the resolved call to action's own path, so
+`CallToActionCatalog.LinkPathForType`, which existed only because the type sent could diverge from
+the constraint, lost its one caller and is deleted.
+
+**Run and debug fact, step 83's three runs and the Phase 7 close (2026-09-10).** Runs 2 and 3
+were made at e4c74ad with run 1's command, changing only the scorecard name, and wrote
+`docs/scorecards/synthetic_12_openai_run2.txt` and `_run3.txt`; both exited 2, for line 11.
+Their numbers and run 1's are tabled in VARIANCE.md, written by hand from the three scorecards
+and the three runs' diagnostics and output files, which were read from the scratchpad and not
+committed. With it, Phase 7's check holds: the synthetic scorecard, the variance report and the
+fault-injection results are all files in the repo. Steps 86, 87 and 88 were not done and are
+recorded as owed in the log's Current phase block. No code changed for the close.
+
+**Run and debug fact, D72 and D73 executed (2026-09-10).** Test-first: nine composer tests failed
+against the unchanged code, the four appended-sentence cases, the prompt's new opt-out line, the
+golden prompt, the generic type in the prompt and in the schema, and the blank `primary_cta`;
+the other 44 passed. After: `.\test.ps1` exit code 0, 592 tests in `Agent.Tests` and 87 in
+`Agent.Cli.Tests`, all passing, 100 percent line, branch and method coverage on both modules.
+Three live runs with run 1's command wrote `docs/scorecards/synthetic_12_openai_after_d72_run1.txt`
+to `_run3.txt`: 12 of 13 and CTA 10 of 10 on every run, 10 calls and 3,900 input tokens each,
+976, 990 and 975 output tokens, no draft refused, the model writing all ten messages at one
+attempt each, p95 2,318, 2,398 and 4,508 ms against 2000 ms and so still FAIL. Against Sprint
+11's first three runs: refusals 33 to 0, calls 57 to 30, output tokens 6,308 to 2,941. Brand
+style reported 4 findings a run, a diagnostic (D39). VARIANCE.md carries both sets of runs.
+
+**Run and debug fact, playbook steps 87 and 88 (2026-09-10).** `docs/RUNBOOK.md`, 42 lines: set
+the secret, build and test, run both documented sets, open the scorecard, read a log line, replay.
+Step 88 cloned the branch fresh into a temporary directory and ran the runbook's text alone:
+`dotnet build` exit 0 with 0 warnings; `.\test.ps1` exit 0, 592 and 87 tests, 100 percent; the
+hold-out run exit 0 reading `Overall: 4/12 passed`; the synthetic run exit 2 reading `Overall:
+12/13 passed`; `--replay` exit 0 with the same tallies but `Safety 0/0` and latency `n/a`, as the
+runbook says; `git status` in the clone empty, so every file the runs wrote is ignored. No step
+needed help, so the run produced no finding. The runbook's claim that `run.log` is appended to by
+every run was not exercised by that run and was checked in code instead: `FileLoggerProvider`
+opens its writer with `append: true`.
+
+**Run and debug fact, playbook step 86 (2026-09-10).** A read-only review of every test, 511
+methods in `Agent.Tests` and 84 in `Agent.Cli.Tests`, recommended deleting 38 that assert no rule
+a reader could dispute (a duplicate of another test's rule and branch, an echo of the input, a
+bare "does not throw") and strengthening 10 whose assertion a wrong implementation would also
+pass. 33 deletions and 8 rewrites landed in one commit, and the coverage gate is the proof each
+deletion was safe: `.\test.ps1` exit 0 at 562 and 86 tests with 100 percent line, branch and
+method coverage on both modules, and no deletion had to be restored. Every stronger assertion
+passed. One recommendation was declined: `ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize`
+stays, because it is the only coverage of `LenientExpectedOutcomeConverter.Write`, which
+`JsonConverter` requires, and it pins that a serialized record keeps its `expected` block. One
+finding outside the step was checked and found to be decided already: `CliRunner` logs a failed
+record's exception attached, stack trace included, while the scorecard row carries the type alone.
+D46 classed a per-record bug's message as program-authored and OPERATIONS.md sends an operator to
+that stack trace for exit code 2, and vendor, model and record text is caught inside the
+composer and the readers before any record-level catch, so the line stays as D46 left it.
+
+**Run and debug fact, the combined branch and D35's measurement (2026-09-10).** The four agent
+branches were cherry-picked onto `sprint-11-phase-7-evidence`, and the rest of step 86 landed
+there: five more deletions in `CliRunnerTests.cs` and `ModelCallBudgetTests.cs`, and the two
+tests that built the model composer now assert the model the CLI resolved, through a new log line,
+`Composer: openai, model <name>.`, after failing on its absence first. `.\test.ps1` on the combined
+branch: exit 0, 564 tests in `Agent.Tests` and 85 in `Agent.Cli.Tests`, 100 percent line, branch
+and method coverage on both modules. Then one live run of `synthetic_12.jsonl` with `--composer
+openai` and no `--model-call-budget-ms`, to measure what D33 and D35 bought on the records' own
+2000 ms: the model wrote 2 of 10 messages where the step 60 run's model wrote none of 23, 10
+calls with 2 completed, 792 input and 186 output tokens, 12 of 13, p95 2,066 ms and so FAIL,
+batch latency 6,072 ms under D37's four records at once against the step 60 run's 63 seconds.
+Scorecard `docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`; VARIANCE.md tables it.

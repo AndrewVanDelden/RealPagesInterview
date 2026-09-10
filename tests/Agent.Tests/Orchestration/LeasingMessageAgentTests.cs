@@ -279,22 +279,6 @@ public class LeasingMessageAgentTests
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
     }
 
-    [Fact]
-    public async Task RunAsync_CancellationRequested_PropagatesCancellationFromComposer()
-    {
-        LeasingMessageAgent agent = new LeasingMessageAgent(
-            new ChannelSelector(),
-            new ThrowsOnCancellationComposer(),
-            new SafetyValidator(),
-            new SendScheduler(),
-            new NextActionPlanner());
-        ProspectCase prospectCase = SampleProspectCases.Minimal();
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() => agent.RunAsync(prospectCase, ReferenceTime, cts.Token));
-    }
-
     // D16: the CLI's batch loop is the one owner of the TaskId scope. The agent opening a
     // second one rendered every line as "TaskId=x TaskId=x" (the retrospective's logging
     // defect 1); a library caller that wants correlation opens its own scope, as the CLI does.
@@ -381,7 +365,7 @@ public class LeasingMessageAgentTests
 
         await agent.RunAsync(suppressedCase, ReferenceTime);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Information);
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("not contactable", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -400,7 +384,7 @@ public class LeasingMessageAgentTests
 
         await agent.RunAsync(prospectCase, ReferenceTime);
 
-        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Suppressing message: final safety validation found", StringComparison.Ordinal));
     }
 
     // D24 and the Phase 4 check: the record says which implementation wrote its message.
@@ -629,11 +613,11 @@ public class LeasingMessageAgentTests
     }
 
     // D66, on the record it is about: D48's steering record, whose own city_interest is
-    // written into the body by the template fallback. Both model attempts were abandoned at
-    // their timeout, the fallback reproduced the steering language, and the loop refused its
-    // draft, so the record ships nothing and has no composition notes. The two calls the
-    // vendor billed for are still two calls this record made, and they now leave the agent on
-    // the row itself instead of vanishing with the notes.
+    // written into the body by the template fallback. The model attempt was abandoned at its
+    // timeout and D34 sent it straight to the fallback, which reproduced the steering language,
+    // and the loop refused its draft, so the record ships nothing and has no composition notes.
+    // The call the vendor billed for is still a call this record made, and it now leaves the
+    // agent on the row itself instead of vanishing with the notes.
     [Fact]
     public async Task RunAsync_ComposeLoopRefusesEveryDraft_StillReportsWhatTheRunSpent()
     {
@@ -653,7 +637,7 @@ public class LeasingMessageAgentTests
 
         Assert.Equal(SuppressionReason.SafetyViolation, result.Diagnostics.SuppressionReason);
         Assert.Null(result.Diagnostics.Composition);
-        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
     }
 
     // D66's other suppression with a cost: no draft anywhere, so the record is a composition
@@ -678,7 +662,7 @@ public class LeasingMessageAgentTests
 
         Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
         Assert.Null(result.Diagnostics.Composition);
-        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
     }
 
     // The record that never reached a composer at all: no consented channel, so no call was

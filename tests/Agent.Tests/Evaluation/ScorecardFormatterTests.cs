@@ -25,8 +25,9 @@ public class ScorecardFormatterTests
 
         string report = ScorecardFormatter.Format(scorecard);
 
-        Assert.Contains("prospect_welcome_day0", report);
-        Assert.Contains("PASS", report);
+        string row = Assert.Single(report.Split('\n'), line => line.StartsWith("prospect_welcome_day0", StringComparison.Ordinal));
+        Assert.Contains("PASS", row);
+        Assert.DoesNotContain("FAIL", row);
     }
 
     [Fact]

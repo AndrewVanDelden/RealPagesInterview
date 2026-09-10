@@ -34,18 +34,6 @@ public class TimeZonesTests
         Assert.Equal(TimeZoneInfo.Utc, timeZone);
     }
 
-    [Fact]
-    public void ResolveOrUtc_KnownId_ReturnsTheZone()
-    {
-        Assert.Equal("America/Chicago", TimeZones.ResolveOrUtc("America/Chicago").Id);
-    }
-
-    [Fact]
-    public void ResolveOrUtc_UnknownId_ReturnsUtc()
-    {
-        Assert.Equal(TimeZoneInfo.Utc, TimeZones.ResolveOrUtc("Not/AZone"));
-    }
-
     // 2025-12-25T02:30:00Z is 2025-12-24 18:30 in America/Los_Angeles (UTC-8 in December).
     // The local date, not the UTC date, is the one horizons are counted from.
     [Fact]

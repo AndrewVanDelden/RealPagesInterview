@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Runtime.CompilerServices;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -16,8 +17,10 @@ namespace Agent.Composition;
 // HttpClientPipelineTransport(HttpClient) and ClientRetryPolicy(maxRetries).
 //
 // D28 bounds the call: one retry with the SDK's exponential backoff on the transient
-// statuses it knows (408, 429, 5xx), a per-call timeout the caller states, and a low
-// temperature that is never called determinism (step 52).
+// statuses it knows (408, 429, 500, 502, 503, 504), a per-call timeout the caller states, and
+// a low temperature that is never called determinism (step 52). D33 narrows the retry to
+// those statuses alone: a timeout, or any attempt that ends in an exception, is not retried
+// (CountingRetryPolicy.ShouldRetryAsync).
 public sealed class OpenAiCompletionClient : ICompletionClient
 {
     // One retry, not the SDK's default of three: a record states a latency budget, and a
@@ -38,7 +41,15 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     private readonly CountingRetryPolicy retryPolicy;
     private readonly TimeSpan callBudget;
 
-    // callBudget bounds one call including its retry, not one attempt: see PerAttemptTimeout.
+    // D35: callBudget is the timeout of each attempt, whole, not a share of it. A timeout is
+    // never retried (D33), so the attempt that times out is the only attempt its call makes,
+    // and D28's division by 1 + MaxRetries only halved it: D32 measured one completion at about
+    // 1.5 to 4.5 s. The cost, stated rather than hidden: after a transient status the retry is
+    // given the whole budget again, so such a call can take up to twice the budget plus the
+    // SDK's backoff between the two attempts. Nor does this bound the compose-validate loop
+    // above: after a failed call it composes once more before falling back, so a record can
+    // spend twice that again before the template composer answers, which the p95 check then
+    // measures and reports.
     public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
     {
         retryPolicy = new CountingRetryPolicy(MaxRetries);
@@ -47,7 +58,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         var options = new OpenAIClientOptions
         {
             Transport = new HttpClientPipelineTransport(httpClient),
-            NetworkTimeout = PerAttemptTimeout(this.callBudget),
+            NetworkTimeout = this.callBudget,
             RetryPolicy = retryPolicy,
         };
 
@@ -67,7 +78,9 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ResponseFormat = BuildResponseFormat(responseJsonSchema),
         };
 
-        int attemptsBefore = retryPolicy.Attempts;
+        // D37: this call's own attempt count, which concurrent calls on this client cannot add
+        // to (CountingRetryPolicy.BeginCall).
+        StrongBox<int> callAttempts = retryPolicy.BeginCall();
 
         ClientResult<ChatCompletion> result;
         try
@@ -77,17 +90,19 @@ public sealed class OpenAiCompletionClient : ICompletionClient
                 options,
                 cancellationToken);
         }
-        catch (Exception ex) when (IsTimeout(ex) && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // The pipeline treats a timeout as transient and retries it, so an exhausted
-            // call arrives as an AggregateException of TaskCanceledException rather than as
-            // one cancellation. Named here so the composer above catches a timeout by its
-            // own type instead of unwrapping the SDK's, and so a caller's cancellation,
-            // which arrives in the same shapes, still propagates untouched.
+            // D33: a timed-out attempt is never retried, so the pipeline rethrows that one
+            // attempt's TaskCanceledException rather than an AggregateException of every
+            // attempt's; a 429 retried before it adds no exception of its own. Named here so
+            // the composer above catches a timeout by its own type instead of the SDK's, and
+            // so a caller's cancellation, which arrives in the same shape, still propagates
+            // untouched.
             throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
-        int retries = Math.Max(retryPolicy.Attempts - attemptsBefore - 1, 0);
+        // A call that returned was sent at least once, so this is never negative.
+        int retries = callAttempts.Value - 1;
 
         string content;
         try
@@ -126,19 +141,6 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
             : throw new InvalidOperationException("OpenAI response contained no completion content.");
     }
-
-    private static bool IsTimeout(Exception exception) =>
-        exception is OperationCanceledException ||
-        (exception is AggregateException aggregate && aggregate.Flatten().InnerExceptions.Any(inner => inner is OperationCanceledException));
-
-    // NetworkTimeout bounds one attempt, and the policy above may make MaxRetries more of
-    // them, so a budget handed straight to it would be exceeded by the retry beside it: a
-    // bound that is documented and not enforced. Dividing makes the whole call, its retry
-    // included, fit inside the budget the record stated. What this does not bound is the
-    // compose-validate loop above: after a failed call it composes once more before falling
-    // back, so a record that fails composition can spend up to twice its budget before the
-    // template composer answers, which the p95 check then measures and reports.
-    public static TimeSpan PerAttemptTimeout(TimeSpan callBudget) => callBudget / (1 + MaxRetries);
 
     // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.
     // When the caller supplies a schema, Structured Outputs (strict) makes the API itself

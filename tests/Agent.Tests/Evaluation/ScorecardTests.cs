@@ -1,3 +1,4 @@
+using Agent.Composition;
 using Agent.Evaluation;
 using Xunit;
 
@@ -128,5 +129,45 @@ public class ScorecardTests
         Assert.Null(score.PersonalizationScore);
         Assert.Null(score.LatencyMs);
         Assert.All(Enum.GetValues<EvaluationCheck>(), check => Assert.Equal(CheckResult.NotMeasured, score.ResultOf(check)));
+    }
+
+    // D71: an input the batch could not process is a row, never a silence. It counts in the
+    // overall and never passes, and it measures no check, so no per-check tally and no latency
+    // number moves, and the batch numbers the run measured ride along unchanged.
+    [Fact]
+    public void AppendUnprocessed_RowCountsInOverallWithoutMovingAnyTallyOrBatchNumber()
+    {
+        var batchModelCost = new ModelCostNotes(2, 2, 100, 40);
+        var scorecard = new Scorecard(
+            [Score("t1", latencyMs: 40), Score("t2", latencyMs: 10)],
+            LatencyBudgetMs: 2000,
+            BatchLatencyMs: 55,
+            BatchModelCost: batchModelCost);
+
+        Scorecard appended = scorecard.AppendUnprocessed([RecordScore.Unscoreable("t3", "Record failed: InvalidOperationException")]);
+
+        Assert.Equal(3, appended.TotalCount);
+        Assert.Equal(2, appended.PassedCount);
+        Assert.False(appended.AllPassed);
+        Assert.Equal("t3", appended.RecordScores[2].TaskId);
+        Assert.All(EvaluationChecks.All, check => Assert.Equal(scorecard.MeasuredCountOf(check), appended.MeasuredCountOf(check)));
+        Assert.Equal(40, appended.LatencyP95Ms);
+        Assert.Equal(2000, appended.LatencyBudgetMs);
+        Assert.Equal(55, appended.BatchLatencyMs);
+        Assert.Same(batchModelCost, appended.BatchModelCost);
+    }
+
+    // D71: a line that did not parse has no task id to show, since the id is what failed to
+    // parse; the reader's own failure text names the line instead.
+    [Fact]
+    public void DidNotParse_NamesTheLineThroughTheReadersFailureAndNeverPasses()
+    {
+        const string readFailure = "Line 11 failed to parse: JsonException: line 0, byte position 96";
+
+        RecordScore score = RecordScore.DidNotParse(readFailure);
+
+        Assert.Equal("(did not parse)", score.TaskId);
+        Assert.Equal(readFailure, score.ScoringError);
+        Assert.False(score.Passed);
     }
 }

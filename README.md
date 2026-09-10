@@ -26,7 +26,7 @@ flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
     B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
-    C --> D[3 Compose: template or model, in the record's language; bounded retry then template]
+    C --> D[3 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
     D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
     D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
     E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
@@ -84,8 +84,8 @@ template composer, which makes no network call at all. The hold-out passes chann
 send day on 7 of 11, send hour on 5 of 11, action type on 7 of 12, opt-out on 11 of 11,
 call-to-action type on 7 of 11, call-to-action payload on 11 of 11, language on 11 of 11, safety
 on 12 of 12, and personalization on 8 of 8; 4 of 12 records pass every check and the run exits 0.
-The synthetic set passes every check and 12 of 12 records, and exits 2 for its one malformed line
-by design; `sample.jsonl`, the fitted set, passes 2 of 2 on every check. Zero safety violations on
+The synthetic set passes every check on all 12 records that parse, and its one malformed line is
+an `ERROR` row of the scorecard (D71), so it reads 12 of 13 and exits 2 by design; `sample.jsonl`, the fitted set, passes 2 of 2 on every check. Zero safety violations on
 all three, and the review queue is empty on all three. `ActionSem` and `BodySem` read 0 of 0
 everywhere: the judge is off unless `--judge` is passed (D30). Nothing has moved since Sprint 6,
 which is when call-to-action payload went from 0 of 2, 0 of 11 and 0 of 10 (D25) and language from
@@ -101,12 +101,21 @@ Runs of the three documented commands on unchanged code have read p95s anywhere 
 23 ms. What does reproduce is the shape: on each set exactly one record pays the one-time
 just-in-time compilation cost and reads around 20 ms, which is what makes it that set's p95,
 and every other record reads single-digit milliseconds. **Money:** the default path costs
-nothing, because it makes no request and needs no key. The one live run this project has made,
+nothing, because it makes no request and needs no key. The first live run this project made,
 `--composer openai` across all three sets on 2026-09-08, cost about $0.004 read off the vendor's
 own usage page rather than estimated, roughly $0.00017 per record, and the model wrote none of the
-text: every call was abandoned at its 1000 ms timeout and the template answered, which is what the
+text: every call was abandoned at the 1000 ms attempt timeout the client then used and the
+template answered, which is what the
 fallback is for (D31, and the arithmetic in [docs/DESIGN.md](docs/DESIGN.md) section 9). That
-dollar figure is dated prose and stays dated prose; what the program measures is tokens.
+dollar figure is dated prose and stays dated prose; what the program measures is tokens. On
+2026-09-10 the model answered for the first time, under `--model-call-budget-ms 30000` (D70): on
+`synthetic_12.jsonl` it wrote 8 of the 10 messages in 19 calls, 7,479 input and 2,129 output
+tokens, at a p95 of 8,043 ms, which fails the records' own 2000 ms, and the call-to-action check
+fell to 9 of 10 ([docs/scorecards/synthetic_12_openai_run1.txt](docs/scorecards/synthetic_12_openai_run1.txt)).
+Once code took over the opt-out sentence and the unstated call to action (D72, D73), three more
+runs had the model write all 10 in 10 calls, 3,900 input and about 980 output tokens, every check
+at the template's level, and a p95 of 2.3 to 4.5 seconds, still over 2000 ms
+([docs/VARIANCE.md](docs/VARIANCE.md)).
 `diagnostics.model_cost` carries the vendor's own input and output token counts for
 each record, null when no model call was made at all and a counted call with zero tokens when one
 was abandoned at its timeout, and the scorecard's `Batch model cost:` line is the batch total
@@ -134,6 +143,7 @@ debug a bad run: [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 - [docs/DESIGN.md](docs/DESIGN.md) - architecture, the component table and its seam column, inferred decision rules and their evidence, assumptions log, security/governance posture.
 - [docs/NARRATION.md](docs/NARRATION.md) - the seven-question script for explaining this system out loud, plus one record walked file by file through the six steps.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) - one screen: set the secret, build and test, run, open the scorecard, read a log line, replay.
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — how to run it, how to debug a bad run, how the logging actually works, and how to read one log line.
 - [TalkingPoints.md](TalkingPoints.md) - one sentence per decision, grouped from the 60-second answer down; the walkthrough script.
 - [docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) — what the two automated PR reviewers check for, and the scope decisions they should not re-flag.

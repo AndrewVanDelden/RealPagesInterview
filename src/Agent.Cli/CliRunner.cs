@@ -44,6 +44,15 @@ public sealed class CliRunner(
     // because a run may legitimately want to compare models; the instrument may not.
     private const string JudgeModel = "gpt-4o";
 
+    // D37: how many records the batch loop runs at once. A constant, not a flag: no second
+    // value has earned a setting (step 41). Four because D32 measured one model call at about
+    // 1.5 to 4.5 s, so a sequential batch's wall clock is the sum of seconds per record, while
+    // one record's calls run one after another, so four records put at most four requests in
+    // flight against a per-minute vendor limit this project has never measured, and every 429
+    // it returns now costs a retry and its backoff (D33). The template path spends well under
+    // a millisecond a record, so the bound costs it nothing.
+    private const int MaxConcurrentRecords = 4;
+
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         string? inputPath = GetOption(args, "--input");
@@ -55,6 +64,7 @@ public sealed class CliRunner(
         string? nowOption = GetOption(args, "--now");
         string? replayPath = GetOption(args, "--replay");
         string? reviewQueuePath = GetOption(args, "--review-queue");
+        string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
 
         // D30: the judge is off unless it is asked for. It is a presence flag, not an
         // option with a value: there is one judge, and its model is pinned rather than
@@ -84,7 +94,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -111,6 +121,28 @@ public sealed class CliRunner(
         {
             error.WriteLine($"--now '{nowOption}' is not an ISO-8601 date-time (for example 2025-12-09T00:00:00-06:00).");
             return CliExitCodes.UsageError;
+        }
+
+        // D70: an evaluation run's own budget for the composer's model calls, in place of the one
+        // D28 derives from the records. A positive whole number of milliseconds, and only on the
+        // composer that makes model calls: anywhere else it would bound nothing, and a flag that
+        // silently does nothing is a flag someone trusts.
+        TimeSpan? modelCallBudget = null;
+        if (modelCallBudgetOption is not null)
+        {
+            if (!int.TryParse(modelCallBudgetOption, NumberStyles.None, CultureInfo.InvariantCulture, out int budgetMs) || budgetMs <= 0)
+            {
+                error.WriteLine($"--model-call-budget-ms '{modelCallBudgetOption}' is not a positive whole number of milliseconds.");
+                return CliExitCodes.UsageError;
+            }
+
+            if (composerName != ComposerNames.OpenAi)
+            {
+                error.WriteLine("--model-call-budget-ms applies only to --composer openai.");
+                return CliExitCodes.UsageError;
+            }
+
+            modelCallBudget = TimeSpan.FromMilliseconds(budgetMs);
         }
 
         // FileLoggerProvider is disposed here, explicitly, rather than trusted to
@@ -167,11 +199,17 @@ public sealed class CliRunner(
         }
 
         List<ProspectCase> cases;
-        int failureCount;
+        List<string> parseFailures;
         using (StreamReader inputReader = inputOpen.Value)
         {
-            (cases, failureCount) = ReadInput(inputReader, log);
+            (cases, parseFailures) = ReadInput(inputReader, log);
         }
+
+        int failureCount = parseFailures.Count;
+
+        // D71: every input the batch cannot process is a row of the scorecard, starting with the
+        // lines that did not parse; a record that throws in the loop below adds its own.
+        List<RecordScore> unprocessedRows = parseFailures.Select(RecordScore.DidNotParse).ToList();
 
         // D28: the model call is bounded by the strictest latency budget the batch states, so
         // the composer is built after the records are read. Nothing that costs time or money
@@ -184,7 +222,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases, modelCallBudget)),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -270,56 +308,42 @@ public sealed class CliRunner(
         // file's model_cost column gets, and null while no record has gone near a model.
         ModelCostNotes? batchModelCost = null;
 
-        foreach (ProspectCase prospectCase in cases)
+        // D37: records run under bounded concurrency, at most MaxConcurrentRecords at once,
+        // because with a model in the path each costs seconds and a sequential batch's wall clock
+        // is their sum. O(n) in the batch size: one agent run per record, at most
+        // MaxConcurrentRecords in flight, and O(n) space for the runs held until the fold below.
+        // Nothing in the template composer path observes cancellationToken itself, so the loop
+        // does: the check here means a cancelled run starts no record, and ParallelOptions stops
+        // starting records once the token is cancelled, after which ForEachAsync throws when the
+        // records already in flight have finished.
+        cancellationToken.ThrowIfCancellationRequested();
+        var recordRuns = new RecordRun[cases.Count];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, cases.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentRecords, CancellationToken = cancellationToken },
+            async (index, recordCancellationToken) => recordRuns[index] = await RunRecordAsync(agent, cases[index], referenceTime, log, recordCancellationToken));
+
+        // D37 and D14: folded in input order, whatever order the records finished in, because
+        // --replay pairs output rows with input records by position, and the diagnostics, the
+        // review queue, the scorecard and stderr's failure lines follow the same order. One
+        // thread, so the lists, the failure count, the batch total and stderr need no lock.
+        foreach (RecordRun run in recordRuns)
         {
-            // Nothing in the default (template) composer path observes cancellationToken
-            // itself, so without this check a cancelled run kept grinding through every
-            // remaining record instead of stopping - the only sign anything was wrong was
-            // an exception from the output-writing step at the very end, after all the
-            // work was already done.
-            cancellationToken.ThrowIfCancellationRequested();
-
-            using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
-
-            // D1: one line per record naming every defaulted decision input and how many
-            // members the record types do not declare, before any decision reads them.
-            // The defaulted paths are this program's own schema names and are safe to log;
-            // an unknown member's name is not (step 68), because a record chose it. The
-            // count is the fact an operator reads this line for, and --diagnostics, which
-            // is a file a person opens rather than a log stream, still carries every name.
-            IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
-            log.LogInformation(
-                "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
-                string.Join(", ", ingestNotes.DefaultedFields),
-                ingestNotes.UnknownMembers.Count);
-
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            AgentRunResult result;
-            try
+            if (run is RecordRun.Failed failed)
             {
-                result = await agent.RunAsync(prospectCase, referenceTime, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                // Per-record isolation: a bug that throws on one record must not discard the
-                // output already produced for every other record in the batch. Every input
-                // shape has a default (D1), so only a bug reaches here.
                 failureCount++;
-                log.LogError(ex, "Record failed.");
-                error.WriteLine($"Record '{prospectCase.TaskId}' failed: {ex.ToDiagnosticString()}");
+                error.WriteLine($"Record '{failed.Case.TaskId}' failed: {failed.Exception.ToDiagnosticString()}");
+
+                // D71: the scorecard is a file a person keeps, so its row carries the exception
+                // type alone (D46): nothing here knows who wrote the exception's message.
+                unprocessedRows.Add(RecordScore.Unscoreable(failed.Case.TaskId, $"Record failed: {failed.Exception.ToRedactedDiagnosticString()}"));
                 continue;
             }
 
-            stopwatch.Stop();
-
-            // D61 option (c): one measurement, three readers. The log line, the diagnostics row
-            // and the scored run are handed this one variable, so no two of them can state a
-            // different latency for the same record.
-            double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
-
-            log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
+            RecordRun.Completed completed = (RecordRun.Completed)run;
+            AgentRunResult result = completed.Result;
             outputs.Add(result.Output);
-            diagnosticsRecords.Add(new TaskDiagnostics(prospectCase.TaskId, result.Diagnostics, ingestNotes, latencyMs));
+            diagnosticsRecords.Add(new TaskDiagnostics(completed.Case.TaskId, result.Diagnostics, completed.IngestNotes, completed.LatencyMs));
             batchModelCost = ModelCostNotes.Add(batchModelCost, result.Diagnostics.ModelCost);
 
             // D43: one row per record the safety gate suppressed, and nothing else. A record
@@ -328,10 +352,10 @@ public sealed class CliRunner(
             // nothing to review), which is exactly what a null RejectedDraft says.
             if (result.RejectedDraft is { } rejectedDraft)
             {
-                reviewQueue.Add(new ReviewQueueEntry(prospectCase.TaskId, rejectedDraft.Violations, rejectedDraft.Message));
+                reviewQueue.Add(new ReviewQueueEntry(completed.Case.TaskId, rejectedDraft.Violations, rejectedDraft.Message));
             }
 
-            scoredRuns.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs));
+            scoredRuns.Add(new ScoredRun(completed.Case, result.Output, result.Diagnostics.SafetyViolationCount, completed.LatencyMs));
         }
 
         batchStopwatch.Stop();
@@ -366,7 +390,7 @@ public sealed class CliRunner(
             // Scores the results already captured above - never re-runs the agent, so the
             // report describes exactly what was persisted to --output, not a second,
             // possibly different sample (this matters for non-deterministic composers).
-            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, cancellationToken);
+            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, unprocessedRows, cancellationToken);
             if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
@@ -376,6 +400,68 @@ public sealed class CliRunner(
         // A queued record leaves at exit 0 (D43): suppression is a correct pipeline outcome
         // and failureCount counts records the pipeline could not process at all.
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
+    }
+
+    // D37: one record's run, from its log scope to its result, returned rather than written
+    // anywhere shared, because up to MaxConcurrentRecords of these run at once. D16: the TaskId
+    // scope is opened here, in CliRunner and nowhere else, inside this record's own async flow;
+    // the scope stack LoggerFactory hands both providers follows that flow, so a line one
+    // record logs never carries another's TaskId while both run, which
+    // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
+    private static async Task<RecordRun> RunRecordAsync(
+        LeasingMessageAgent agent,
+        ProspectCase prospectCase,
+        DateTimeOffset referenceTime,
+        ILogger<CliRunner> log,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
+
+        // D1: one line per record naming every defaulted decision input and how many
+        // members the record types do not declare, before any decision reads them.
+        // The defaulted paths are this program's own schema names and are safe to log;
+        // an unknown member's name is not (step 68), because a record chose it. The
+        // count is the fact an operator reads this line for, and --diagnostics, which
+        // is a file a person opens rather than a log stream, still carries every name.
+        IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
+        log.LogInformation(
+            "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
+            string.Join(", ", ingestNotes.DefaultedFields),
+            ingestNotes.UnknownMembers.Count);
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        AgentRunResult result;
+        try
+        {
+            result = await agent.RunAsync(prospectCase, referenceTime, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Per-record isolation: a bug that throws on one record must not discard the
+            // output already produced for every other record in the batch. Every input
+            // shape has a default (D1), so only a bug reaches here. The log entry is written
+            // here, inside the record's scope; the stderr line and the scorecard row are the
+            // fold's, in input order.
+            //
+            // Claude Code review of PR #28: cancellation is excluded, matching
+            // LeasingMessageAgent.RunAsync's own catch, so it isn't logged as Error and doesn't
+            // become a RecordRun.Failed. It isn't a bug, and with up to MaxConcurrentRecords
+            // records in flight, logging it as one would turn a clean shutdown into what looks
+            // like several. It propagates out of this call and Parallel.ForEachAsync's own
+            // cancellation handling ends the batch.
+            log.LogError(ex, "Record failed.");
+            return new RecordRun.Failed(prospectCase, ex);
+        }
+
+        stopwatch.Stop();
+
+        // D61 option (c): one measurement, three readers. The log line, the diagnostics row
+        // and the scored run are handed this one variable, so no two of them can state a
+        // different latency for the same record.
+        double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
+
+        log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
+        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs);
     }
 
     // D14: re-score an existing output file against --input without running the agent.
@@ -398,11 +484,13 @@ public sealed class CliRunner(
         }
 
         List<ProspectCase> cases;
-        int failureCount;
+        List<string> parseFailures;
         using (StreamReader inputReader = inputOpen.Value)
         {
-            (cases, failureCount) = ReadInput(inputReader, log);
+            (cases, parseFailures) = ReadInput(inputReader, log);
         }
+
+        int failureCount = parseFailures.Count;
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
         if (ReportIfFailed(replayOpen, log))
@@ -427,7 +515,7 @@ public sealed class CliRunner(
         }
 
         log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
-        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, cancellationToken);
+        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, parseFailures.Select(RecordScore.DidNotParse).ToList(), cancellationToken);
         if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
@@ -437,14 +525,16 @@ public sealed class CliRunner(
     }
 
     // A line that did not parse is one failure row with its line number; there is no task
-    // id to scope the log line on, so the line number is the only identity it has.
+    // id to scope the log line on, so the line number is the only identity it has. The
+    // failure text is returned as well as reported, because the scorecard carries it as a
+    // row (D71).
     // O(n) in the file size: one line parsed, and on failure reported, per iteration.
-    private (List<ProspectCase> Cases, int FailureCount) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
+    private (List<ProspectCase> Cases, List<string> ParseFailures) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
     {
         IReadOnlyList<Result<ProspectCase>> readResults = new JsonlRecordReader().ReadAll(inputReader);
 
         var cases = new List<ProspectCase>(readResults.Count);
-        int failureCount = 0;
+        var parseFailures = new List<string>();
 
         foreach (Result<ProspectCase> readResult in readResults)
         {
@@ -454,11 +544,11 @@ public sealed class CliRunner(
                 continue;
             }
 
-            failureCount++;
+            parseFailures.Add(readResult.Error);
             ReportFailure(log, LogLevel.Error, $"Record failed to parse: {readResult.Error}");
         }
 
-        return (cases, failureCount);
+        return (cases, parseFailures);
     }
 
     // A case missing its labeled expected outcome shows up as an unscoreable row rather
@@ -615,12 +705,15 @@ public sealed class CliRunner(
         ILoggerFactory loggerFactory,
         double? batchLatencyMs,
         ModelCostNotes? batchModelCost,
+        IReadOnlyList<RecordScore> unprocessedRows,
         CancellationToken cancellationToken)
     {
         var evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
         Scorecard scorecard = evaluator.Evaluate(runs, batchLatencyMs, batchModelCost);
+        Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
 
-        return judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
+        // D71: appended after the judge, which pairs rows with runs by position.
+        return judged.AppendUnprocessed(unprocessedRows);
     }
 
     private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
@@ -629,6 +722,10 @@ public sealed class CliRunner(
             ?? throw new InvalidOperationException(
                 "OpenAI:ApiKey is not configured. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
+
+        // Playbook step 78: the log states the inputs a decision used, and which model wrote a
+        // run's prose is one; the key is never logged, the model name is configuration.
+        loggerFactory.CreateLogger<CliRunner>().LogInformation("Composer: openai, model {Model}.", model);
 
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());

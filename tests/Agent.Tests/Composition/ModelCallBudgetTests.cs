@@ -38,12 +38,6 @@ public class ModelCallBudgetTests
         Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(null)]));
     }
 
-    [Fact]
-    public void PerCallBudget_EmptyBatch_ReturnsNull()
-    {
-        Assert.Null(ModelCallBudget.PerCallBudget([]));
-    }
-
     // A budget of zero or less bounds nothing a call could satisfy, so it is not a timeout
     // this program can honor: the client keeps its own default and the p95 check reports the
     // miss.
@@ -53,13 +47,15 @@ public class ModelCallBudgetTests
         Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(0)]));
     }
 
-    // D28 as corrected: the budget bounds one client call including its retry, so the client
-    // divides it by the number of attempts it may make. A budget that bounded a single
-    // attempt would be exceeded by the retry beside it, which is a bound that is documented
-    // and not enforced.
+    // D70: an evaluation run may state its own budget for the composer's model calls, because
+    // on these sets the records' 2000 ms cannot fit one completion, measured at 2 to 4 s a call.
+    // The override replaces the records' budget rather than taking the stricter of the two, or
+    // it could never raise a budget at all.
     [Fact]
-    public void PerAttemptTimeout_WholeCallBudget_IsDividedByTheAttemptsTheClientMayMake()
+    public void PerCallBudget_OverrideGiven_ReplacesEveryRecordsBudget()
     {
-        Assert.Equal(TimeSpan.FromMilliseconds(1000), OpenAiCompletionClient.PerAttemptTimeout(TimeSpan.FromMilliseconds(2000)));
+        TimeSpan? timeout = ModelCallBudget.PerCallBudget([WithBudget(2000), WithBudget(800)], TimeSpan.FromSeconds(30));
+
+        Assert.Equal(TimeSpan.FromSeconds(30), timeout);
     }
 }

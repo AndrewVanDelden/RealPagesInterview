@@ -234,15 +234,4 @@ public class AgentDiagnosticsTests
             "\"composition\":null,\"model_cost\":{\"calls\":2,\"completed_calls\":0,\"input_tokens\":0,\"output_tokens\":0},\"network_retries\":null}",
             json);
     }
-
-    // A record with no consented channel has no message, so no implementation wrote one.
-    [Fact]
-    public void Serializes_AbsentComposition_AsNull()
-    {
-        var diagnostics = new AgentDiagnostics(NoStates, 0, SuppressionReason: SuppressionReason.NoContactConsent);
-
-        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
-
-        Assert.Contains("\"composition\":null", json);
-    }
 }

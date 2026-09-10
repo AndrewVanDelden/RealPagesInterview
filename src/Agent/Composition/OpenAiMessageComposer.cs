@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Agent.Common;
 using Agent.Domain;
+using Agent.Safety;
 using Microsoft.Extensions.Logging;
 
 namespace Agent.Composition;
@@ -47,17 +48,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
     // Outputs' constrained decoding only enforces what the schema states - a bare
     // "type": "string" only guarantees *some* string comes back, not the right one - so
     // the model cannot generate anything else, instead of a wrong CTA being caught after
-    // the round trip by the string.Equals check below. When there is no required CTA type
-    // at all (primary_cta absent from the case), the schema is left unconstrained - there
-    // is nothing specific to force the model toward.
-    private static string BuildResponseJsonSchema(string? requiredCtaType)
+    // the round trip by the string.Equals check below. D73: every record requires one, A9's
+    // generic type when primary_cta is absent, so the enum is set on every call.
+    private static string BuildResponseJsonSchema(string requiredCtaType)
     {
         JsonNode schema = JsonNode.Parse(ResponseJsonSchemaShape)!;
-
-        if (requiredCtaType is not null)
-        {
-            schema["properties"]!["cta_type"]!["enum"] = new JsonArray(JsonValue.Create(requiredCtaType));
-        }
+        schema["properties"]!["cta_type"]!["enum"] = new JsonArray(JsonValue.Create(requiredCtaType));
 
         return schema.ToJsonString();
     }
@@ -68,8 +64,10 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        string? primaryCta = prospectCase.ConstraintsOrEmpty.PrimaryCta;
-        string? requiredCtaType = Presence.IsAbsent(primaryCta) ? null : CallToActionCatalog.Resolve(primaryCta).Type;
+        // D73: the call to action is a decision, so code resolves it the way the template does:
+        // the record's primary_cta through the catalog, and A9's generic row when it is absent.
+        CallToAction callToAction = CallToActionCatalog.Resolve(prospectCase.ConstraintsOrEmpty.PrimaryCta);
+        string requiredCtaType = callToAction.Type;
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
@@ -149,15 +147,13 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         // The response schema already constrains cta_type to exactly requiredCtaType
         // (BuildResponseJsonSchema), so this should be unreachable under Structured
         // Outputs' constrained decoding - kept as defense in depth for any completion
-        // client that doesn't enforce the schema as strictly. No check at all when there
-        // is no required CTA type: payload.CtaType being non-empty (verified above) is
-        // the only requirement in that case.
+        // client that doesn't enforce the schema as strictly.
         // Neither value is named in the failure. payload.CtaType is text the model wrote, and
         // requiredCtaType is the record's own primary_cta wherever the catalog does not name
         // it (CallToActionCatalog.Resolve passes an unrecognized one through), so both are
         // free text that this failure is logged with downstream (step 68). The record is
         // identified by the TaskId on the log scope, and its primary_cta is in the record.
-        if (requiredCtaType is not null && !string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
+        if (!string.Equals(payload.CtaType, requiredCtaType, StringComparison.Ordinal))
         {
             return new ComposeOutcome.Failed(
                 "Model returned a cta_type other than the one the record's primary_cta required.")
@@ -169,15 +165,13 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         // S2 and A21: the link is a fact, so code builds it from the property slug and the
         // catalog's path for this call to action. The options are prose in the record's own
-        // language, which is the model's half of the payload (A10). The path follows
-        // payload.CtaType, the type actually going out, not primaryCta: when primary_cta is
-        // absent the model is free to choose any type (see the schema above), and a path
-        // derived from the absent constraint instead of the chosen type would send a link
-        // for a different call to action than the one the message states.
+        // language, which is the model's half of the payload (A10). The type sent is the
+        // resolved one (D73), so the link is that row's own path.
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail
-            ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, CallToActionCatalog.LinkPathForType(payload.CtaType))
+            ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, callToAction.LinkPath)
             : null;
+        MessageTemplates templates = MessageTemplateCatalog.Resolve(prospectCase.ContextOrEmpty.Language).Templates;
 
         // A10: the payload shape is the channel's rule, not the model's choice. The schema
         // lets cta_options come back null, so an sms whose options the model left out takes
@@ -187,10 +181,18 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             ? null
             : payload.CtaOptions is { Count: > 0 } modelOptions
                 ? modelOptions
-                : MessageTemplateCatalog.Resolve(prospectCase.ContextOrEmpty.Language).Templates.SmsOptions(payload.CtaType);
+                : templates.SmsOptions(payload.CtaType);
+
+        // D72: a required disclosure is code's, as the link is (S2). A body with no opt-out by
+        // OptOutInstructions, the one definition the gate and the scorer use, gets the record's
+        // language set's sentence, the one the template writes; a body that has one is left
+        // as the model wrote it.
+        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(payload.Body)
+            ? isEmail ? $"{payload.Body}\n{templates.EmailOptOut}" : $"{payload.Body} {templates.SmsOptOut}"
+            : payload.Body;
 
         var cta = new Cta(payload.CtaType, options, link);
-        var message = new NextMessage(channel, null, payload.Subject, payload.Body, cta);
+        var message = new NextMessage(channel, null, payload.Subject, body, cta);
         var composed = new ComposedMessage(
             message,
             CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true));
@@ -215,14 +217,16 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
     private static string BuildUserPrompt(
         ProspectCase prospectCase,
         CommunicationChannel channel,
-        string? requiredCtaType,
+        string requiredCtaType,
         IReadOnlyList<string>? priorViolations)
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;
         CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
         string interest = DescribeInterest(profile);
-        string optOutDirective = constraints.RequiresOptOutInstructions() ? "required" : "not required";
+        // D72: the opt-out sentence is appended in code after the model writes, so the model is
+        // told not to write one rather than told it is required.
+        string optOutDirective = constraints.RequiresOptOutInstructions() ? "the system appends them, so do not write any" : "not required";
         string channelName = channel.ToString().ToLowerInvariant();
 
         // D26: no allowlist anywhere. The record's own tag is handed to the model as the
@@ -239,12 +243,9 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
 
         // These have to be plain instructions, not <prospect_data> fields: the system
         // prompt tells the model to ignore directives that appear inside that block, so
-        // text meant to actually steer the model (especially the no-required-type
-        // fallback, which has no schema-level backstop - see BuildResponseJsonSchema)
-        // must live outside it or the model is licensed to disregard it.
-        string ctaInstruction = requiredCtaType is not null
-            ? $"The call to action must be exactly '{requiredCtaType}'."
-            : "No specific call to action is required; choose one reasonable for this message.";
+        // text meant to actually steer the model must live outside it or the model is
+        // licensed to disregard it.
+        string ctaInstruction = $"The call to action must be exactly '{requiredCtaType}'.";
 
         string correctionSection = priorViolations is { Count: > 0 }
             ? "\nYour previous attempt failed a safety check for the following reason(s); fix these " +
