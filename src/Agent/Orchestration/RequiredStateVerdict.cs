@@ -14,10 +14,10 @@ namespace Agent.Orchestration;
 //   Earned          the step that proves this state ran and proved it.
 //   NotEarned       the step ran and did not prove it (a failed FairHousing check, a message
 //                   that broke a brand rule).
-//   NotEvaluated    a step for this state exists but did not run for this record: the consent
-//                   gate suppressed it, or composition failed, so there was no message to
-//                   check. This is the fact the current bool? spells as null, and it is not a
-//                   pass, the same rule A15 states for the scorer.
+//   NotEvaluated    a step for this state exists but did not run for this record: the record
+//                   had no consented channel, or composition failed, so there was no message
+//                   to check. This is the fact the current bool? spells as null, and it is
+//                   not a pass, the same rule A15 states for the scorer.
 //   NoCheckDefined  this program has no step that proves this name. The hold-out's
 //                   renewal_offer_loaded is exactly such a name and stays here: a rule for it
 //                   would be fitted to an evaluation set (D9, A19).

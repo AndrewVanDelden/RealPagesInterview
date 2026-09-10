@@ -1063,7 +1063,7 @@ public class CliRunnerTests
 
     // A record whose own city_interest is "families only" has that text written into its
     // body by the template composer ("We heard you're looking in families only."), so every
-    // compose attempt and the fallback are refused by the safety gate. Before D43's seam
+    // compose attempt and the fallback are refused by the safety gate. Before D48's seam
     // change the refusal destroyed the draft: this run reported composition_failed, recorded
     // fair_housing_check_passed as not_evaluated, and could queue nothing. All three are
     // asserted here, through the real CLI wiring, because that wiring is what made

@@ -7,7 +7,7 @@ namespace Agent.Tests.Decisions;
 
 public class ChannelSelectorTests
 {
-    private static readonly IChannelSelector Selector = new ChannelSelector();
+    private static readonly ChannelSelector Selector = new();
 
     [Fact]
     public void Select_Sample1Preferences_ReturnsSms()
@@ -62,6 +62,20 @@ public class ChannelSelectorTests
     {
         var consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false);
         CommunicationChannel[] preferences = [CommunicationChannel.Sms, CommunicationChannel.Email];
+
+        Option<CommunicationChannel> selected = Selector.Select(preferences, consent);
+
+        Assert.False(selected.HasValue);
+    }
+
+    // D57: the consent gate asked the same question this selector answers, and its third case
+    // was the one this class did not already prove. Consent on every channel is not a channel:
+    // a record that states no preference has nothing to send on, so the answer is none.
+    [Fact]
+    public void Select_EmptyChannelPreferencesDespiteFullConsent_ReturnsNone()
+    {
+        var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: true);
+        CommunicationChannel[] preferences = [];
 
         Option<CommunicationChannel> selected = Selector.Select(preferences, consent);
 

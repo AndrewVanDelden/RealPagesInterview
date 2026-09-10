@@ -8,7 +8,7 @@ namespace Agent.Decisions;
 // The slot is a wall time, and a zone does not reach every wall time exactly once, so
 // TimeZones.ResolveSlot turns it into an instant and says what the zone's rules did (A20).
 // No quiet-hours window and no minutes: DESIGN.md section 8 and docs/CODE_REVIEW.md.
-public sealed class SendScheduler : ISendScheduler
+public sealed class SendScheduler
 {
     private static readonly IReadOnlyDictionary<CommunicationChannel, TimeOnly> DefaultSendHour = new Dictionary<CommunicationChannel, TimeOnly>
     {

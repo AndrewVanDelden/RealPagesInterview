@@ -35,7 +35,7 @@ sets it. Never read, print, or write the value.
 
 ## Layout
 
-- `src/Agent` library: `Domain/` records; `Decisions/` consent, channel, scheduler, planner
+- `src/Agent` library: `Domain/` records; `Decisions/` channel, scheduler, planner
   and the action catalog (D17); `Composition/` both composers, the call-to-action catalog and
   the per-language sets; `Safety/` validator and compose-validate loop; `Orchestration/` the
   agent; `Evaluation/` scorer and judge; `Ingest/` reader, writer; `Common/` shared types.

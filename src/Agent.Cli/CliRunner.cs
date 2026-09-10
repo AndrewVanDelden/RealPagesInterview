@@ -175,7 +175,6 @@ public sealed class CliRunner(
             loggerFactory.CreateLogger<ValidatingMessageComposer>());
 
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             composer,
             safetyValidator,
@@ -419,7 +418,7 @@ public sealed class CliRunner(
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        IEvaluator evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
+        var evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
         Scorecard scorecard = evaluator.Evaluate(runs);
 
         return judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);

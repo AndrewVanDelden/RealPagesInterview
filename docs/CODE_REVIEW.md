@@ -100,7 +100,7 @@ or human) doesn't re-flag them as missing behavior.
   already caches by id internally (a lock-protected dictionary lookup), so the marginal
   cost is a few extra cached lookups per record, not repeated OS/registry work. Threading
   one resolved `TimeZoneInfo` through `IngestNotes.Describe`, `LeasingMessageAgent`, and
-  `ISendScheduler.Resolve` would mean changing `ISendScheduler`'s signature and every test
+  `SendScheduler.Resolve` would mean changing `SendScheduler`'s signature and every test
   built against it (`SendSchedulerTests` passes a raw timezone id string throughout) for a
   gain that duplicates work the BCL is already doing. Not worth the churn.
 

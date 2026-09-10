@@ -7,7 +7,7 @@ namespace Agent.Tests.Ingest;
 
 public class JsonArrayRecordWriterTests
 {
-    private static readonly IRecordWriter<AgentOutput> Writer = new JsonArrayRecordWriter<AgentOutput>();
+    private static readonly JsonArrayRecordWriter<AgentOutput> Writer = new();
 
     [Fact]
     public async Task WriteAllAsync_MultipleRecords_WritesSingleIndentedJsonArray()

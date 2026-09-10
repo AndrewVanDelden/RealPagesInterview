@@ -31,7 +31,7 @@ public class BaselineNumbersTests
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadCases(fileName);
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         DateTimeOffset now = DateTimeOffset.Parse(referenceTime);
         var runs = new List<ScoredRun>(cases.Count);
 

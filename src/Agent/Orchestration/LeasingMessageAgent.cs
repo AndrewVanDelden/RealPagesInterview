@@ -9,26 +9,36 @@ namespace Agent.Orchestration;
 
 // Holds no business rules of its own (DESIGN.md section 5): every decision is
 // delegated to the component that owns it. `.Value` on Option<CommunicationChannel>
-// at the channel-selection step is used deliberately, not defensively re-checked:
-// IsContactable already guarantees a consented channel exists, so re-checking here
-// would be dead code no test could reach honestly. The compose outcome and the final
-// safety validation are different: both are real, reachable failure modes (an
-// unsalvageable compose-validate loop, or a violation slipping past composition),
-// so both are handled explicitly below rather than trusted with .Value.
+// at step 1 is read one line after the same option was tested for a value, so it is a
+// guarded read and not a second answer to a question already asked: D57 merged the old
+// consent gate into the selector precisely because two components were computing the
+// same predicate. The compose outcome and the final safety validation are different:
+// both are real, reachable failure modes (an unsalvageable compose-validate loop, or a
+// violation slipping past composition), so both are handled explicitly below rather
+// than trusted with .Value.
 public sealed class LeasingMessageAgent(
-    IConsentGate consentGate,
-    IChannelSelector channelSelector,
+    ChannelSelector channelSelector,
     IMessageComposer composer,
     ISafetyValidator validator,
-    ISendScheduler scheduler,
-    INextActionPlanner planner,
-    ILogger<LeasingMessageAgent>? logger = null) : IMessageAgent
+    SendScheduler scheduler,
+    NextActionPlanner planner,
+    ILogger<LeasingMessageAgent>? logger = null)
 {
+    // A14: step 1, the consent-driven channel selection, is the step that owns this state, and
+    // the state is earned by a record reaching that step at all. Step 1 runs on every record
+    // that reaches the agent and nothing below revisits it, so the verdict is a constant and no
+    // input makes it anything else: `channel_preferences: []` reaches step 1, the selector
+    // returns no value there without reading consent once, and the record still records earned,
+    // which is what the deleted consent gate recorded on that input too (D57).
+    private const RequiredStateVerdict ConsentVerified = RequiredStateVerdict.Earned;
+
     private readonly ILogger<LeasingMessageAgent> log = logger.OrNullLogger();
 
     // D16: no log scope is opened here. The caller's batch loop (CliRunner) is the one
     // owner of the TaskId scope; a second one here rendered every line as
     // "TaskId=x TaskId=x". A library caller that wants correlation opens its own scope.
+    //
+    // referenceTime is the run's clock (D10): a value the caller passes, never read here.
     public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
     {
         // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
@@ -54,24 +64,25 @@ public sealed class LeasingMessageAgent(
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
 
-        // Step 1: consent first (D2). Not contactable is a no_op with its reason and
-        // nothing else runs.
-        ConsentDecision consentDecision = consentGate.Evaluate(prospectCase.Consent, prospectCase.ChannelPreferences);
+        // Step 1: select the contactable channel, consent first (D2). No option value means
+        // no preferred channel is consented, which is a no_op with its reason and nothing
+        // else runs.
+        Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent);
 
-        if (!consentDecision.IsContactable)
+        if (!contactableChannel.HasValue)
         {
             log.LogInformation("Suppressing message: prospect is not contactable.");
             return Suppressed(
                 prospectCase,
-                consentDecision,
                 SuppressionReason.NoContactConsent,
                 new NextAction(ActionTypes.NoOp, Reason: SuppressionReason.NoContactConsent.ToWireName()),
                 actionPlan: null);
         }
 
-        CommunicationChannel channel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent).Value;
+        CommunicationChannel channel = contactableChannel.Value;
 
-        // Step 2: plan from the horizon (A7), counted in the record's local date (D10).
+        // Step 2: plan the next action from the horizon (A7), counted in the record's local
+        // date (D10).
         DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
         PlannedAction planned = planner.Plan(prospectCase.Persona, prospectCase.LifecycleStage, context.MoveDateTarget, referenceDate);
         NextAction nextAction = planned.Action;
@@ -90,7 +101,7 @@ public sealed class LeasingMessageAgent(
                 planned.Branch);
         }
 
-        // Step 3: compose. Three outcomes, and two of them carry a draft (D43): a composed
+        // Step 3: compose. Three outcomes, and two of them carry a draft (D48): a composed
         // message, and one the compose-validate loop refused on safety. The refused draft is
         // scheduled and validated below exactly like a composed one, so step 5 is the one
         // place that names the violations; a composition that produced no draft at all is the
@@ -119,7 +130,7 @@ public sealed class LeasingMessageAgent(
             default:
                 var failed = (ComposeOutcome.Failed)composeOutcome;
                 log.LogWarning("Suppressing message: composition failed ({Error}).", failed.Error);
-                return Suppressed(prospectCase, consentDecision, SuppressionReason.CompositionFailed, nextAction, actionPlan);
+                return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan);
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
@@ -160,7 +171,7 @@ public sealed class LeasingMessageAgent(
         var diagnostics = new AgentDiagnostics(
             RequiredStateMap.For(
                 prospectCase.Assertions?.RequiredStates,
-                Verdict(consentDecision.ConsentVerified),
+                ConsentVerified,
                 Verdict(fairHousingCheckPassed),
                 Verdict(brandStyle.Applied)),
             validation.Violations.Count,
@@ -196,17 +207,16 @@ public sealed class LeasingMessageAgent(
     // other member null, the oracle's own spelling, never a null object.
     private static NextMessage SuppressedMessage() => new(CommunicationChannel.None);
 
-    // A14: a state is earned by the step that proves it. One helper for all three states, so
+    // A14 again, for the two states a step can answer either way. One helper for both, so
     // "the step ran and said no" is spelled the same way wherever it comes from.
     private static RequiredStateVerdict Verdict(bool earned) =>
         earned ? RequiredStateVerdict.Earned : RequiredStateVerdict.NotEarned;
 
-    // The consent gate ran on every record that reaches here, so consent_verified is answered.
-    // Neither the safety validator nor the brand-style validator did, because this record has
-    // no message: not evaluated is the honest answer, and it is not a pass (A15).
+    // Neither the safety validator nor the brand-style validator ran on a suppressed record,
+    // because it has no message: not evaluated is the honest answer, and it is not a pass
+    // (A15).
     private static AgentRunResult Suppressed(
         ProspectCase prospectCase,
-        ConsentDecision consentDecision,
         SuppressionReason reason,
         NextAction nextAction,
         ActionPlanNotes? actionPlan)
@@ -214,7 +224,7 @@ public sealed class LeasingMessageAgent(
         var diagnostics = new AgentDiagnostics(
             RequiredStateMap.For(
                 prospectCase.Assertions?.RequiredStates,
-                Verdict(consentDecision.ConsentVerified),
+                ConsentVerified,
                 RequiredStateVerdict.NotEvaluated,
                 RequiredStateVerdict.NotEvaluated),
             SafetyViolationCount: 0,

@@ -45,7 +45,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_Sample1_ProducesSmsAndStartCadence()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase sample1 = RealAgentFactory.ReadSampleCases()[0];
 
         AgentRunResult result = await agent.RunAsync(sample1, ReferenceTime);
@@ -82,7 +82,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_Sample2_ProducesEmailAndFollowUpInDays()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase sample2 = RealAgentFactory.ReadSampleCases()[1];
 
         AgentRunResult result = await agent.RunAsync(sample2, ReferenceTime);
@@ -98,7 +98,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_NoConsentedChannel_EmitsNoneMessageAndNoOpWithReason()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase suppressedCase = Asserting("consent_verified", "fair_housing_check_passed", "brand_style_applied") with
         {
             Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
@@ -112,9 +112,10 @@ public class LeasingMessageAgentTests
         Assert.Equal("no_op", result.Output.NextAction.Type);
         Assert.Equal("no_contact_consent", result.Output.NextAction.Reason);
 
-        // The consent gate ran, so consent_verified is earned. Neither the safety validator
-        // nor the brand-style validator ran, because there is no message: not evaluated is
-        // the honest answer and it is not a pass (A15).
+        // consent_verified is earned by the record reaching step 1, the consent-driven channel
+        // selection that owns the state, whichever way that step answered (D57).
+        // Neither the safety validator nor the brand-style validator ran, because there is
+        // no message: not evaluated is the honest answer and it is not a pass (A15).
         Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["consent_verified"]);
         Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
         Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["brand_style_applied"]);
@@ -132,7 +133,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_RecordWithNoPersonaStageOrMoveDate_RecordsTheGenericRowFallback()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase unclassifiable = SampleProspectCases.Minimal() with
         {
             Persona = null,
@@ -154,7 +155,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new SafetyValidator(),
@@ -177,7 +177,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new SafetyValidator(),
@@ -193,8 +192,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_ComposerCannotProduceAnyValidMessage_SuppressesMessageInsteadOfThrowing()
     {
-        IMessageAgent agent = new LeasingMessageAgent(
-            new ConsentGate(),
+        LeasingMessageAgent agent = new LeasingMessageAgent(
             new ChannelSelector(),
             new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Failure("nothing composable")),
             new SafetyValidator(),
@@ -218,7 +216,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_OnlyRequiredMembers_ComposesInUtcWithTheLongHorizonAction()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         var bareCase = new ProspectCase(
             "bare",
             new ConsentPreferences(SmsOptIn: true),
@@ -240,7 +238,7 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_FinalSafetyValidationFindsViolations_SuppressesMessage()
     {
         SafetyValidationResult violatingResult = FairHousingFailure();
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(violatingResult));
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(violatingResult));
         ProspectCase prospectCase = Asserting("fair_housing_check_passed", "brand_style_applied");
 
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
@@ -270,7 +268,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_OnlyTheOptOutCheckFails_RecordsFairHousingAsPassedAndStillSuppresses()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(OptOutFailureOnly()));
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(OptOutFailureOnly()));
         ProspectCase prospectCase = Asserting("fair_housing_check_passed");
 
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
@@ -284,8 +282,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_CancellationRequested_PropagatesCancellationFromComposer()
     {
-        IMessageAgent agent = new LeasingMessageAgent(
-            new ConsentGate(),
+        LeasingMessageAgent agent = new LeasingMessageAgent(
             new ChannelSelector(),
             new ThrowsOnCancellationComposer(),
             new SafetyValidator(),
@@ -306,7 +303,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new SafetyValidator(),
@@ -331,7 +327,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new ThrowsComposer(),
             new SafetyValidator(),
@@ -353,7 +348,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new ThrowsOnCancellationComposer(),
             new SafetyValidator(),
@@ -374,7 +368,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new SafetyValidator(),
@@ -397,7 +390,6 @@ public class LeasingMessageAgentTests
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         SafetyValidationResult violatingResult = FairHousingFailure();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new FixedSafetyValidator(violatingResult),
@@ -417,7 +409,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_TemplateComposer_RecordsWhichImplementationWroteTheMessage()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase sample1 = RealAgentFactory.ReadSampleCases()[0];
 
         AgentRunResult result = await agent.RunAsync(sample1, ReferenceTime);
@@ -433,7 +425,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_OnlyRequiredMembersAndNoConsent_SuppressesAndAssertsNoState()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         var bareCase = new ProspectCase("bare", new ConsentPreferences(), []);
 
         AgentRunResult result = await agent.RunAsync(bareCase, ReferenceTime);
@@ -450,7 +442,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_RecordAssertingAStateWithNoCheck_RecordsItByNameAsNotEarned()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase renewalCase = RealAgentFactory.ReadCases("holdout_12.jsonl")
             .Single(prospectCase => prospectCase.TaskId == "resident_renewal_undecided_followup");
 
@@ -472,8 +464,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_MessageBreaksABrandRule_StillSendsAndRecordsWhichRuleFailed()
     {
-        IMessageAgent agent = new LeasingMessageAgent(
-            new ConsentGate(),
+        LeasingMessageAgent agent = new LeasingMessageAgent(
             new ChannelSelector(),
             new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Success(
                 new NextMessage(CommunicationChannel.Sms, Body: "Hi Taylor! Tours are open! Reply STOP to opt out."))),
@@ -497,7 +488,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Success(
                 new NextMessage(CommunicationChannel.Sms, Subject: "Tour Oak Ridge", Body: "Reply STOP to opt out."))),
@@ -520,7 +510,6 @@ public class LeasingMessageAgentTests
     {
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new TemplateMessageComposer(),
             new SafetyValidator(),
@@ -537,7 +526,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_NoConsentedChannel_RecordsNoComposition()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase prospectCase = SampleProspectCases.Minimal() with
         {
             Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
@@ -548,7 +537,7 @@ public class LeasingMessageAgentTests
         Assert.Null(result.Diagnostics.Composition);
     }
 
-    // D43 through the same wiring the CLI builds: the record's own city_interest is written
+    // D48 through the same wiring the CLI builds: the record's own city_interest is written
     // into the body by the template composer, so every attempt and the fallback are refused.
     // The refusal carries the draft out instead of destroying it, and step 5's own validation
     // is what names the violations, so this record reports a safety violation rather than the
@@ -556,7 +545,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_ComposeLoopRefusesEveryDraft_SuppressesAsASafetyViolationAndKeepsTheDraft()
     {
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase steeringCase = SampleProspectCases.Minimal(cityInterest: "families only") with
         {
             Assertions = new CaseAssertions(
@@ -580,8 +569,7 @@ public class LeasingMessageAgentTests
     [Fact]
     public async Task RunAsync_ComposerProducedNoDraft_StaysACompositionFailureWithNothingToQueue()
     {
-        IMessageAgent agent = new LeasingMessageAgent(
-            new ConsentGate(),
+        LeasingMessageAgent agent = new LeasingMessageAgent(
             new ChannelSelector(),
             new SequenceMessageComposer(Agent.Common.Result<NextMessage>.Failure("nothing composable")),
             new SafetyValidator(),
@@ -606,7 +594,7 @@ public class LeasingMessageAgentTests
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
             SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
-        IMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(twoFailures));
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(twoFailures));
 
         AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
 
@@ -626,7 +614,6 @@ public class LeasingMessageAgentTests
         var capturingLogger = new CapturingLogger<LeasingMessageAgent>();
         var templateComposer = new TemplateMessageComposer();
         var agent = new LeasingMessageAgent(
-            new ConsentGate(),
             new ChannelSelector(),
             new ValidatingMessageComposer(templateComposer, new SafetyValidator(), templateComposer),
             new SafetyValidator(),

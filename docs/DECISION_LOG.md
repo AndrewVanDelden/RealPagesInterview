@@ -11,15 +11,16 @@ sets.
 
 Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Structure and narration.
 Check: the narration is delivered without notes and the orchestrator reads as its steps in
-order. Status: not passed, not started. Phase 5 passed 2026-09-09 in Sprint 7: four safety
-checks and three brand rules, each with a passing, a failing and a false-positive test, the
-allow-list tested both ways, and zero violations and zero false-positive suppressions on the
-synthetic set (D38 to D48).
-Next step: 72 to 79, Sprint 8, Structure and narration (the Sprint 8 row of [DESIGN.md](DESIGN.md)
-section 9, D7).
+order. Status: not passed. The second half is met and shown: the orchestrator reads as six
+numbered steps in the order it executes them (D59), three seams remain and the six interfaces
+with no substitute are gone (D58), the consent gate is merged into the selector (D57), and
+`docs/NARRATION.md` holds Appendix B's script with one record walked file by file. The first
+half this file cannot assert: narrating aloud without notes is the user's own step, and a
+document existing is not that step having happened. Phase 5 passed 2026-09-09 in Sprint 7.
+Next step: the user narrates one record aloud from the rehearsal section of
+[NARRATION.md](NARRATION.md) and reports the two Appendix B signals; Phase 6 passes on that.
 Open decisions: two, the D31 open question on how a real model-versus-template comparison could
-be run at all, and whether the latency decisions D32 to D37 get a sprint of their own; both need
-the requester.
+be run at all, and whether D32 to D37 get a sprint of their own; both need the requester.
 
 Replace these four lines at the end of every sprint. Never append to them. A phase that passed,
 the proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -1147,3 +1148,168 @@ each of the three states is also computed differently at its two call sites (one
 real computed verdicts, the other stubs two of three as `NotEvaluated`), so a table would still
 need per-call-site wiring and would not remove the touch points the finding is concerned about.
 Scopes: none. Assumption: none.
+
+## Sprint 8 decisions, structure and narration (2026-09-09)
+
+Playbook steps 72 to 79. These are the decisions Sprint 8 implements, and they are numbered from
+D57 because D49 to D56 were already taken by the review-fix decisions that landed with PR #24 on
+the same day.
+
+**Run and debug fact, the sprint's own citations and comments corrected (2026-09-09).** The code
+half of this sprint left comments citing decision numbers that name a different decision, and
+comments describing a component D57 deleted. Both are now corrected in place, comment text only,
+with no behavior, signature or test changed. An earlier version of this paragraph recorded the
+first three citations as noted here rather than fixed, on the ground that the documentation half
+of the sprint does not edit `src/` or `tests/`; that is no longer what happened.
+
+Three citations were repointed from D49 to D57. D49 is the introducer-span fix, a different
+decision entirely; D57, below, is the consent gate merged into the channel selector. The three
+are `src/Agent/Orchestration/LeasingMessageAgent.cs` lines 13 and 30, and
+`tests/Agent.Tests/Decisions/ChannelSelectorTests.cs` line 71.
+
+Six were repointed from D43 to D48. D43 decides where a draft the final safety gate suppressed
+goes, which is the review queue; D48 decides that the composer seam returns `ComposeOutcome` and
+that a refusal carries its draft out for the orchestrator to validate. The six are
+`src/Agent/Composition/ComposeOutcome.cs` line 5,
+`src/Agent/Safety/ValidatingMessageComposer.cs` line 14,
+`src/Agent/Orchestration/LeasingMessageAgent.cs` line 102,
+`tests/Agent.Cli.Tests/CliRunnerTests.cs` line 1066,
+`tests/Agent.Tests/Safety/ValidatingMessageComposerTests.cs` line 95, and
+`tests/Agent.Tests/Orchestration/LeasingMessageAgentTests.cs` line 539.
+
+One was repointed from D3 to D2, at `src/Agent/Decisions/ActionTypes.cs` line 17. D3 decides the
+output contract, what suppression looks like on the wire and what the diagnostics carry; D2 is
+the paragraph that puts consent first and states that a record which is not contactable gets
+`no_op` with reason `no_contact_consent` and nothing else runs, which is what that comment is
+about.
+
+The same pass corrected the comments that still described the consent gate as a component that
+exists, or spelled the step 1 suppression as "consent suppression". In `src/`:
+`Orchestration/AgentDiagnostics.cs`, where the `ActionPlan` sentence said the consent gate
+suppressed the record and three sentences spelled the same state "consent suppression";
+`Decisions/ActionTypes.cs`, where `no_op` was said to be emitted by the consent gate;
+`Orchestration/ActionPlanNotes.cs` and `Orchestration/RequiredStateVerdict.cs`, which both said
+the gate suppressed the record. In `tests/`: three comments in
+`Orchestration/AgentDiagnosticsTests.cs`, one in `Orchestration/LeasingMessageAgentTests.cs`, and
+one in `Orchestration/RequiredStateMapTests.cs`. In `docs/`: four places in `OPERATIONS.md`, the
+`--review-queue` flag row and three of the `--diagnostics` paragraphs, which named the consent
+gate or spelled step 1 "consent suppression" in present-tense operator instructions. That file
+was missed when this paragraph was first written, which made this paragraph itself an incomplete
+record of its own sweep; it is swept now and listed here. Each of the corrected places names what
+the code does: the channel selector returns no value, and the agent's own step 1 emits the
+`no_op`. Two mentions in `src/` and `tests/` stay, because both are written as history and read
+as history: `LeasingMessageAgent.cs` line 13, which says D57 merged the old gate into the
+selector, and `ChannelSelectorTests.cs` line 71, which says the gate asked the same question this
+selector answers. In `docs/`, `DESIGN.md` lines 356 and 370 stay for the same reason: both sit
+inside the
+dated "Numbers after Sprint 4" and "Numbers after Sprint 5" paragraphs, which record what the
+code did on those dates. Evidence: `dotnet build` clean and `.\test.ps1` exit code 0 with 551 and
+61 tests and 100 percent line, branch and method coverage, unmoved from the code half of the
+sprint.
+
+**Run and debug fact, four review findings on the Sprint 8 prose fixed (2026-09-09).** A review
+of the uncommitted Sprint 8 work found four defects, every one of them in prose. All four are
+corrected here, with no behavior, signature or test changed.
+
+The first was false rather than merely incomplete. The justification on `LeasingMessageAgent`'s
+`ConsentVerified` constant said the selector reads consent to answer "which channel", so consent
+has been verified by the time either path runs, whichever way it answered.
+`ChannelSelector.Select` reads consent only inside its `foreach`, so `channel_preferences: []`
+makes zero consent reads, returns no value, and the record still records
+`consent_verified: earned`. That input is live:
+`ChannelSelectorTests.Select_EmptyChannelPreferencesDespiteFullConsent_ReturnsNone` is exactly
+it, and
+`LeasingMessageAgentTests.RunAsync_OnlyRequiredMembersAndNoConsent_SuppressesAndAssertsNoState`
+feeds it to a real agent. The output was never wrong and the deleted `ConsentGate` returned
+`ConsentVerified: true` on that path too, so the verdict is unchanged and only its stated reason
+is: `consent_verified` is earned by a record reaching step 1 at all, the consent-driven
+selection is the step that owns the state, and no input makes the verdict anything else. The
+claim was restated in six places and all six now say that: `LeasingMessageAgent.cs`,
+`LeasingMessageAgentTests.cs`, D57 below, the A14 row of DESIGN.md section 7, DESIGN.md section
+9's states-map paragraph, and NARRATION.md's step 1. A14's own statement is left as it stands,
+and is recorded here as reading, for this one state, as "the step that owns it ran" rather than
+"the step proved it".
+
+The second was `OPERATIONS.md` still naming the deleted gate in present-tense operator
+instructions, in four places; that sweep is recorded in the paragraph above.
+
+The third was README's latency claim, stated as 22, 20 and 19 ms with no caveat where DESIGN.md
+section 9 already discloses that the figure is wall clock, is not pinned in the suite and moves
+between runs. Three further runs of the same three commands read 21, 22 and 19; 21, 21 and 20;
+and 23, 22 and 20. README now carries the disclosure and states what does reproduce: on each set
+one record pays the one-time just-in-time compilation cost and reads around 20 ms, which is that
+set's p95, every other record reads single-digit milliseconds, and runs on unchanged code have
+read p95s from 19 ms to 23 ms. The per-check tallies are untouched: they reproduced exactly.
+
+The fourth was README's seam arithmetic: three components behind an interface and "the other
+six" removed by D58 leaves a reader at nine where ten existed, because the seventh removal is
+`IConsentGate` under D57. The paragraph now names both decisions, and says the completion client
+has no box of its own in the diagram above it, since only Compose and Validate are boxes.
+
+Evidence: `dotnet build` clean; `.\test.ps1` exit code 0 with 551 and 61 tests and 100 percent
+line, branch and method coverage; `.\check-instruction-files.ps1` clean; and the three
+documented runs, every per-check tally identical to the numbers already in DESIGN.md section 9,
+exit codes 0, 0 and 2.
+
+**D57. The consent gate merged into the channel selector (2026-09-09).** Question: whether
+"is this record contactable" and "on which channel" are two decisions or one. Options: keep the
+two components, one answering contactability and one answering the channel, and keep the
+orchestrator calling them in order; or delete the gate and let the selector's absence of a value
+be the answer to both. Recommendation: the second. The two components computed the same
+predicate over the same two inputs: `ConsentGate.Evaluate` computed
+`channelPreferences.Any(consent.IsOptedIn)` and `ChannelSelector.Select` computed the first
+channel satisfying `consent.IsOptedIn`, so the gate's answer was already implied by whether the
+selector found one. A question answered twice is a question that can be answered two ways, and
+the orchestrator paid for the second answer with an extra step and an extra branch.
+`ChannelSelector` is now concrete and `Select` returns `Option<CommunicationChannel>`, where no
+value means no preferred channel is consented; nothing anywhere calls that state "not
+contactable" any more. Scopes: `IConsentGate.cs`, `ConsentGate.cs` and `ConsentDecision.cs` are
+deleted; `LeasingMessageAgent` step 1; `CliRunner`'s composition root; `ConsentGateTests`.
+`consent_verified` is now earned by a record reaching step 1 at all, whichever way the selector
+answered and whatever the record's `channel_preferences` list holds: the consent-driven
+selection is the step that owns the state, and no input makes the verdict anything else (A14).
+Evidence: the two expressions above, read side by side; `ChannelSelectorTests` green, with the
+three `ConsentGateTests` cases that duplicated it dropped and the one case it did not prove
+merged in.
+Assumption: A14.
+
+**D58. Every interface without a second implementation deleted (2026-09-09).** Question: which
+interfaces stay. Options: keep the per-component interfaces, on the argument that a caller might
+one day substitute one; or keep only the seams that have a real and an offline implementation
+today. Recommendation: the second, which is S3's default and D7's commitment, both taken before
+this sprint. `IChannelSelector`, `ISendScheduler`, `INextActionPlanner`, `IMessageAgent`,
+`IEvaluator` and `IRecordWriter` each had exactly one implementation and no test substitute, so
+every call through them was a hop to the only class that could answer, and Appendix B's rehearsal
+rule counts each such hop as a finding. Exactly three interfaces remain in `src/Agent`:
+`IMessageComposer`, `ICompletionClient` and `ISafetyValidator`, and each has a real
+implementation in `src/Agent` and an offline one, the template composer for the first and a test
+substitute for the other two. Scopes: the six interface files are deleted and their callers name
+the concrete type; DESIGN.md section 5's seam column; README.md's architecture paragraph.
+Evidence: S3, which records that eleven interfaces existed at the retrospective and eight had one
+implementation and no test substitute, and D7, which commits to removing them as the sprint that
+touches each one lands. Assumption: none.
+
+**D59. The diagram is renumbered to the code, not the code reordered to the diagram
+(2026-09-09).** Question: DESIGN.md section 5's flow numbered the orchestrator's steps compose,
+validate, schedule, plan, and the orchestrator executes them plan, compose, schedule, validate.
+One of the two had to move. Options: reorder the orchestrator to match the published diagram; or
+renumber the diagram to match the executed order. Recommendation: the second, because the
+executed order is forced and the diagram's is not. Two constraints fix it: the
+composition-failure path returns the planner's `next_action`, so the plan must exist before
+compose runs; and the orchestrator's own step 5 gate validates the final message, which carries
+`send_at`, so scheduling must happen before validation. Reordering the code to the diagram would
+break both. No code was reordered and no behavior changed; the six numbered steps now read 1
+select the contactable channel, 2 plan the next action from the horizon, 3 compose, 4 schedule,
+5 validate, 6 emit, in the order the file executes them. Scopes: DESIGN.md section 5's mermaid
+diagram and README.md's copy of it. Evidence: `LeasingMessageAgent.RunUnguardedAsync` read top to
+bottom, where the `ComposeOutcome.Failed` arm returns `Suppressed(..., nextAction, actionPlan)`
+with a `nextAction` the planner produced above it, and where `validator.Validate` is called on
+`finalMessage`, which is `draft with { SendAt = scheduled.SendAt }`. Assumption: none.
+
+**Run and debug fact, Sprint 8 (2026-09-09).** `tests/Agent.Tests/Evaluation/BaselineNumbersTests.cs`
+could not stay byte-for-byte unchanged through D58, which is the first time that has happened.
+Line 34 declared the deleted `IMessageAgent`, so one token changed, `IMessageAgent` to
+`LeasingMessageAgent`. Every pinned tally is untouched and all three theory cases still pass. The
+suite moved from 553 tests to 551 for a separate reason, D57: three `ConsentGateTests` cases
+duplicated `ChannelSelectorTests` and were dropped, and one case `ChannelSelectorTests` did not
+prove was merged into it.

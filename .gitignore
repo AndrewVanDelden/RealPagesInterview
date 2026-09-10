@@ -26,3 +26,12 @@ appsettings.*.local.json
 
 # Personal agent instructions
 CLAUDE.local.md
+
+# Run artifacts written by the CLI at the repo root (--output, --replay input,
+# --diagnostics, --review-queue, --eval-report, --log-file). The documented runs
+# in docs/OPERATIONS.md write these; none of them belongs in the repo.
+/out*.json
+/diag*.json
+/q_*.json
+/eval*.txt
+/*.log
