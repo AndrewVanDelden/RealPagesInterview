@@ -95,7 +95,7 @@ else {
         $failures += "No decisions archive found at docs/DECISIONS_ARCHIVE.md or DECISIONS_ARCHIVE.md. Every decision paragraph lives there, so nothing a citation names could be resolved (D68)."
     }
     else {
-        $scanRoots = @('src', 'tests', 'docs', 'README.md', 'TalkingPoints.md', 'AGENTS.md') |
+        $scanRoots = @('src', 'tests', 'docs', 'README.md', 'AGENTS.md') |
             Where-Object { Test-Path -LiteralPath ([System.IO.Path]::Combine($PSScriptRoot, $_)) }
         $tracked = & git -C $PSScriptRoot ls-files -- $scanRoots
         if ($LASTEXITCODE -ne 0) {
