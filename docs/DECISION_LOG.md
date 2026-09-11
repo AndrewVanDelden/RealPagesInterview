@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Orchestration, entry points, and operations, reached 2026-09-10 after Phase 3 passed again with D82 (Phases 4 and 5 unchanged by this sprint).
-Check: the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code. Passed 2026-09-10 after D86 merged, on all four sets.
-Next step: merge the `--rules` flag (D82), then Phase 8 (D87) and the D88 threshold pin.
+Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review, reached 2026-09-10 after D82's flag merged and Phase 6 held (Phase 7 unchanged but for D88's first half).
+Check: the README's run command and the runbook's steps both work from the tagged commit. Not yet run: the D88 pin and the release tag are open.
+Next step: pin the D88 threshold on a quiet tree, run the four sets and the runbook from a fresh clone, then the sprint PR and the tag.
 Open decisions: D89, warnings as errors in the build; the D86 check amendment; both proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -140,4 +140,5 @@ scorer proofs; D85 and D84 merged, a run and debug fact. D86 streamed its output
 check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts. D82 merged in two halves and Phase 3 passed;
 the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and debug facts. D86 merged streaming the input as well,
 its memory check unmet at default settings and met with the heap capped, and Phase 6 passed. D83 merged, its log line fixed to carry no
-record text, and the D82 rules-file loader merged, both run and debug facts.
+record text, and the D82 rules-file loader merged, both run and debug facts. The `--rules` flag merged, and D87 swept
+every comment in `src` and `tests`, now held by the instruction check, run and debug facts.

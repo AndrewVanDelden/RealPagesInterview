@@ -735,7 +735,7 @@ public sealed class CliRunner(
     private static Result<StreamWriter?> OpenOutputStream(string flag, string? path) =>
         TryOpenOptional(flag, path, p => new StreamWriter(p));
 
-    // The mirror of OpenOutputStream for the two paths a run reads, --input and --replay.
+    // The mirror of OpenOutputStream for the paths a run reads: --input, --replay and --rules.
     // Same filter and same wording deliberately: a path the caller can fix is one class of
     // failure whichever direction the bytes go, and a wider filter here than there would make
     // one program say two things about one operating-system fact. Exit code 1 rather than 2 is

@@ -48,6 +48,7 @@ sets it. Never read, print, or write the value.
 ## Workflow
 
 - Strict TDD: failing test first, confirm the failure, then implement.
+- A comment in `src` or `tests` states the rule and its reason in place and cites no decision number (D87).
 - Every cycle ends with `.\test.ps1` and reading `test-output.txt`. Never lower the 100
   percent threshold, exclude a file, or add a test that exists only to hit a line.
 - One sprint at a time. Do not start the next until the current one is green.
@@ -57,8 +58,8 @@ sets it. Never read, print, or write the value.
 - No edits under `src/` or `tests/` while the phase is 0 or 1.
 - Every substantive decision, bug, or run/debug fact lands in `docs/DECISIONS_ARCHIVE.md` before
   the turn ends, named in the log's sprint paragraph, never in this file. Assume the chat can be cleared at any time.
-- After any edit to this file, run `.\check-instruction-files.ps1`, which CI also runs (four rules: rules only,
-  150 lines, the phase state in the log, the log's word cap, every citation resolving), then `.\sync-agent-rules.ps1`,
+- After any edit to this file, run `.\check-instruction-files.ps1`, which CI also runs (rules only, 150 lines, the phase
+  state in the log, the log's word cap, every citation resolving, no decision number in `src` or `tests`), then `.\sync-agent-rules.ps1`,
   which regenerates `.agents/rules/project.md` for Antigravity. Never edit the generated copy.
 
 ## Conventions that differ from defaults

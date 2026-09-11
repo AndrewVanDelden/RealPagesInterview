@@ -2873,3 +2873,89 @@ the 365-day cap on a slot's day offset is the agent's judgment, a guard against 
 the scheduler with no data behind the number (A25); and the position a parse failure reports
 comes from the shared exception formatter, whose line number is zero-based, harmless for a JSONL
 line and misleading in a multi-line rules file.
+
+**Run and debug fact, D82 `--rules` flag merged (2026-09-10).** `--rules <file.json>` loads a
+rules file after `--input` opens and before the composer is built or any batch output opens, so
+a refused file costs no record, no model call and no partial output; a CLI test proves the order
+by pairing a bad rules file with `--composer openai` and no key, and getting the rules failure.
+The loaded catalog goes to the planner and the slot table to the scheduler; with no flag the
+compiled rules apply. A path that will not open prints `Could not open --rules '<path>'`, a file
+the loader refuses prints `Could not load --rules '<path>':` and one line per bad row, both
+exit 1, and `--rules` with `--replay` is refused, since a replay runs no planner. The log states
+the catalog and slot row counts and nothing else from the file. `--log-file` still opens before
+the rules load, as it must for the logger to exist, so a refusal also lands there. A rules file
+holding exactly the compiled rules gave identical output, diagnostics, queue and report on all
+four sets; after the merge, 97 and 660 tests pass at 100 percent and all four sets match the
+loader-merge runs file for file. One optional finding, not fixed: the load helper returns a
+result holding a nullable value for "no file given", where AGENTS.md reserves `Option` for an
+expected absence; it is correct as written. A report compare that masks only figures ending in
+"ms" shows false differences, because the per-record latency column holds bare numbers.
+
+**Run and debug fact, D87 in Common, Domain and Ingest (2026-09-10).** 21 comments in 19 files
+were rewritten to state the rule and its reason in place and cite no decision number, each at
+most eight lines. The agent's comment-stripping comparison found 35 files identical with comments
+removed, and a separate check of the diff found every added or removed line a comment line, no
+file outside the three folders, and no `D` or `S` number left in them. Three archive paragraphs
+gave a rule and no reason a comment could state: the one-record shape of a next action keeps
+its existing "the way the oracle spells them", the resolution's note that it is a diagnostics
+value was dropped as already said, and the consent comments state that only an explicit true
+opts a channel in without a separate why.
+
+**Run and debug fact, D87 in Decisions, Composition and the library tests (2026-09-10).** 48
+comments in 23 files of `src/Agent/Decisions` and `src/Agent/Composition`, and 142 comment
+blocks in 31 files of `tests/Agent.Tests`, were rewritten to state the rule and its reason and
+cite no decision number; each agent's comment-stripping comparison, with negative controls for
+`//` inside every kind of string, found every file identical with comments removed, and a
+separate check of each diff found only comment lines, inside its folders. No string literal,
+identifier, test name or `InlineData` value in those folders carried a number. Four comments were
+stale and corrected as they were rewritten: the model client's budget comment said the loop
+composes again after a failed call, where since D34 it retries only a safety rejection; two
+comments named a retry count on `CompositionNotes` that moved to `ComposeOutcome`; and one said
+the composer catches a missing completion choice into a result, where it returns a failed
+outcome. One library comment block stays at nine lines, since it cites no number.
+
+**Finding, a completed call counted as not completed (2026-09-10).** The model client throws
+`InvalidOperationException` when a completion comes back with an empty body, after the call
+completed and its usage block was read, and the model composer's general catch records that
+case as no completed call with zero tokens, so the run's token count undercounts what the vendor
+billed. The comment there says every exception it catches happens before or instead of a
+completion, which this case contradicts. Untested and found by reading during the D87 sweep; no
+change was made, and it needs its own decision before a fix.
+
+**Run and debug fact, D87 in Safety, Orchestration and Evaluation, and three stale comments
+(2026-09-10).** About 75 comments in 32 files were rewritten to cite no decision number, and the
+agent's comment-stripping comparison, which copies the validator's regular expressions and the
+judge's raw-string rubric through as literals, found all 39 files identical with comments
+removed; a separate check of the diff found only comment lines inside the three folders. Blocks
+that could not fit eight lines were split onto the members they describe: the diagnostics header
+onto each parameter, the verdict table onto each enum member, the scorecard header onto each
+property, and the validator's switch-off rules onto the three check methods, where each now says
+why that check may or may not be switched off. The allow-list comment lost its example sentences
+and keeps each span and why it is exempt; the archive gives no reason for the individual benign
+spans, so the comment states them as legitimate uses of a term and names the test that pins the
+span that matches nothing. After the merge no file under `src/Agent` or `tests/Agent.Tests`
+cites a decision number, and 97 and 660 tests pass at 100 percent. Three comments were stale and
+were corrected on the sprint branch, comment lines only: a template test said the sms option
+text comes from the catalog, where it comes from the record's language set keyed by the
+call-to-action type; and the required-state map and verdict said `renewal_offer_loaded` has no
+check because nothing is fitted to an evaluation set, which stopped being the reason when D81
+made the hold-out training data, and the map also said the records asserting it carry an offer
+id, where of the three only two do. The reason now given is the true one: the records disagree
+and no check scores a required state, so nothing says what earns it.
+
+**Run and debug fact, D87 closed: the command line, its tests, and the check that holds it
+(2026-09-10).** 68 comments in six files of `src/Agent.Cli` and `tests/Agent.Cli.Tests` were
+rewritten to cite no decision number, and the agent's comparison, with a negative control that a
+changed string literal must show, found all 20 files identical with comments removed; a separate
+check of the diff found only comment lines inside the two folders, and no printed message or test
+name carried a number. One reference was stale and dropped: the record catch block named
+`Parallel.ForEachAsync`, which the windowed batch loop no longer calls. Two reasons were inferred
+from a paragraph's evidence rather than read from a stated reason, the reference-time flag's and
+the model-call budget override's, and say so only by stating what the evidence showed. The input
+helper's comment named two paths a run reads where `--rules` is a third, and was corrected. With
+every folder swept, `check-instruction-files.ps1` gains a fifth rule: any `D` or `S` number in a
+tracked file under `src` or `tests`, comments, strings and names alike, fails the check with its
+file and line, and the citation scan that resolves numbers against the archive reads only the
+docs, the README and AGENTS.md. AGENTS.md states the rule once in its workflow section and names
+it among the check's rules. The check is CI's first step, so the rule now holds by tooling rather
+than by a sweep that has to be repeated.
