@@ -50,13 +50,13 @@ public sealed class CliRunner(
     // because a run may legitimately want to compare models; the instrument may not.
     private const string JudgeModel = "gpt-4o";
 
-    // D37: how many records the batch loop runs at once. A constant, not a flag: no second
-    // value has earned a setting (step 41). Four because D32 measured one model call at about
-    // 1.5 to 4.5 s, so a sequential batch's wall clock is the sum of seconds per record, while
-    // one record's calls run one after another, so four records put at most four requests in
-    // flight against a per-minute vendor limit this project has never measured, and every 429
-    // it returns now costs a retry and its backoff (D33). The template path spends well under
-    // a millisecond a record, so the bound costs it nothing.
+    // How many records the batch loop runs at once. A constant, not a flag: no second value
+    // has earned a setting (step 41). One model call was measured at about 1.5 to 4.5 s and one
+    // record's calls run one after another, so a sequential batch's wall clock is the sum of
+    // seconds per record. Four puts at most four requests in flight against a per-minute vendor
+    // limit this project has never measured, and every 429 it returns costs a retry and its
+    // backoff, since a 429 is one of the transient statuses the client retries. The template
+    // path spends well under a millisecond a record, so the bound costs it nothing.
     private const int MaxConcurrentRecords = 4;
 
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
@@ -73,19 +73,19 @@ public sealed class CliRunner(
         string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
         string? rulesPath = GetOption(args, "--rules");
 
-        // D30: the judge is off unless it is asked for. It is a presence flag, not an
-        // option with a value: there is one judge, and its model is pinned rather than
-        // chosen per run (playbook step 31).
+        // The judge is off unless it is asked for, so an offline run and every pinned baseline
+        // never depend on a network call. It is a presence flag, not an option with a value:
+        // there is one judge, and its model is pinned rather than chosen per run (playbook
+        // step 31).
         bool judgeRequested = args.Contains("--judge", StringComparer.Ordinal);
 
-        // D65: no argument of this program may be empty or all whitespace. A blank path
-        // throws ArgumentException, which is not the IOException filter every open guard
-        // here uses, so `--input ""`, `--output "   "`, `--log-file ""` and `--eval-report ""`
-        // all ended the process unhandled. Closed here rather than by widening those filters,
-        // which would ask a guard to swallow an exception a bug in the same try block could
-        // also throw. One scan and no list of flags to keep in sync: every flag either takes
-        // a value or is a presence flag, and no value any of them takes has a meaning when
-        // blank. O(n) in the argument count.
+        // No argument of this program may be empty or all whitespace. A blank path throws
+        // ArgumentException, which is not the IOException filter every open guard here uses, so
+        // `--input ""`, `--output "   "`, `--log-file ""` or `--eval-report ""` would end the
+        // process unhandled. Closed here rather than by widening those filters, which would ask a
+        // guard to swallow an exception a bug in the same try block could also throw. One scan and
+        // no list of flags to keep in sync: every flag either takes a value or is a presence flag,
+        // and no value any of them takes has a meaning when blank. O(n) in the argument count.
         for (int index = 0; index < args.Length; index++)
         {
             if (!string.IsNullOrWhiteSpace(args[index]))
@@ -111,9 +111,9 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
-        // D43 and D14: a replay scores an output file that already exists and runs no
-        // validator, so it has nothing to queue. An empty file from a replay would read as a
-        // clean run rather than as a question that was never asked.
+        // A replay scores an output file that already exists and runs no validator, so it has
+        // nothing to queue. An empty file from a replay would read as a clean run rather than as
+        // a question that was never asked.
         if (reviewQueuePath is not null && replayPath is not null)
         {
             error.WriteLine("--review-queue needs a run that validates: it cannot be combined with --replay.");
@@ -129,9 +129,11 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
-        // D10: the run's reference time is a value passed in, never a clock read inside the
-        // library. Without the flag it is the current UTC time, so send times are relative
-        // to today; the documented run against holdout_12.jsonl passes the oracle's date.
+        // The run's reference time is a value passed in, never a clock read inside the library,
+        // so a documented run can pass the date its labels were written against and reproduce
+        // its send times on any day. Without the flag it is the current UTC time, so send times
+        // are relative to today; the documented run against holdout_12.jsonl passes the oracle's
+        // date.
         DateTimeOffset referenceTime = DateTimeOffset.UtcNow;
         if (nowOption is not null && !DateTimeOffset.TryParse(nowOption, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out referenceTime))
         {
@@ -139,10 +141,12 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
-        // D70: an evaluation run's own budget for the composer's model calls, in place of the one
-        // D28 derives from the records. A positive whole number of milliseconds, and only on the
-        // composer that makes model calls: anywhere else it would bound nothing, and a flag that
-        // silently does nothing is a flag someone trusts.
+        // An evaluation run's own budget for the composer's model calls, in place of the one
+        // derived from the strictest p95_latency_ms the records state, which few completions
+        // measured so far fit, so without it most records fall back to the template. A positive
+        // whole number of milliseconds, and only on the composer that makes model calls: anywhere
+        // else it would bound nothing, and a flag that silently does nothing is a flag someone
+        // trusts. The scorecard's p95 check still judges the run against the records' own budget.
         TimeSpan? modelCallBudget = null;
         if (modelCallBudgetOption is not null)
         {
@@ -185,7 +189,7 @@ public sealed class CliRunner(
         using IDisposable agentLogScope = AgentLog.Configure(loggerFactory);
         ILogger<CliRunner> log = loggerFactory.CreateLogger<CliRunner>();
 
-        // D30: the judge is configuration, not a per-record decision, so it is built before
+        // The judge is configuration, not a per-record decision, so it is built before
         // either path runs and a missing key is a usage error before any work happens
         // (playbook step 77).
         SemanticJudge? judge;
@@ -259,10 +263,10 @@ public sealed class CliRunner(
         }
 
         // One validator, deliberately shared by the compose-validate loop and the agent's own
-        // step 5 gate. D48 has the loop hand a refused draft out for the agent to validate
-        // again, and the agent's verdict is the one that decides whether it ships, so two
-        // different validators here would be two answers to one question and a draft the loop
-        // refused could go out. Sharing the instance is what makes that impossible.
+        // step 5 gate. The loop hands a refused draft out, so the review queue can show it, and
+        // the agent validates it again; the agent's verdict is the one that decides whether it
+        // ships, so two different validators here would be two answers to one question and a
+        // draft the loop refused could go out. Sharing the instance is what makes that impossible.
         var safetyValidator = new SafetyValidator();
         IMessageComposer composer = new ValidatingMessageComposer(
             baseComposer,
@@ -279,14 +283,13 @@ public sealed class CliRunner(
             loggerFactory.CreateLogger<LeasingMessageAgent>());
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
-        // output/diagnostics path (bad directory, no write permission) must fail immediately,
-        // not after every record has already run through the composer and any LLM calls.
-        // D64 gives each of the three the guard --log-file already has, so an unwritable path
-        // is one stderr line naming its own flag and exit code 1 (playbook steps 77 and 79)
-        // rather than an unhandled exception and an exit code that is none of the documented
-        // three. A stream already opened is disposed by its own `await using` on the way out.
-        // outputPath is non-null here: the usage check above requires it when there is no
-        // --replay, and the replay path has already returned, so the open cannot return null.
+        // output, diagnostics or review-queue path (bad directory, no write permission) must fail
+        // before any record runs through the composer and any model call. Each gets the guard
+        // --log-file has, so an unwritable path is one stderr line naming its own flag and exit
+        // code 1 (playbook steps 77 and 79), never an unhandled exception and an undocumented exit
+        // code. A stream already opened is disposed by its own `await using` on the way out.
+        // outputPath is non-null here: the usage check requires it when there is no --replay, and
+        // the replay path has already returned, so the open cannot return null.
         Result<StreamWriter?> outputOpen = OpenOutputStream("--output", outputPath);
         if (ReportIfFailed(outputOpen, log))
         {
@@ -326,10 +329,10 @@ public sealed class CliRunner(
             evaluator,
             keepRunsForJudge: judge is not null);
 
-        // D61, per batch: one wall-clock elapsed around the record loop, reported on the two
-        // artifacts that are already per batch and never as a row in the diagnostics array.
-        // The input is read and parsed, and rows are written as records are folded, inside the
-        // loop, so it includes both.
+        // Per batch: one wall-clock elapsed around the record loop, reported on the two artifacts
+        // that are already per batch, the log line and the scorecard, and never as a row in the
+        // diagnostics array, which holds one row per record. The input is read and parsed, and
+        // rows are written as records are folded, inside the loop, so it includes both.
         Stopwatch batchStopwatch = Stopwatch.StartNew();
 
         // Nothing in the template composer path observes cancellationToken itself, so the batch
@@ -370,8 +373,9 @@ public sealed class CliRunner(
             }
         }
 
-        // A queued record leaves at exit 0 (D43): suppression is a correct pipeline outcome
-        // and failureCount counts records the pipeline could not process at all.
+        // A queued record leaves at exit 0: suppression is a correct pipeline outcome, work for
+        // a person rather than a broken batch, and failureCount counts records the pipeline could
+        // not process at all.
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
 
@@ -466,11 +470,12 @@ public sealed class CliRunner(
         return budget;
     }
 
-    // D37: one record's run, from its log scope to its result, returned rather than written
-    // anywhere shared, because up to MaxConcurrentRecords of these run at once. D16: the TaskId
-    // scope is opened here, in CliRunner and nowhere else, inside this record's own async flow;
-    // the scope stack LoggerFactory hands both providers follows that flow, so a line one
-    // record logs never carries another's TaskId while both run, which
+    // One record's run, from its log scope to its result, returned rather than written anywhere
+    // shared, because up to MaxConcurrentRecords of these run at once. The TaskId scope is opened
+    // here and nowhere else, since a second scope in the library rendered every line as
+    // "TaskId=x TaskId=x". It opens inside this record's own async flow, which the scope stack
+    // LoggerFactory hands both providers follows, so a line one record logs never carries
+    // another's TaskId while both run, which
     // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
     private static async Task<RecordRun> RunRecordAsync(
         LeasingMessageAgent agent,
@@ -481,7 +486,7 @@ public sealed class CliRunner(
     {
         using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
-        // D1: one line per record naming every defaulted decision input and how many
+        // One line per record naming every defaulted decision input and how many
         // members the record types do not declare, before any decision reads them.
         // The defaulted paths are this program's own schema names and are safe to log;
         // an unknown member's name is not (step 68), because a record chose it. The
@@ -501,36 +506,34 @@ public sealed class CliRunner(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Per-record isolation: a bug that throws on one record must not discard the
-            // output already produced for every other record in the batch. Every input
-            // shape has a default (D1), so only a bug reaches here. The log entry is written
-            // here, inside the record's scope; the stderr line and the scorecard row are the
-            // fold's, in input order.
-            //
-            // Claude Code review of PR #28: cancellation is excluded, matching
-            // LeasingMessageAgent.RunAsync's own catch, so it isn't logged as Error and doesn't
-            // become a RecordRun.Failed. It isn't a bug, and with up to MaxConcurrentRecords
-            // records in flight, logging it as one would turn a clean shutdown into what looks
-            // like several. It propagates out of this call and Parallel.ForEachAsync's own
-            // cancellation handling ends the batch.
+            // Per-record isolation: a bug that throws on one record must not discard the output
+            // already produced for every other record. Every input shape has a default, so only a
+            // bug reaches here. The log entry is written here, inside the record's scope; the
+            // stderr line and the scorecard row are the fold's, in input order. Cancellation is
+            // excluded, as in LeasingMessageAgent.RunAsync's own catch, so it is neither logged as
+            // an error nor a RecordRun.Failed: it is not a bug, and with up to MaxConcurrentRecords
+            // in flight, logging it as one would make a clean shutdown look like several failures.
+            // It propagates out of this call and the batch loop's own cancellation ends the batch.
             log.LogError(ex, "Record failed.");
             return new RecordRun.Failed(prospectCase, ex);
         }
 
         stopwatch.Stop();
 
-        // D61 option (c): one measurement, three readers. The log line, the diagnostics row
-        // and the scored run are handed this one variable, so no two of them can state a
-        // different latency for the same record.
+        // One measurement, three readers. It times exactly one agent.RunAsync: every compose
+        // attempt and model call is inside it, and reading the line and every output write are
+        // not. The log line, the diagnostics row and the scored run are handed this one variable,
+        // so no two of them can state a different latency for the same record.
         double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
 
         log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
         return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs);
     }
 
-    // D14: re-score an existing output file against --input without running the agent.
-    // Rows pair with records by position; a safety count and a latency exist only in the
-    // run that wrote the file, so both score as not measured.
+    // Re-scores an existing output file against --input without running the agent. The output
+    // carries no task id, so rows pair with parsed records by position and a count mismatch is
+    // refused; a safety count and a latency exist only in the run that wrote the file, so both
+    // score as not measured.
     private async Task<int> ReplayAsync(
         string inputPath,
         string replayPath,
@@ -540,7 +543,7 @@ public sealed class CliRunner(
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
     {
-        // D65: both reader paths get the guard, in the order they are read.
+        // Both reader paths get the open guard the output paths have, in the order they are read.
         Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
         if (ReportIfFailed(inputOpen, log))
         {
@@ -594,7 +597,7 @@ public sealed class CliRunner(
     // A line that did not parse is one failure row with its line number; there is no task
     // id to scope the log line on, so the line number is the only identity it has. The
     // failure text is returned as well as reported, because the scorecard carries it as a
-    // row (D71).
+    // row, so a scorecard read alone never shows a clean run for an input with a bad line.
     // O(n) in the file size: one line parsed, and on failure reported, per iteration.
     private (List<ProspectCase> Cases, List<string> ParseFailures) ReadInput(StreamReader inputReader, ILogger<CliRunner> log)
     {
@@ -622,7 +625,7 @@ public sealed class CliRunner(
     // than aborting the whole report. The report always goes to the console; the file is
     // optional. O(n) in the batch size: one record's scoring error reported per iteration,
     // plus one file write.
-    // Returns false only when --eval-report was passed and could not be written (D64). The
+    // Returns false only when --eval-report was passed and could not be written. The
     // console report is already out by then, so the caller turns that into exit code 1 and
     // nothing else: the batch's own files are written and correct.
     private async Task<bool> WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
@@ -640,7 +643,7 @@ public sealed class CliRunner(
 
         if (evalReportPath is not null)
         {
-            // D64: the same guard mechanism the three batch output streams get, at the write
+            // The same guard mechanism the three batch output streams get, at the write
             // instead of before the loop. The report is a report on the batch, so there is no
             // earlier moment at which it could be written.
             Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(evalReportPath, report, cancellationToken));
@@ -662,12 +665,11 @@ public sealed class CliRunner(
         error.WriteLine(message);
     }
 
-    // D64/D65, generalized after the Claude Code review of PR #26 found the filter and the
-    // message template independently restated at four call sites (--log-file, the three
-    // output streams, and --eval-report's write): one exception-to-Result mechanism for every
-    // path this program opens, shared instead of copied. A path the caller can fix (missing
-    // directory, no permission, a locked or full volume) is an expected failure, and anything
-    // else stays a bug and keeps throwing.
+    // One exception-to-Result mechanism for every path this program opens (--log-file, the
+    // output streams, and the input, replay and rules files), so the filter and the message
+    // wording are stated once rather than restated at each call site. A path the caller can fix
+    // (missing directory, no permission, a locked or full volume) is an expected failure, and
+    // anything else stays a bug and keeps throwing.
     private static Result<T> TryOpen<T>(string flag, string path, Func<string, T> open)
     {
         try
@@ -696,8 +698,9 @@ public sealed class CliRunner(
 
     // TryOpen's write-shaped sibling: an operation with no resource to hand back, just success
     // or the same translated failure. --eval-report's write goes through this rather than a
-    // stream held open across the batch (D64's own distinction between the two), sharing the
-    // filter and the message wording instead of restating them.
+    // stream held open across the batch, so a failure at any point of the write is caught here,
+    // where a held stream that fails mid-batch throws from inside the writer, past every guard.
+    // It shares TryOpen's filter and message wording instead of restating them.
     private static async Task<Result<bool>> TryPerformAsync(string flag, string path, Func<Task> action)
     {
         try
@@ -726,13 +729,13 @@ public sealed class CliRunner(
         return true;
     }
 
-    // D64: one guard for every output file the batch writes, so all three fail the same way
+    // One guard for every output file the batch writes, so all three fail the same way
     // and each names the flag the caller passed. A null path is the flag not being passed at
     // all, which is a success carrying no stream, not a failure.
     private static Result<StreamWriter?> OpenOutputStream(string flag, string? path) =>
         TryOpenOptional(flag, path, p => new StreamWriter(p));
 
-    // D65: the mirror of OpenOutputStream for the two paths a run reads, --input and --replay.
+    // The mirror of OpenOutputStream for the two paths a run reads, --input and --replay.
     // Same filter and same wording deliberately: a path the caller can fix is one class of
     // failure whichever direction the bytes go, and a wider filter here than there would make
     // one program say two things about one operating-system fact. Exit code 1 rather than 2 is
@@ -772,10 +775,11 @@ public sealed class CliRunner(
         return index >= 0 && index + 1 < cliArgs.Length ? cliArgs[index + 1] : null;
     }
 
-    // D30: the judge model is pinned separately from the composer's, so the two are not the
-    // same model even though one vendor key makes them the same family. Its calls are
-    // evaluation, not the product's per-record work, so they are not bounded by the batch's
-    // latency budget the way a compose call is (D28).
+    // The judge model is pinned separately from the composer's, so the two are not the same
+    // model, though one vendor key makes them the same family, the setting in which a judge
+    // favors its own family's text; grading against the label rather than for quality is the
+    // mitigation. Its calls are evaluation, not the product's per-record work, so they are not
+    // bounded by the latency budget the records state the way a compose call is.
     private static SemanticJudge BuildJudge(IConfiguration configuration, ILoggerFactory loggerFactory)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
