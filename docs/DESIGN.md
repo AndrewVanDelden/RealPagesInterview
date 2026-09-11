@@ -169,6 +169,59 @@ measurement that shows it is open and the assumption that stands in for an answe
 9. How the vendor retains a request the client abandoned at its timeout; the vendor's page does
    not say (section 8, D44).
 
+### The frozen set, `synthetic_v2.jsonl` (D81)
+
+Written 2026-09-10 by an agent that read only `problem_statement.txt` and `sample.jsonl`, never
+the code, the tests, the docs or either earlier set, and labeled before any rule fitted to the
+hold-out landed. It is run with `--now 2026-10-24T22:00:00Z`, a Saturday: 17:00 in Chicago and
+the evening before London falls back. 29 labeled records and one malformed line, line 15. It
+carries the honest number from D81 on; `holdout_12.jsonl` is training data from the same day.
+
+The problem statement names no channel, time, consent, horizon, locale or stage, so almost every
+label is the author's domain judgment, and several disagree on purpose with this program's own
+assumptions: the short horizon is at most 60 days where A7 says 45, an unknown timezone is
+inferred from the city where A6 says UTC, and the follow-up gaps are 2, 3 and 7 days. A miss on
+one of those is a disagreement with a stated assumption, not a defect, and no rule is fitted to
+this set to remove it. Where the evidence does not decide, the author's choice is named below.
+
+| Record | Covers | Label and its basis |
+|---|---|---|
+| `v2_prospect_new_short_sms` | prospect, new; sms | SMS 09:00, the short welcome cadence; sample 1's shape |
+| `v2_prospect_new_long_email` | prospect, new, long horizon; email | email 10:00 since sms is not consented, a long welcome cadence; sample 2's pattern, the cadence name judged |
+| `v2_horizon_boundary_60_days` | move date exactly 60 days out | short, day 60 inclusive; the samples bound the cutoff in (32, 68], the 60 judged |
+| `v2_horizon_boundary_61_days` | move date 61 days out | long; the other side of the same boundary |
+| `v2_move_date_in_past` | a past move date; prospect, open | sent, asks for a new timeline, follow up in 2; a stale date is not a closed search, judged |
+| `v2_prospect_toured` | prospect, toured | SMS thanks, call to action `start_application`; judged |
+| `v2_prospect_applied` | prospect, applied | email to the applicant portal with no application detail, per `no_pii_leak`; judged |
+| `v2_prospect_approved` | prospect, approved | SMS approval, call to action `sign_lease`; judged |
+| `v2_prospect_lost` | prospect, lost; a no case | suppressed, `no_op` reason `lead_closed`; the statement's "or not sent", judged |
+| `v2_resident_move_in` | resident, move in | SMS key pickup, a move-in cadence; judged |
+| `v2_resident_active_checkin` | resident, active; `America/Phoenix`, no daylight saving | email check-in with a maintenance link, follow up in 7; judged |
+| `v2_resident_renewal` | resident, renewal; no move date, a lease end date | email renewal offer about 90 days before lease end; judged |
+| `v2_resident_notice_given` | resident, notice given | SMS to book the move-out inspection, follow up in 3; judged |
+| `v2_voice_channel` | voice; prospect, open | voice 10:00 with a spoken opt-out; the sample consent carries `voice_opt_in`, the hour judged |
+| `v2_spanish_locale` | Spanish | Spanish body keeping the STOP keyword; judged |
+| `v2_vietnamese_locale` | a language with no prose set | Vietnamese body rather than an English fallback; judged |
+| `v2_unknown_timezone` | `America/Dallas`, not a zone | sent in Central time inferred from the city; judged, against A6 |
+| `v2_dst_fall_back_london` | a send across a transition | 10:00 at +00:00, the zone's offset after it falls back; judged |
+| `v2_missing_move_date` | no move date | short cadence, asks when they plan to move; judged |
+| `v2_missing_last_interaction` | no last interaction | sent, long horizon, follow up in 3; sample 2's pattern |
+| `v2_missing_first_name` | no first name | "Hi there", otherwise the standard message; judged |
+| `v2_missing_property_name` | no property name | email naming the city, reply options instead of a link; judged |
+| `v2_missing_language` | no language | English; both samples are `en` |
+| `v2_empty_channel_preferences` | empty preferences | email as the least intrusive consented channel; judged |
+| `v2_empty_profile` | empty profile | generic greeting, still sent; judged |
+| `v2_no_data_to_personalize` | no property, date, language or profile | a generic welcome, short cadence; judged |
+| `v2_no_consent_for_preferred` | no consent for any channel | suppressed, `no_op` reason `no_consented_channel`; the samples assert `consent_verified` |
+| `v2_consent_only_non_preferred` | consent only for a channel not preferred | sent by email: consent permits, preference only ranks; sample 2 falls back to the consented channel |
+| `v2_unusual_persona_stage` | prospect, renewal | suppressed, `no_op` reason `persona_stage_mismatch`; judged |
+| line 15 | malformed JSON | one error row while the rest run |
+
+Three choices the author named as open: every send lands on the Sunday morning, where a next
+business day rule would move all of them to Monday; "the next morning after now" and "three days
+after the last interaction" both fit the samples, and the first is used; the Spanish and
+Vietnamese bodies are not checked by a native speaker.
+
 ## 5. Architecture
 
 The four starting decisions of `~/.agent-rules/ARCHITECTURE.md` stay on their defaults
@@ -285,6 +338,7 @@ constant until a second known value earns a setting.
 | A21 | The email link is `https://{slug}.example/{path}`: the slug is the property name lowercased with non-alphanumeric characters removed and a trailing property-type word dropped, and the path comes from the catalog's call-to-action column | sample 2's `https://oakridge.example/tour` from "Oak Ridge Apartments" and `book_tour`; one pair, so "the first two words concatenated" fits it equally and this picks the type-word rule because the other breaks on a one-word or four-word name (D25) | the catalog file |
 | A22 | A model call is bounded by the strictest `p95_latency_ms` the batch states, given whole to one attempt, and a timeout is never retried (D28, D33, D35); `--model-call-budget-ms` replaces the bound for a run, and the p95 check keeps the records' own budget (D70) | added from Phase 7, which relied on it: with 1000 ms attempts the model wrote none of 23 messages (section 9, the step 60 run); with one 2000 ms attempt it wrote 2 of 10, 10 calls and 2 completed, p95 2066 ms (`docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`); with the flag at 30000 ms it wrote all 10 at 1.5 to 4.5 seconds a record (VARIANCE.md, After D72 and D73). On these sets the stated budget and a live model do not fit together, and D36 is closed for evaluation runs only | the flag, with `--composer openai` only (D70) |
 | A23 | Four records in flight at once stay under the vendor's rate limit | added from Phase 7, which relied on it and did not measure it: D37 sets four as a margin under a limit this project has never measured (`src/Agent.Cli/CliRunner.cs`, `MaxConcurrentRecords`, line 54), and the one live run made under it, `docs/scorecards/synthetic_12_openai_no_flag_after_d35.txt`, ended 8 of its 10 calls at the timeout (VARIANCE.md) | no; a constant |
+| A24 | `synthetic_v2.jsonl` stands for what the customer wants from records the samples never showed | written 2026-09-10 blind to the code, the docs and both earlier sets, from the problem statement and the two samples only; every label's basis is in section 4, and most are the author's judgment because the statement names no channel, time or stage (D81) | no |
 
 ## 8. Non-goals, quality bar, security
 

@@ -21,8 +21,8 @@ dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.json
 
 Every flag and both output files: `docs/OPERATIONS.md`. Exit codes are 0 success, 1 usage
 error, 2 partial failure. `--now` is the run's reference time (D10), defaulting to now; the
-documented runs pass `2025-12-09T00:00:00-06:00` for `holdout_12.jsonl` and
-`2026-03-07T12:00:00Z` for `synthetic_12.jsonl`.
+documented runs pass `2025-12-09T00:00:00-06:00` for `holdout_12.jsonl`, `2026-03-07T12:00:00Z`
+for `synthetic_12.jsonl` and `2026-10-24T22:00:00Z` for `synthetic_v2.jsonl`.
 
 The OpenAI key is `OpenAI:ApiKey` in `dotnet user-secrets` for `src/Agent.Cli`. The user
 sets it. Never read, print, or write the value.
@@ -37,8 +37,8 @@ sets it. Never read, print, or write the value.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
 - `docs/`: `DECISION_LOG.md` the current phase and one paragraph per sprint, `DECISIONS_ARCHIVE.md`
   every decision in full, `DESIGN.md` the rules, their evidence and the numbers, `CODE_REVIEW.md` the scope-outs.
-- `sample.jsonl` is the only evidence any rule is fitted to; `holdout_12.jsonl` and
-  `synthetic_12.jsonl` are evaluation sets, run and reported, never fitted to (D9, D6).
+- `sample.jsonl` and `holdout_12.jsonl` are the evidence rules are fitted to (D81);
+  `synthetic_12.jsonl` and `synthetic_v2.jsonl` are evaluation sets, never fitted to (D6, D81).
 
 ## Workflow
 

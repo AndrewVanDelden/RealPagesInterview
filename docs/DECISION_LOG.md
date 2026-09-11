@@ -14,8 +14,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, re-opened 2026-09-10 by D81 under step 102 (step 9, a frozen synthetic set).
-Check: the design doc's assumptions log has an evidence column with no blanks. Not yet run for this sprint.
-Next step: step 9, `synthetic_v2.jsonl` written and committed before any D82 rule; then each later phase's check runs again as its decisions merge, in phase order (D81 to D88 taken).
+Check: the design doc's assumptions log has an evidence column with no blanks. Passed 2026-09-10 after D81 merged, A24 added.
+Next step: Phase 1's check, a fresh clone builds and runs the suite from one command; then Phase 2's merges, D85 and D88, in phase order.
 Open decisions: D89, warnings as errors in the build, proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -133,4 +133,6 @@ phase order while their work is written in parallel, one worktree each. D83 move
 D88 pins its threshold after D87. Wave 1 edits `src` and `tests` on unmerged branches while
 the phase reads 0, a deliberate exception held at the merge, and the D85 review found and fixed
 a list the scorecard kept by reference, both a run and debug fact. D89 proposes warnings as
-errors in the build.
+errors in the build. D81 merged: `synthetic_v2.jsonl`, 29 records and
+a malformed line, written blind, its labels disagreeing on purpose with A6 and A7, a run and
+debug fact; `holdout_12.jsonl` is training data from the same day.

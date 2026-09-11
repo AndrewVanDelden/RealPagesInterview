@@ -2614,3 +2614,17 @@ since a rule that must hold with no exceptions belongs in tooling, and (b) lets 
 that CI then fails. Scopes: `Directory.Build.props`, and any warning the flag surfaces on `dev`.
 Evidence: the wave 1 fact above. Assumptions: none. Check: a planted unused variable fails
 `.\test.ps1` locally and in CI. Order: Phase 1, the environment, so it merges right after D81.
+
+**Run and debug fact, D81 merged (2026-09-10).** `synthetic_v2.jsonl` landed as 29 labeled
+records and one malformed line, line 15, run with `--now 2026-10-24T22:00:00Z`. A separate
+validation, not the author's, parsed 29 lines with unique task ids, found exactly one malformed
+line, 26 sent and 3 suppressed records, every suppressed record in the channel `none` shape with
+`no_op`, and every `send_at` an ISO-8601 time with an offset. The author read only
+`problem_statement.txt` and `sample.jsonl`; AGENTS.md was loaded into its context automatically,
+and the only internal it names that a label uses, the suppression shape, was also in its brief.
+The labels disagree with this program's own assumptions on purpose: a 60-day short horizon
+against A7's 45, a zone inferred from the city against A6's UTC, follow-up gaps of 2, 3 and 7
+days, and every send on a Sunday. Those misses measure disagreement with a stated assumption
+rather than a defect, and D82 is fitted to the hold-out and never to this set. D9 is amended by
+D81 from this date: `holdout_12.jsonl` is training data, and every report names which set is
+which. Phase 0's check passed with A24 added: the assumptions log has no blank evidence cell.
