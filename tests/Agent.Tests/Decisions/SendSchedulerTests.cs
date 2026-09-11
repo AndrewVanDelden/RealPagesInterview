@@ -229,6 +229,23 @@ public class SendSchedulerTests
     [Fact]
     public void Rows_EveryRow_CountsForwardFromTheFloorDay()
     {
-        Assert.All(SendSlotTable.Rows, row => Assert.True(row.DaysAfterFloorDay >= 0, $"{row.Persona}/{row.LifecycleStage}/{row.Channel}"));
+        Assert.All(SendSlotTable.Default.Rows, row => Assert.True(row.DaysAfterFloorDay >= 0, $"{row.Persona}/{row.LifecycleStage}/{row.Channel}"));
+    }
+
+    // A scheduler given a table reads that table alone: its row sets the slot, and a key only
+    // the compiled table has keeps the channel's hour.
+    [Fact]
+    public void Resolve_GivenATable_ReadsItsRowsInsteadOfTheCompiledOnes()
+    {
+        SendSlotTable table = SendSlotTable.Create([new SendSlotRow("prospect", "toured", CommunicationChannel.Email, 2, new TimeOnly(8, 45))]).Value;
+        var scheduler = new SendScheduler(table);
+
+        ScheduledSend fromGivenRow = scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Email, "prospect", "toured");
+        ScheduledSend fromCompiledKey = scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Email, "resident", "welcome");
+
+        Assert.Equal(DateTimeOffset.Parse("2025-12-11T08:45:00-06:00"), fromGivenRow.SendAt);
+        Assert.Equal(SendSlotSource.SlotRow, fromGivenRow.Source);
+        Assert.Equal(DateTimeOffset.Parse("2025-12-09T10:00:00-06:00"), fromCompiledKey.SendAt);
+        Assert.Equal(SendSlotSource.ChannelDefault, fromCompiledKey.Source);
     }
 }
