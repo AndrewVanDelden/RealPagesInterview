@@ -11,7 +11,9 @@ internal static class SampleProspectCases
         IReadOnlyList<string>? amenityInterest = null,
         string? primaryCta = "book_tour",
         bool includeOptOutInstructions = true,
-        string? language = "en")
+        string? language = "en",
+        string? persona = "prospect",
+        string? lifecycleStage = "new")
     {
         var profile = new ProspectProfile(firstName, cityInterest, amenityInterest);
         var context = new ProspectContext(
@@ -28,8 +30,8 @@ internal static class SampleProspectCases
 
         return new ProspectCase(
             "test_case",
-            "prospect",
-            "new",
+            persona,
+            lifecycleStage,
             consent,
             [CommunicationChannel.Sms, CommunicationChannel.Email],
             context,

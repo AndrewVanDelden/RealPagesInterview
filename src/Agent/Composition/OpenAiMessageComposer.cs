@@ -65,8 +65,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         CancellationToken cancellationToken = default)
     {
         // D73: the call to action is a decision, so code resolves it the way the template does:
-        // the record's primary_cta through the catalog, and A9's generic row when it is absent.
-        CallToAction callToAction = CallToActionCatalog.Resolve(prospectCase.ConstraintsOrEmpty.PrimaryCta);
+        // the record's primary_cta through the catalog, and when it is absent the stage's
+        // default or A9's generic row.
+        CallToAction callToAction = CallToActionCatalog.Resolve(
+            prospectCase.ConstraintsOrEmpty.PrimaryCta,
+            prospectCase.Persona,
+            prospectCase.LifecycleStage);
         string requiredCtaType = callToAction.Type;
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);

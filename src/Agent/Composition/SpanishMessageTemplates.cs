@@ -31,10 +31,15 @@ internal static class SpanishMessageTemplates
         {
             ["schedule_tour"] = "agendar una visita",
             ["reply"] = "saber más",
+            ["reschedule"] = "reprogramar tu visita",
+            ["intent_capture"] = "decirnos si piensas renovar",
+            ["review_renewal_details"] = "revisar los detalles de tu renovación",
         }.ToFrozenDictionary(StringComparer.Ordinal),
         SmsOptionsByCtaType: new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
             ["schedule_tour"] = ["jueves", "viernes"],
+            ["reschedule"] = ["hoy", "mañana"],
+            ["intent_capture"] = ["sí", "no", "detalles"],
         }.ToFrozenDictionary(StringComparer.Ordinal),
         GenericSmsOptions: ["una pregunta", "una visita"]);
 }

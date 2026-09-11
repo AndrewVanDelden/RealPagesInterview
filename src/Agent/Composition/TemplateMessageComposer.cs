@@ -27,7 +27,10 @@ public sealed class TemplateMessageComposer : IMessageComposer
         ProspectProfile profile = context.ProfileOrEmpty;
         string? firstName = Present(profile.FirstName);
         string? propertyName = Present(context.PropertyName);
-        CallToAction callToAction = CallToActionCatalog.Resolve(prospectCase.ConstraintsOrEmpty.PrimaryCta);
+        CallToAction callToAction = CallToActionCatalog.Resolve(
+            prospectCase.ConstraintsOrEmpty.PrimaryCta,
+            prospectCase.Persona,
+            prospectCase.LifecycleStage);
         (MessageTemplates templates, bool localeApplied) = MessageTemplateCatalog.Resolve(context.Language);
 
         string greeting = firstName is null ? templates.GreetingWithoutName : Fill(templates.GreetingWithName, firstName);

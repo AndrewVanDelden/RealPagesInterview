@@ -104,11 +104,12 @@ public class TemplateMessageComposerTests
         Assert.Equal("Your next step", result.Message.Subject);
     }
 
-    // A9: no primary_cta means the generic reply call to action.
+    // A9: no primary_cta, at a persona and stage with no default call to action, means the
+    // generic reply call to action.
     [Fact]
     public async Task ComposeAsync_AbsentPrimaryCta_UsesTheGenericReplyCallToAction()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -120,7 +121,7 @@ public class TemplateMessageComposerTests
     [Fact]
     public async Task ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ", lifecycleStage: "open");
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -131,7 +132,7 @@ public class TemplateMessageComposerTests
     [Fact]
     public async Task ComposeAsync_NoContextAtAll_StillComposesAMessageWithOptOut()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal() with { Input = null, Assertions = null };
+        ProspectCase prospectCase = SampleProspectCases.Minimal(lifecycleStage: "open") with { Input = null, Assertions = null };
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -238,17 +239,99 @@ public class TemplateMessageComposerTests
         Assert.Equal(["a question", "a tour"], cta.Options);
     }
 
-    // A9: no primary_cta means the generic reply call to action, and its own payload.
+    // A9: no primary_cta, at a persona and stage with no default call to action, means the
+    // generic reply call to action and its own payload.
     [Fact]
     public async Task ComposeAsync_AbsentPrimaryCtaOnEmail_UsesTheGenericLinkPath()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         ComposedMessage result = ComposedOf(outcome);
 
         Assert.Equal(new Uri("https://oakridge.example/reply"), result.Message.Cta!.Link);
+    }
+
+    // The hold-out's no-show record states reschedule_tour, and its label spells the type
+    // reschedule with the options today and tomorrow.
+    [Fact]
+    public async Task ComposeAsync_RescheduleTourOnSms_CarriesTheRescheduleTypeAndItsOptions()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "reschedule_tour", lifecycleStage: "no_show");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.Equal("reschedule", result.Message.Cta!.Type);
+        Assert.Equal(["today", "tomorrow"], result.Message.Cta.Options);
+        Assert.Contains("Reply to reschedule your tour. Reply 1 for today, 2 for tomorrow.", result.Message.Body);
+    }
+
+    // The hold-out's undecided-renewal record states reply_intent, and its label spells the
+    // type intent_capture with the options yes, no and details.
+    [Fact]
+    public async Task ComposeAsync_ReplyIntentOnSms_CarriesTheIntentCaptureTypeAndItsOptions()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "reply_intent", persona: "resident", lifecycleStage: "renewal_undecided");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.Equal("intent_capture", result.Message.Cta!.Type);
+        Assert.Equal(["yes", "no", "details"], result.Message.Cta.Options);
+        Assert.Contains("Reply to tell us if you plan to renew. Reply 1 for yes, 2 for no, 3 for details.", result.Message.Body);
+    }
+
+    [Theory]
+    [InlineData("reschedule_tour", "Responde para reprogramar tu visita. Responde 1 para hoy, 2 para mañana.")]
+    [InlineData("reply_intent", "Responde para decirnos si piensas renovar. Responde 1 para sí, 2 para no, 3 para detalles.")]
+    public async Task ComposeAsync_SpanishSmsWithAHoldOutCallToAction_ComposesItsPhraseAndOptionsInSpanish(string primaryCta, string expectedSentences)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: primaryCta, language: "es");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.Contains(expectedSentences, result.Message.Body);
+    }
+
+    // The hold-out's consent-fallback record is prospect/new with no primary_cta, and its
+    // label says schedule_tour, so that stage's default is the tour and its tour link.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCtaAtProspectNew_UsesTheScheduleTourCallToAction()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Equal("schedule_tour", result.Message.Cta!.Type);
+        Assert.Equal(new Uri("https://oakridge.example/tour"), result.Message.Cta.Link);
+    }
+
+    // The hold-out's renewal-details record is resident/renewal_details_requested with no
+    // primary_cta, and its label says review_renewal_details.
+    [Fact]
+    public async Task ComposeAsync_AbsentPrimaryCtaAtRenewalDetailsRequested_UsesTheReviewRenewalDetailsCallToAction()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, persona: "resident", lifecycleStage: "renewal_details_requested");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Equal("review_renewal_details", result.Message.Cta!.Type);
+        Assert.Contains("Reply or click to review your renewal details at Oak Ridge Apartments.", result.Message.Body);
+    }
+
+    // The stage default is keyed the way the action catalog is: case and surrounding space in
+    // the record do not matter, and a record that states no persona or no stage has no default.
+    [Theory]
+    [InlineData(" Prospect ", "NEW", "schedule_tour")]
+    [InlineData(null, "new", "reply")]
+    [InlineData("prospect", null, "reply")]
+    public async Task ComposeAsync_AbsentPrimaryCta_LooksUpTheStageDefaultByNormalizedPersonaAndStage(string? persona, string? stage, string expectedType)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, persona: persona, lifecycleStage: stage);
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.Equal(expectedType, result.Message.Cta!.Type);
     }
 
     // A21: a property name with no letters or digits in it leaves no host, so the record

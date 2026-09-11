@@ -19,6 +19,19 @@ public static class ActionTypes
     // planner runs.
     public const string NoOp = "no_op";
 
+    // Hold-out prospect_no_show_reengage: a prospect who missed a tour starts over.
+    public const string ResetCadence = "reset_cadence";
+
+    // Hold-out resident_renewal_90day_notice: the renewal email is followed by a text reminder.
+    public const string ScheduleSmsReminder = "schedule_sms_reminder";
+
+    // Hold-out resident_renewal_undecided_followup: the next step waits on the resident's reply.
+    public const string BranchOnIntent = "branch_on_intent";
+
+    // Hold-out resident_renewal_details_branch_email: details sent, the lease signing starts.
+    public const string StartEsignFlow = "start_esign_flow";
+
     public static readonly FrozenSet<string> All =
-        new[] { StartCadence, FollowUpInDays, NoOp }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { StartCadence, FollowUpInDays, NoOp, ResetCadence, ScheduleSmsReminder, BranchOnIntent, StartEsignFlow }
+            .ToFrozenSet(StringComparer.Ordinal);
 }
