@@ -15,24 +15,50 @@ internal sealed record CallToAction(string Type, string LinkPath);
 // comes from the record's language set.
 internal static class CallToActionCatalog
 {
-    // A9: the call to action a record with no primary_cta gets, and the payload every
-    // unrecognized one falls back to. This is D19's deferred default, landed as the
-    // catalog's generic row rather than as a column on the persona and stage rows: no
-    // sample shows a record without primary_cta, so a per-row default would be an invented
-    // value (A19).
+    // A9: the call to action a record with no primary_cta gets when its persona and stage
+    // have no default below, and the payload every unrecognized one falls back to.
     public static readonly CallToAction Generic = new("reply", "reply");
 
+    // Sample 2's link, https://oakridge.example/tour, gives the tour its path.
+    private static readonly CallToAction ScheduleTour = new("schedule_tour", "tour");
+
+    // The rows whose wire type differs from the record's primary_cta. The two hold-out rows
+    // are sms records, so no label shows their link path and they keep the generic one.
     private static readonly FrozenDictionary<string, CallToAction> ByPrimaryCta =
         new Dictionary<string, CallToAction>(StringComparer.Ordinal)
         {
-            ["book_tour"] = new("schedule_tour", "tour"),
+            ["book_tour"] = ScheduleTour,
+            ["reschedule_tour"] = new("reschedule", Generic.LinkPath),     // prospect_no_show_reengage
+            ["reply_intent"] = new("intent_capture", Generic.LinkPath),    // resident_renewal_undecided_followup
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
-    // O(1): one hash lookup. A9: an absent or blank primary_cta takes the generic row, and a
-    // value the table does not name passes through unchanged as the type, carrying the
-    // generic payload.
-    public static CallToAction Resolve(string? primaryCta) =>
-        Presence.IsAbsent(primaryCta)
-            ? Generic
-            : ByPrimaryCta.TryGetValue(primaryCta!, out CallToAction? cta) ? cta : Generic with { Type = primaryCta! };
+    // A record with no primary_cta at these personas and stages gets the stage's own call to
+    // action, keyed the way the action catalog is. Evidence: hold-out
+    // prospect_consent_block_sms_fallback_email is prospect/new and labeled schedule_tour;
+    // resident_renewal_details_branch_email is labeled review_renewal_details, whose label link
+    // carries the unit, which no path here can build, so it keeps the generic path.
+    private static readonly FrozenDictionary<(string Persona, string LifecycleStage), CallToAction> ByPersonaAndStage =
+        new Dictionary<(string Persona, string LifecycleStage), CallToAction>
+        {
+            [("prospect", "new")] = ScheduleTour,
+            [("resident", "renewal_details_requested")] = new("review_renewal_details", Generic.LinkPath),
+        }.ToFrozenDictionary();
+
+    // O(1): at most one hash lookup. A stated primary_cta wins: the table's row, or the value
+    // passed through unchanged with the generic payload (A9). An absent or blank one takes the
+    // stage default, and the generic row when the stage has none or the record states no
+    // persona or stage.
+    public static CallToAction Resolve(string? primaryCta, string? persona, string? lifecycleStage)
+    {
+        if (!Presence.IsAbsent(primaryCta))
+        {
+            return ByPrimaryCta.TryGetValue(primaryCta!, out CallToAction? cta) ? cta : Generic with { Type = primaryCta! };
+        }
+
+        return persona is not null
+            && lifecycleStage is not null
+            && ByPersonaAndStage.TryGetValue((persona.Trim().ToLowerInvariant(), lifecycleStage.Trim().ToLowerInvariant()), out CallToAction? stageDefault)
+            ? stageDefault
+            : Generic;
+    }
 }

@@ -31,25 +31,79 @@ public sealed class ActionCatalog
         _rowsByKey = rowsByKey;
     }
 
-    // The rows DESIGN.md section 3 has evidence for, plus the generic row of A8. Sample 1 is
-    // a prospect at new, 32 days out, and sets that row's short branch; sample 2 is a
-    // prospect at open, 68 days out, and sets that row's long branch. Neither row's other
-    // branch was ever shown, so neither states one.
+    // The rows the labeled records have evidence for, plus the generic row of A8. A row states
+    // only the branch its record showed; the other branch falls to the generic row. Every
+    // hold-out record below states no move date, so each sets its row's long branch (A7).
     public static ActionCatalog Default { get; } = Create(
         new GenericActionRow(
             new NextAction(ActionTypes.StartCadence, "prospect_welcome_short_horizon"),
             new NextAction(ActionTypes.FollowUpInDays, Value: 3)),
         [
+            // Short: sample 1, 32 days out. Long: hold-out prospect_consent_block_sms_fallback_email,
+            // whose label names the cadence for the long horizon.
             new ActionCatalogRow(
                 "prospect",
                 "new",
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_short_horizon")),
-                Option<NextAction>.None()),
+                Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"))),
+
+            // Sample 2, 68 days out.
             new ActionCatalogRow(
                 "prospect",
                 "open",
                 Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 3))),
+
+            // Hold-out prospect_no_show_reengage.
+            new ActionCatalogRow(
+                "prospect",
+                "no_show",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.ResetCadence, "prospect_reengage"))),
+
+            // Hold-out prospect_cancellation_manager_cross_sell.
+            new ActionCatalogRow(
+                "prospect",
+                "cancelled_manager",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
+
+            // Hold-out resident_renewal_90day_notice. Its label also states in_days 5, which
+            // NextAction has no member for, so the reminder's day count is not emitted.
+            new ActionCatalogRow(
+                "resident",
+                "renewal_window",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.ScheduleSmsReminder))),
+
+            // Hold-out resident_renewal_undecided_followup. Its label also states the reply
+            // mapping, which NextAction has no member for, so the mapping is not emitted.
+            new ActionCatalogRow(
+                "resident",
+                "renewal_undecided",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.BranchOnIntent))),
+
+            // Hold-out resident_welcome_day0.
+            new ActionCatalogRow(
+                "resident",
+                "welcome",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
+
+            // Hold-out resident_loyalty_engage.
+            new ActionCatalogRow(
+                "resident",
+                "loyalty_engage",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 5))),
+
+            // Hold-out resident_renewal_details_branch_email.
+            new ActionCatalogRow(
+                "resident",
+                "renewal_details_requested",
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.StartEsignFlow))),
         ]).Value;
 
     // O(n) in the number of rows, each validated once; n is the table in this file, not

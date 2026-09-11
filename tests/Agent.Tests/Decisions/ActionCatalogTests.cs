@@ -64,19 +64,19 @@ public class ActionCatalogTests
     {
         Result<ActionCatalog> result = ActionCatalog.Create(
             Generic,
-            [Row("prospect", "new", Option<NextAction>.Some(new NextAction("reset_cadence")), Option<NextAction>.None())]);
+            [Row("prospect", "new", Option<NextAction>.Some(new NextAction("send_postcard")), Option<NextAction>.None())]);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("reset_cadence", result.Error, StringComparison.Ordinal);
+        Assert.Contains("send_postcard", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Create_GenericRowActionTypeOutsideVocabulary_Fails()
     {
-        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(new NextAction("branch_on_intent"), FollowUp), []);
+        Result<ActionCatalog> result = ActionCatalog.Create(new GenericActionRow(new NextAction("send_postcard"), FollowUp), []);
 
         Assert.False(result.IsSuccess);
-        Assert.Contains("branch_on_intent", result.Error, StringComparison.Ordinal);
+        Assert.Contains("send_postcard", result.Error, StringComparison.Ordinal);
     }
 
     // The deleted NextActionPlannerOptions threw when longHorizonFollowUpDays was not
@@ -189,16 +189,35 @@ public class ActionCatalogTests
         Assert.Equal(ActionSource.CatalogRow, match.Source);
     }
 
-    // The branches the two samples never showed: neither row states them, so both come from
-    // the generic row and the diagnostics can say so.
+    // Branches no record showed: the row does not state them, so they come from the generic
+    // row and the diagnostics can say so.
     [Theory]
-    [InlineData("new", HorizonBranch.Long)]
-    [InlineData("open", HorizonBranch.Short)]
-    public void Default_UnobservedBranchOfAKnownRow_ComesFromTheGenericRow(string stage, HorizonBranch branch)
+    [InlineData("prospect", "open", HorizonBranch.Short)]
+    [InlineData("resident", "renewal_window", HorizonBranch.Short)]
+    public void Default_UnobservedBranchOfAKnownRow_ComesFromTheGenericRow(string persona, string stage, HorizonBranch branch)
     {
-        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", stage, branch);
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, branch);
 
         Assert.Equal(ActionSource.GenericRowNoBranch, match.Source);
+    }
+
+    // The hold-out's rows. None of these records states a move date, so each takes the long
+    // branch, and the long branch is the only one its row states.
+    [Theory]
+    [InlineData("prospect", "new", ActionTypes.StartCadence, "prospect_welcome_long_horizon", null)]
+    [InlineData("prospect", "no_show", ActionTypes.ResetCadence, "prospect_reengage", null)]
+    [InlineData("prospect", "cancelled_manager", ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("resident", "renewal_window", ActionTypes.ScheduleSmsReminder, null, null)]
+    [InlineData("resident", "renewal_undecided", ActionTypes.BranchOnIntent, null, null)]
+    [InlineData("resident", "welcome", ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("resident", "loyalty_engage", ActionTypes.FollowUpInDays, null, 5)]
+    [InlineData("resident", "renewal_details_requested", ActionTypes.StartEsignFlow, null, null)]
+    public void Default_HoldOutStageOnTheLongBranch_ComesFromItsRow(string persona, string stage, string type, string? name, int? value)
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, HorizonBranch.Long);
+
+        Assert.Equal(new NextAction(type, name, value), match.Action);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
     }
 
     [Fact]

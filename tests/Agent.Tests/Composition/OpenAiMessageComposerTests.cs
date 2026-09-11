@@ -163,7 +163,7 @@ public class OpenAiMessageComposerTests
         const string json = """{"subject":null,"body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -356,7 +356,7 @@ public class OpenAiMessageComposerTests
         const string json = """{"subject":null,"body":"hi","cta_type":"anything_reasonable","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -364,6 +364,23 @@ public class OpenAiMessageComposerTests
         using JsonDocument schemaDocument = JsonDocument.Parse(fakeClient.LastResponseJsonSchema!);
         JsonElement ctaTypeEnum = schemaDocument.RootElement.GetProperty("properties").GetProperty("cta_type").GetProperty("enum");
         Assert.Equal("reply", Assert.Single(ctaTypeEnum.EnumerateArray()).GetString());
+    }
+
+    // The model path resolves the call to action the way the template does, stage default
+    // included: prospect/new with no primary_cta requires schedule_tour, not the generic reply.
+    [Fact]
+    public async Task ComposeAsync_NoPrimaryCtaAtAStageWithADefault_ConstrainsCtaTypeToThatDefault()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        using JsonDocument schemaDocument = JsonDocument.Parse(fakeClient.LastResponseJsonSchema!);
+        JsonElement ctaTypeEnum = schemaDocument.RootElement.GetProperty("properties").GetProperty("cta_type").GetProperty("enum");
+        Assert.Equal("schedule_tour", Assert.Single(ctaTypeEnum.EnumerateArray()).GetString());
     }
 
     // Step 68: the exception is named, not attached. Attaching it is what put the vendor's
@@ -486,7 +503,7 @@ public class OpenAiMessageComposerTests
     {
         const string json = """{"subject":"Tour Oak Ridge","body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
@@ -504,7 +521,7 @@ public class OpenAiMessageComposerTests
         const string json = """{"subject":null,"body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ", lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 

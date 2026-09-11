@@ -24,8 +24,8 @@ public class BaselineNumbersTests
     [InlineData(
         "holdout_12.jsonl",
         "2025-12-09T00:00:00-06:00",
-        "Checks: Channel 12/12, Day 7/11, Hour 5/11, Action 7/12, OptOut 11/11, CTA 7/11, Payload 11/11, Lang 11/11, Safety 12/12, Personalization 8/8",
-        "Overall: 4/12 passed")]
+        "Checks: Channel 12/12, Day 7/11, Hour 5/11, Action 12/12, OptOut 11/11, CTA 11/11, Payload 11/11, Lang 11/11, Safety 12/12, Personalization 8/8",
+        "Overall: 6/12 passed")]
     [InlineData(
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",

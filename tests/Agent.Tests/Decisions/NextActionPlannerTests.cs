@@ -57,7 +57,7 @@ public class NextActionPlannerTests
         PlannedAction planned = Planner.Plan("prospect", "new", ReferenceDate.AddDays(NextActionPlanner.ShortHorizonThresholdDays + 1), ReferenceDate);
 
         Assert.Equal(HorizonBranch.Long, planned.Branch);
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"), planned.Action);
     }
 
     // No date, no cadence to start (A7). The horizon is not zero, it is unstated, so the
@@ -69,7 +69,8 @@ public class NextActionPlannerTests
 
         Assert.Equal(HorizonBranch.Long, planned.Branch);
         Assert.Null(planned.HorizonDays);
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"), planned.Action);
+        Assert.Equal(ActionSource.CatalogRow, planned.Source);
     }
 
     [Fact]
@@ -93,14 +94,14 @@ public class NextActionPlannerTests
         Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
     }
 
-    // prospect/new was only ever seen on a short horizon, so its long branch has no evidence
+    // prospect/open was only ever seen on a long horizon, so its short branch has no evidence
     // and comes from the generic row instead.
     [Fact]
     public void Plan_BranchTheRowDoesNotState_UsesTheGenericRowAndRecordsIt()
     {
-        PlannedAction planned = Planner.Plan("prospect", "new", new DateOnly(2026, 2, 15), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "open", new DateOnly(2026, 1, 10), ReferenceDate);
 
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
         Assert.Equal(ActionSource.GenericRowNoBranch, planned.Source);
     }
 
