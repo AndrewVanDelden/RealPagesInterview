@@ -14,6 +14,26 @@ public class SafetyValidatorTests
     private static NextMessage Message(string? body, string? subject = null, CommunicationChannel channel = CommunicationChannel.Sms) =>
         new(channel, null, subject, body, null);
 
+    // The agent's final gate reuses the compose-validate loop's verdict, which was reached
+    // before the send time was set, so no check may read the send time. One body every check
+    // passes and one that fails all four, so a check that did read it would show in either.
+    [Theory]
+    [InlineData("Hi Taylor! Book a tour today. Reply STOP to opt out.", 0)]
+    [InlineData("Families only. SSN 123-45-6789, card 4111 1111 1111 1111.", 4)]
+    public void Validate_SendTimeSetOrNot_EveryCheckAnswersTheSame(string body, int expectedFailedChecks)
+    {
+        NextMessage unscheduled = Message(body);
+        NextMessage scheduled = unscheduled with { SendAt = DateTimeOffset.Parse("2025-12-09T10:00:00-06:00") };
+
+        SafetyValidationResult unscheduledResult = Validator.Validate(unscheduled, Constraints());
+        SafetyValidationResult scheduledResult = Validator.Validate(scheduled, Constraints());
+
+        Assert.Equal(expectedFailedChecks, unscheduledResult.Checks.Count(check => check.Verdict == SafetyCheckVerdict.Failed));
+        Assert.Equal(
+            unscheduledResult.Checks.Select(check => (check.Check, check.Verdict, string.Join("\n", check.Details))),
+            scheduledResult.Checks.Select(check => (check.Check, check.Verdict, string.Join("\n", check.Details))));
+    }
+
     // D1: an absent constraint is not required, so the two gated checks report
     // NotApplicable rather than a pass (D38). The two unconditional checks still run.
     [Fact]

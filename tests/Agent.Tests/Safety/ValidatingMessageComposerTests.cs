@@ -24,6 +24,39 @@ public class ValidatingMessageComposerTests
     private static ComposedMessage ComposedOf(ComposeOutcome outcome) =>
         Assert.IsType<ComposeOutcome.Composed>(outcome).Message;
 
+    // Both exits that return a message hand out the verdict that passed it, so the agent's
+    // final gate can read it instead of asking the same validator again. A model attempt that
+    // passes is the first exit.
+    [Fact]
+    public async Task ComposeAsync_AttemptPassesValidation_HandsOutTheVerdictForThatMessage()
+    {
+        NextMessage cleanMessage = CleanMessage();
+        var composer = new ValidatingMessageComposer(new SequenceMessageComposer(Result<NextMessage>.Success(cleanMessage)), Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        var composed = Assert.IsType<ComposeOutcome.Composed>(await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.NotNull(composed.Validation);
+        Option<SafetyValidationResult> handed = composed.Validation.ResultFor(Validator, cleanMessage, prospectCase.ConstraintsOrEmpty);
+        Assert.True(handed.HasValue);
+        Assert.Empty(handed.Value.Violations);
+    }
+
+    // The second exit: the fallback answers after the model attempt returned no message.
+    [Fact]
+    public async Task ComposeAsync_FallbackPassesValidation_HandsOutTheVerdictForTheFallbacksMessage()
+    {
+        var composer = new ValidatingMessageComposer(new SequenceMessageComposer(Result<NextMessage>.Failure("boom")), Validator, FallbackComposer);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        var composed = Assert.IsType<ComposeOutcome.Composed>(await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms));
+
+        Assert.NotNull(composed.Validation);
+        Option<SafetyValidationResult> handed = composed.Validation.ResultFor(Validator, composed.Message.Message, prospectCase.ConstraintsOrEmpty);
+        Assert.True(handed.HasValue);
+        Assert.Empty(handed.Value.Violations);
+    }
+
     [Fact]
     public async Task ComposeAsync_FirstAttemptClean_ReturnsFirstAttemptWithoutRetry()
     {
