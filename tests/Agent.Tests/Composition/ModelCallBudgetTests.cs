@@ -58,4 +58,17 @@ public class ModelCallBudgetTests
 
         Assert.Equal(TimeSpan.FromSeconds(30), timeout);
     }
+
+    // With an override the records are never read, so a caller can pass a lazy read of the
+    // input file and pay for that read only when the records' own budget is the one used.
+    [Fact]
+    public void PerCallBudget_OverrideGiven_NeverReadsTheRecords()
+    {
+        IEnumerable<ProspectCase> recordsThatMustNotBeRead = Enumerable.Range(0, 1)
+            .Select<int, ProspectCase>(_ => throw new InvalidOperationException("The records were read although an override was given."));
+
+        TimeSpan? timeout = ModelCallBudget.PerCallBudget(recordsThatMustNotBeRead, TimeSpan.FromSeconds(30));
+
+        Assert.Equal(TimeSpan.FromSeconds(30), timeout);
+    }
 }

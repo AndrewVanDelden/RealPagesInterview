@@ -110,14 +110,13 @@ internal sealed class RecordFold(
     // records, for the p95 sort the scorecard does when it is constructed.
     public Scorecard ScoreBatch(double batchLatencyMs) => new(scores, latencyBudgetMs, batchLatencyMs, BatchModelCost);
 
-    // One record scored as it is folded, through the same evaluator a whole batch goes through,
-    // so its row is the row a whole-batch pass gives it. The budget the batch p95 is judged
-    // against is the strictest any scored record states, and null when none states one.
+    // One record scored as it is folded, by the rule a whole batch is scored by, so its row is
+    // the row a whole-batch pass gives it. The budget the batch p95 is judged against is the
+    // strictest any scored record states, and null when none states one. O(1) beyond the row.
     private void Score(Evaluator activeEvaluator, ScoredRun run)
     {
-        Scorecard single = activeEvaluator.Evaluate([run]);
-        scores.Add(single.RecordScores[0]);
-        latencyBudgetMs = new[] { latencyBudgetMs, single.LatencyBudgetMs }.Min();
+        scores.Add(activeEvaluator.ScoreRecord(run));
+        latencyBudgetMs = Evaluator.StricterLatencyBudget(latencyBudgetMs, run);
 
         if (keepRunsForJudge)
         {

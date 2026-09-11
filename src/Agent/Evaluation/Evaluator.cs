@@ -27,34 +27,54 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         ModelCostNotes? batchModelCost = null)
     {
         var scores = new List<RecordScore>(runs.Count);
+        int? latencyBudgetMs = null;
 
         foreach (ScoredRun run in runs)
         {
-            // Per-record isolation (playbook step 34): a scoring bug on one record yields
-            // one unscoreable row, never a lost batch. No TaskId scope here (D16): the row
-            // carries the id, and the one log line names it.
-            try
-            {
-                scores.Add(Score(run));
-            }
-            catch (Exception ex)
-            {
-                // D46: Score reads the composed message and the record's own labeled
-                // content, so its exceptions go through the redacted formatter like every
-                // other boundary that handles vendor, model, or prospect text. The raw
-                // exception is never passed to the logger: ILogger's default formatter
-                // appends Exception.ToString() in full regardless of the message template.
-                string failure = ex.ToRedactedDiagnosticString();
-                log.LogError("Scoring record '{TaskId}' failed: {ScoringFailure}.", run.ProspectCase.TaskId, failure);
-                scores.Add(RecordScore.Unscoreable(run.ProspectCase.TaskId, failure));
-            }
+            scores.Add(ScoreRecord(run));
+            latencyBudgetMs = StricterLatencyBudget(latencyBudgetMs, run);
         }
 
-        // The strictest stated budget bounds the batch p95; Min over int? is null when no
-        // record states one.
-        int? latencyBudgetMs = runs.Min(run => run.ProspectCase.ThresholdsOrEmpty.P95LatencyMs);
-
         return new Scorecard(scores, latencyBudgetMs, batchLatencyMs, batchModelCost);
+    }
+
+    // One record's row, the same row a whole batch gives it, for a caller that scores each
+    // record as it finishes instead of holding every run to the end. O(size of one message).
+    public RecordScore ScoreRecord(ScoredRun run)
+    {
+        // Per-record isolation (playbook step 34): a scoring bug on one record yields
+        // one unscoreable row, never a lost batch. No TaskId scope here (D16): the row
+        // carries the id, and the one log line names it.
+        try
+        {
+            return Score(run);
+        }
+        catch (Exception ex)
+        {
+            // D46: Score reads the composed message and the record's own labeled
+            // content, so its exceptions go through the redacted formatter like every
+            // other boundary that handles vendor, model, or prospect text. The raw
+            // exception is never passed to the logger: ILogger's default formatter
+            // appends Exception.ToString() in full regardless of the message template.
+            string failure = ex.ToRedactedDiagnosticString();
+            log.LogError("Scoring record '{TaskId}' failed: {ScoringFailure}.", run.ProspectCase.TaskId, failure);
+            return RecordScore.Unscoreable(run.ProspectCase.TaskId, failure);
+        }
+    }
+
+    // The batch p95 is judged against the strictest budget any record states, taken one record
+    // at a time so a caller never holds the runs to find it. A record that states none leaves
+    // the running value alone, and the result is null while no record has stated one.
+    public static int? StricterLatencyBudget(int? strictestSoFar, ScoredRun run)
+    {
+        int? stated = run.ProspectCase.ThresholdsOrEmpty.P95LatencyMs;
+
+        if (strictestSoFar is not { } soFar)
+        {
+            return stated;
+        }
+
+        return stated is { } statedMs ? Math.Min(soFar, statedMs) : soFar;
     }
 
     private static RecordScore Score(ScoredRun run)

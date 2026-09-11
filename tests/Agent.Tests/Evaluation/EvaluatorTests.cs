@@ -594,6 +594,42 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.NotMeasured, scorecard.LatencyP95);
     }
 
+    // A caller that scores each record as it finishes gets the row a whole batch gives it,
+    // because both go through the one scoring rule.
+    [Fact]
+    public void ScoreRecord_OneRun_ReturnsTheRowTheBatchGives()
+    {
+        ScoredRun run = Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody), latencyMs: 12);
+
+        Assert.Equal(Evaluator.Evaluate([run]).RecordScores[0], Evaluator.ScoreRecord(run));
+    }
+
+    [Fact]
+    public void ScoreRecord_ScoringThrows_ReturnsAnUnscoreableRow()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(CommunicationChannel.Sms, "expected"), null!));
+
+        RecordScore score = Evaluator.ScoreRecord(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody)));
+
+        Assert.Contains("NullReferenceException", score.ScoringError);
+        Assert.False(score.Passed);
+    }
+
+    // The strictest stated budget, taken one record at a time: a record that states none leaves
+    // the running value alone, and a looser one never raises it.
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData(null, 900, 900)]
+    [InlineData(700, null, 700)]
+    [InlineData(700, 900, 700)]
+    [InlineData(900, 700, 700)]
+    public void StricterLatencyBudget_RunningValueAndOneRecord_KeepsTheSmallerStatedBudget(int? strictestSoFar, int? statedByRecord, int? expected)
+    {
+        ScoredRun run = Run(BaselineCase(p95LatencyMs: statedByRecord), Message(CommunicationChannel.Sms, EnglishSmsBody));
+
+        Assert.Equal(expected, Evaluator.StricterLatencyBudget(strictestSoFar, run));
+    }
+
     // Unscoreable rows and per-record isolation (playbook step 34).
 
     [Fact]

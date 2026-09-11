@@ -11,6 +11,7 @@ using Agent.Orchestration;
 using Agent.Safety;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Agent.Cli;
 
@@ -194,26 +195,21 @@ public sealed class CliRunner(
             return await ReplayAsync(inputPath, replayPath, evalReportPath, judge, loggerFactory, log, cancellationToken);
         }
 
-        // D65: the input open is guarded here, where ReadInput was already called, which is
-        // before the composer is built - so a path that will not open still costs no time and
-        // no money (playbook step 77).
+        // The input is opened before the composer is built, so a path that will not open costs
+        // no time and no money and exits 1. It stays open for the batch, which reads it a line
+        // at a time.
         Result<StreamReader> inputOpen = OpenInputReader("--input", inputPath);
         if (ReportIfFailed(inputOpen, log))
         {
             return CliExitCodes.UsageError;
         }
 
-        List<ProspectCase> cases;
-        List<string> parseFailures;
-        using (StreamReader inputReader = inputOpen.Value)
-        {
-            (cases, parseFailures) = ReadInput(inputReader, log);
-        }
+        using StreamReader inputReader = inputOpen.Value;
 
-        // D28: the model call is bounded by the strictest latency budget the batch states, so
-        // the composer is built after the records are read. Nothing that costs time or money
-        // has happened yet (playbook step 77): reading the file is local, and a bad composer
-        // name or a missing key still returns a usage error before the first call.
+        // A model call is bounded by the strictest latency budget the records state, so the
+        // model composer is built after a first pass over the file finds it. Nothing that costs
+        // time or money has happened yet: reading the file is local, and a bad composer name or
+        // a missing key still returns a usage error before the first call.
         var templateFallback = new TemplateMessageComposer();
         IMessageComposer baseComposer;
         try
@@ -221,7 +217,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudget.PerCallBudget(cases, modelCallBudget)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget)),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -252,10 +248,6 @@ public sealed class CliRunner(
             new SendScheduler(),
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
-
-        // A record that throws stays in `cases` (per-record isolation), so the records read are
-        // the parsed records plus the lines that did not parse, never plus the records that failed.
-        int recordsRead = cases.Count + parseFailures.Count;
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output/diagnostics path (bad directory, no write permission) must fail immediately,
@@ -307,14 +299,16 @@ public sealed class CliRunner(
 
         // D61, per batch: one wall-clock elapsed around the record loop, reported on the two
         // artifacts that are already per batch and never as a row in the diagnostics array.
-        // Rows are written inside the loop as records are folded, so it includes those writes.
+        // The input is read and parsed, and rows are written as records are folded, inside the
+        // loop, so it includes both.
         Stopwatch batchStopwatch = Stopwatch.StartNew();
 
         // Nothing in the template composer path observes cancellationToken itself, so the batch
         // does: a run cancelled before it starts writes nothing and starts no record.
         cancellationToken.ThrowIfCancellationRequested();
         await fold.BeginAsync(cancellationToken);
-        await RunWindowedAsync(agent, cases, referenceTime, log, fold, cancellationToken);
+        (int recordsRead, List<string> parseFailures) = await RunWindowedAsync(
+            agent, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
 
         batchStopwatch.Stop();
         double batchLatencyMs = batchStopwatch.Elapsed.TotalMilliseconds;
@@ -352,16 +346,16 @@ public sealed class CliRunner(
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
 
-    // Runs the batch with at most MaxConcurrentRecords records ahead of the fold and hands each
-    // finished run to the fold in input order. A record starts only once the record that many
-    // places before it is folded, so memory holds that window of runs, never the batch; the cost
-    // is that a slow record at the head holds back later starts until it finishes. On a cancel or
-    // a throw, the records still in flight are cancelled and awaited before the exception leaves,
-    // so none outlives the run and none replaces that exception.
-    // O(n) time in the batch size, one agent run and one fold per record; O(MaxConcurrentRecords) space.
-    private static async Task RunWindowedAsync(
+    // Reads the input a line at a time and keeps at most MaxConcurrentRecords runs ahead of the
+    // fold, which takes them in input order, so memory holds that window and never the batch; a
+    // slow record at the head holds back later starts until it finishes. A line that did not
+    // parse is reported once every earlier record is folded, so stderr keeps input order, and
+    // its failure text is all that is kept of it, for the scorecard. On a cancel or a throw, the
+    // records in flight are cancelled and awaited before the exception leaves.
+    // O(n) time in the input lines; O(MaxConcurrentRecords + f) space, f the lines that did not parse.
+    private async Task<(int RecordsRead, List<string> ParseFailures)> RunWindowedAsync(
         LeasingMessageAgent agent,
-        IReadOnlyList<ProspectCase> cases,
+        IEnumerable<Result<ProspectCase>> reads,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
         RecordFold fold,
@@ -369,23 +363,35 @@ public sealed class CliRunner(
     {
         using var inFlightCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var window = new Queue<Task<RecordRun>>(MaxConcurrentRecords);
+        var parseFailures = new List<string>();
+        int recordsRead = 0;
         try
         {
-            foreach (ProspectCase prospectCase in cases)
+            foreach (Result<ProspectCase> read in reads)
             {
+                // Every non-blank line is a record read, parsed or not; a record that later throws
+                // is still one record, never two.
+                recordsRead++;
+
+                if (!read.IsSuccess)
+                {
+                    await FoldEveryRunAsync(window, fold, cancellationToken);
+                    parseFailures.Add(read.Error);
+                    ReportFailure(log, LogLevel.Error, $"Record failed to parse: {read.Error}");
+                    continue;
+                }
+
                 if (window.Count == MaxConcurrentRecords)
                 {
                     await fold.AddAsync(await window.Dequeue(), cancellationToken);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                ProspectCase prospectCase = read.Value;
                 window.Enqueue(Task.Run(() => RunRecordAsync(agent, prospectCase, referenceTime, log, inFlightCancellation.Token)));
             }
 
-            while (window.Count > 0)
-            {
-                await fold.AddAsync(await window.Dequeue(), cancellationToken);
-            }
+            await FoldEveryRunAsync(window, fold, cancellationToken);
         }
         finally
         {
@@ -397,6 +403,38 @@ public sealed class CliRunner(
                 await Task.WhenAll((IEnumerable<Task>)window).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
+
+        return (recordsRead, parseFailures);
+    }
+
+    // Folds every run still in the window, oldest first. O(MaxConcurrentRecords).
+    private static async Task FoldEveryRunAsync(Queue<Task<RecordRun>> window, RecordFold fold, CancellationToken cancellationToken)
+    {
+        while (window.Count > 0)
+        {
+            await fold.AddAsync(await window.Dequeue(), cancellationToken);
+        }
+    }
+
+    // The per-call budget for the model composer. Without an override it is the strictest
+    // budget any parsed record states, found by a first pass that keeps only the running
+    // minimum and logs nothing, since the run's own pass reports every line. The pass reads
+    // through its own reader, so the run's reader, which has read nothing yet, still detects a
+    // byte order mark once the file is back at its first byte. With an override nothing is read.
+    // O(n) time in the input lines and O(1) space.
+    private static TimeSpan? ModelCallBudgetFromInput(StreamReader inputReader, TimeSpan? evaluationOverride)
+    {
+        TimeSpan? budget;
+        using (AgentLog.Configure(NullLoggerFactory.Instance))
+        using (var firstPass = new StreamReader(inputReader.BaseStream, leaveOpen: true))
+        {
+            budget = ModelCallBudget.PerCallBudget(
+                new JsonlRecordReader().ReadEach(firstPass).Where(read => read.IsSuccess).Select(read => read.Value),
+                evaluationOverride);
+        }
+
+        inputReader.BaseStream.Position = 0;
+        return budget;
     }
 
     // D37: one record's run, from its log scope to its result, returned rather than written

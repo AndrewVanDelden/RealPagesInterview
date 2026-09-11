@@ -520,6 +520,153 @@ public class CliRunnerTests
         }
     }
 
+    // The batch reads the input as it runs rather than all of it first, so memory does not grow
+    // with the file. t1 composes before line 3, the malformed one, has been reported, which a
+    // loop that read and reported every line before starting a record could not do.
+    [Fact]
+    public async Task RunAsync_MalformedLineAfterRecords_FirstRecordComposesBeforeTheLineIsReported()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"),
+            "{not valid json",
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new LineSignalingWriter("Record failed to parse: Line 3");
+        var composer = new FoldObservingComposer("no-such-record", "t1", errorWriter.Seen);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, composer);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            Assert.False(composer.EarlierRecordFoldedWhenObserverComposed);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(3, output.RootElement.GetArrayLength());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // stderr's failure lines follow input order whichever kind they are: a record that threw on
+    // line 1 is reported before the line 2 that did not parse.
+    [Fact]
+    public async Task RunAsync_RecordThrowsBeforeAMalformedLine_StderrKeepsInputOrder()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            "{not valid json",
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string[] failureLines = errorWriter.ToString()
+                .Split(Environment.NewLine)
+                .Where(line => line.StartsWith("Record ", StringComparison.Ordinal))
+                .ToArray();
+            Assert.Equal(2, failureLines.Length);
+            Assert.StartsWith("Record 't1' failed: ", failureLines[0], StringComparison.Ordinal);
+            Assert.StartsWith("Record failed to parse: Line 2 failed to parse", failureLines[1], StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // The records read are the non-blank lines, parsed or not, whether the batch holds them all
+    // or reads them one at a time.
+    [Fact]
+    public async Task RunAsync_BlankAndMalformedLines_BatchCompleteCountsEveryNonBlankLine()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string logFilePath = TempFilePath(".log");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            string.Empty,
+            "{not valid json",
+            "   ",
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            Assert.Contains("Batch complete: 3 record(s), 1 failure(s),", await File.ReadAllTextAsync(logFilePath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    // With the model composer and no evaluation budget, the strictest stated budget is read in a
+    // first pass over the file before the run. That pass is silent and the run starts again from
+    // the first byte, byte order mark included, so every record runs once and every warning and
+    // failure line appears once. No record has a consented channel, so no model call is made.
+    [Fact]
+    public async Task RunAsync_OpenAiComposerReadsTheBudgetFirst_EveryRecordRunsAndIsReportedOnce()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string NotContactable(string taskId) =>
+            RecordJson(taskId, "2026-01-10", "2025-12-08T15:04:00Z")
+                .Replace("\"email_opt_in\":true", "\"email_opt_in\":false", StringComparison.Ordinal)
+                .Replace("\"sms_opt_in\":true", "\"sms_opt_in\":false", StringComparison.Ordinal);
+        string content = string.Join(
+            Environment.NewLine,
+            NotContactable("t1"),
+            "{not valid json",
+            NotContactable("t2")[..^1] + ",\"expected\":\"not an object\"}");
+        await File.WriteAllTextAsync(inputPath, content, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage")])
+            .Build();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(configuration, new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(2, output.RootElement.GetArrayLength());
+            string[] lines = errorWriter.ToString().Split(Environment.NewLine);
+            Assert.Single(lines, line => line.StartsWith("Record failed to parse: Line 2", StringComparison.Ordinal));
+            Assert.Single(lines, line => line.Contains("Could not parse the 'expected' field", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     // The batch p95 is judged against the strictest budget any scored record states, whichever
     // position that record holds and whether or not the others state one. Rows are scored one
     // at a time as they are folded, so the strictest budget has to survive a later record that
