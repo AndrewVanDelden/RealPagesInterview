@@ -2959,3 +2959,20 @@ file and line, and the citation scan that resolves numbers against the archive r
 docs, the README and AGENTS.md. AGENTS.md states the rule once in its workflow section and names
 it among the check's rules. The check is CI's first step, so the rule now holds by tooling rather
 than by a sweep that has to be repeated.
+
+**Run and debug fact, D88 pinned (2026-09-10).** The pin waited for the code streams to stop
+moving the score; once D82 to D86 had merged and D87 was a comment sweep, which a mutation run
+cannot see, the score was measured on a fresh clone of the pushed sprint branch at `fba73d7`,
+isolated from the main checkout after an earlier run there shared build folders with a merge.
+`mutation.ps1` exited 0 in 10 minutes: the library 82.35 percent, 938 killed or timed out of
+1,139 with 201 survived, 282 compile errors and 143 ignored; the command line 87.94 percent, 248
+of 282 with 30 survived, 4 uncovered, 71 compile errors and 65 ignored. The library rose from the
+78.23 percent measured before the sprint's tests landed. Each configuration's `thresholds.break`
+is its score rounded down, 82 and 87, so the gate starts where the code is and fails only on a
+drop. A `mutation` job in `.github/workflows/test.yml` runs `mutation.ps1` after the gated suite
+and keeps its output; it gates a merge only once branch protection requires it, which is the
+owner's setting. `test.ps1` does not run it: D88 option (a) named both, and a ten-minute mutation
+run inside every test-first cycle would make the cycle the bottleneck, so the local gate stays
+the coverage suite and the mutation gate is CI's. That departure from the option's wording is
+named here rather than taken silently. The pinned commit's own run and a negative control with
+the command line's threshold raised to 99 are the next run and debug fact.

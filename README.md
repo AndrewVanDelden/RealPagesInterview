@@ -79,7 +79,9 @@ records, eight are stages no rule covers, answered by the generic row; three are
 judgment against a stated assumption (consent and preference, A1 and A3; an unknown zone, A6);
 two are the voice hour and a past move date; and three are one send slot where two rules fit
 the hold-out and the frozen set disagrees with the one chosen, which is recorded and not refitted
-(DESIGN.md section 3). Every set records zero safety violations and an empty review queue.
+(DESIGN.md section 3). Every set records zero safety violations. The review queue is empty on
+the samples and the hold-out and holds 3 rows on `synthetic_12.jsonl` and 11 on
+`synthetic_v2.jsonl`, one per record the generic row answered (D83).
 `BaselineNumbersTests` pins every tally, so a drop fails the build.
 
 The model path, `--composer openai --model-call-budget-ms 30000` (D70) on `synthetic_12.jsonl`,
