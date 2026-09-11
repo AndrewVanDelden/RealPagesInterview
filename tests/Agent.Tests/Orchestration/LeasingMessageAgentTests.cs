@@ -168,7 +168,13 @@ public class LeasingMessageAgentTests
 
         // The enum renders as its C# name, the way channel=Sms already does on the composed
         // line; the diagnostics file is where the snake_case spelling lives (D3).
-        Assert.Contains(capturingLogger.Entries, entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        // Warning, because the action is one no catalog row states and a person has to review it;
+        // exactly one line, carrying the persona, stage and branch and none of the record's text.
+        CapturingLogger<LeasingMessageAgent>.LogEntry fallback = Assert.Single(
+            capturingLogger.Entries,
+            entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, fallback.Level);
+        Assert.Contains("persona=resident, stage=renewal, branch=", fallback.Message, StringComparison.Ordinal);
     }
 
     // The other side of the same branch: a record whose row states the action it needs is not

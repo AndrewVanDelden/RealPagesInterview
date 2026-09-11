@@ -1895,6 +1895,63 @@ public class CliRunnerTests
         }
     }
 
+    // A record no catalog row covers still gets its message, and also a queue row naming the
+    // persona and stage that had no row and the action the generic row gave it. A record that
+    // is also refused on safety gets one row with both reasons. The run still exits 0: a
+    // queued record is work for a person, not a failed record.
+    [Fact]
+    public async Task RunAsync_GenericRowAnswers_QueuesARowPerRecordWithEveryReason()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        const string CatalogPair = "\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"";
+        const string UnseenPair = "\"persona\":\"guarantor\",\"lifecycle_stage\":\"screening\"";
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z").Replace(CatalogPair, UnseenPair, StringComparison.Ordinal),
+            SteeringRecordJson("t3").Replace(CatalogPair, UnseenPair, StringComparison.Ordinal));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal("sms", output.RootElement[1].GetProperty("next_message").GetProperty("channel").GetString());
+
+            using JsonDocument queue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(2, queue.RootElement.GetArrayLength());
+
+            JsonElement genericOnly = queue.RootElement[0];
+            Assert.Equal("t2", genericOnly.GetProperty("task_id").GetString());
+            Assert.Equal(new[] { "generic_row_no_match" }, genericOnly.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetString()).ToArray());
+            Assert.Equal(JsonValueKind.Null, genericOnly.GetProperty("draft").ValueKind);
+            JsonElement genericRow = genericOnly.GetProperty("generic_row");
+            Assert.Equal("guarantor", genericRow.GetProperty("persona").GetString());
+            Assert.Equal("screening", genericRow.GetProperty("lifecycle_stage").GetString());
+            Assert.True(JsonElement.DeepEquals(output.RootElement[1].GetProperty("next_action"), genericRow.GetProperty("action")));
+
+            JsonElement both = queue.RootElement[1];
+            Assert.Equal("t3", both.GetProperty("task_id").GetString());
+            Assert.Equal(
+                new[] { "safety_violation", "generic_row_no_match" },
+                both.GetProperty("reasons").EnumerateArray().Select(reason => reason.GetString()).ToArray());
+            Assert.Equal("fair_housing", both.GetProperty("violations")[0].GetProperty("check").GetString());
+            Assert.Equal("guarantor", both.GetProperty("generic_row").GetProperty("persona").GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reviewQueuePath);
+        }
+    }
+
     // D43 and D14: --replay runs no validator at all, so it has nothing to queue. Asking for
     // a queue from a replay is a usage error rather than a silently empty file that reads as
     // a clean run.

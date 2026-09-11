@@ -93,9 +93,13 @@ public sealed class LeasingMessageAgent(
         // Playbook step 43: the catalog's fallback is defined, and firing it is recorded
         // where a reader will see it. The diagnostics file carries the same fact, but only
         // when the run was given --diagnostics.
+        //
+        // Warning, not Information: no catalog row stated this action, so the record is also
+        // queued for a person to review. The line names the persona, stage and branch, which
+        // are catalog keys, and none of the record's own text.
         if (planned.Source != ActionSource.CatalogRow)
         {
-            log.LogInformation(
+            log.LogWarning(
                 "Next action came from the generic row ({Source}): persona={Persona}, stage={LifecycleStage}, branch={Branch}.",
                 planned.Source,
                 prospectCase.Persona,
