@@ -1,6 +1,6 @@
 # Release v1.1.0
 
-Tagged at `6e05adb`, the PR #33 merge into `dev`, Sprint 15's decisions D81 to D90. Playbook step
+Tagged at `6e05adb`, the PR #33 merge into `dev`, Sprint 15's decisions D81 to D87 and D89. Playbook step
 97: the narrative a reviewer reads. Published on GitHub from this file, as D79 did for `v1.0.0`;
 the tag is D91.
 
@@ -39,8 +39,7 @@ At this tag, template composer, reference times as documented:
 
 Safety passed on every scored record of all four sets. Half the blind set's failing records are a
 persona and stage no row covers, answered by the generic row and queued for review. 98 and 661
-tests at 100 percent line, branch and method coverage; mutation scores of 82 and 87 percent are
-required checks on `dev` (D88, D90), and warnings are errors (D89).
+tests at 100 percent line, branch and method coverage, and warnings are errors (D89).
 
 ## One bug found and fixed
 
@@ -53,7 +52,7 @@ nothing on the unfixed code and the row once the flush was added.
 ## Open questions
 
 Known at the tag and scheduled for Sprint 16: an empty-body completion is counted as zero tokens
-(D92), and the command line's mutation score sits 0.76 points over its pin (D93). Unscheduled: a
+(D92). Unscheduled: a
 no-completion-choice call loses its retry count; the 365-day cap on a rules-file slot has no data
 behind it (A25); and a rules-file parse error reports a zero-based line. The open questions of
 [DESIGN.md](DESIGN.md) section 4 stand.
