@@ -82,6 +82,22 @@ public class ScorecardTests
         Assert.Equal(2, scorecard.MeasuredCountOf(EvaluationCheck.SendAtDay));
     }
 
+    // The tallies are computed once from the rows, so the rows must not change after that:
+    // a caller that keeps and edits the list it passed in must not move the rows the
+    // scorecard reports away from the totals it reports.
+    [Fact]
+    public void Constructor_CallerEditsItsListAfterward_RowsAndTalliesStillAgree()
+    {
+        var rows = new List<RecordScore> { Score("t1") };
+        var scorecard = new Scorecard(rows, latencyBudgetMs: null);
+
+        rows.Add(Score("t2", channel: CheckResult.Failed));
+
+        Assert.Single(scorecard.RecordScores);
+        Assert.Equal(1, scorecard.TotalCount);
+        Assert.Equal(1, scorecard.MeasuredCountOf(EvaluationCheck.Channel));
+    }
+
     [Fact]
     public void ResultOf_EveryCheck_ReadsTheMatchingMember()
     {

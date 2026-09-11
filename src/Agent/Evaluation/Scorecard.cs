@@ -31,12 +31,14 @@ public sealed class Scorecard
         double? batchLatencyMs = null,
         ModelCostNotes? batchModelCost = null)
     {
-        RecordScores = recordScores;
+        // Copied once, O(n): the caller's list may be one it keeps editing, and rows that
+        // changed after the tallies were counted would disagree with them.
+        RecordScores = Array.AsReadOnly(recordScores.ToArray());
         LatencyBudgetMs = latencyBudgetMs;
         BatchLatencyMs = batchLatencyMs;
         BatchModelCost = batchModelCost;
-        latencyP95Ms = ComputeLatencyP95Ms(recordScores);
-        tallies = ComputeTallies(recordScores);
+        latencyP95Ms = ComputeLatencyP95Ms(RecordScores);
+        tallies = ComputeTallies(RecordScores);
     }
 
     public IReadOnlyList<RecordScore> RecordScores { get; }
