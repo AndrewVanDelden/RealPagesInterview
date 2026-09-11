@@ -2695,3 +2695,95 @@ type on the generic and the persona rows, the template's "at property" phrase an
 sentence, the judge's body `NotMeasured` rule, the fact-coverage half-match boundary, a value
 flag passed last with no value, the deterministic-check set, an empty violations list in the
 prompt, and `--log-file` appending across runs. They are the input to the threshold pin.
+
+**Run and debug fact, D82 send slots merged (2026-09-10).** A send-slot table keyed on persona,
+lifecycle stage and channel gives each row a count of local days after the floor's day and a
+local time; a key with no row keeps the channel's hour on the floor day, and the schedule
+diagnostics name which rule answered as `slot_row` or `channel_default`. Nine rows, one per
+hold-out record whose label is not the channel's hour, each fitted to that one record. On the
+hold-out, before and after on the agent's branch: send day 7 of 11 to 11 of 11, send hour 5 of
+11 to 11 of 11, overall 4 of 12 to 7 of 12; `synthetic_12.jsonl` unchanged at 12 of 13. A day
+offset is counted in local days, so five days across a spring-forward change still lands at
+09:00 local. No rule reads `missed_tour_time`, `move_in_date` or `lease_end_date`: each has a
+floor-relative rule that fits equally and needs no new member, so the ingest notes still list
+them as unknown, and D82's scope line naming two of them is not used. The scope-out "no minutes"
+is obsolete in DESIGN.md section 8, A5 and section 3's send rows; the quiet-hours scope-out in
+`docs/CODE_REVIEW.md` stands. The evaluator's hour check compares the hour only, so a send one
+minute or fifty-nine minutes off the label scores the same. The file override D82 option (c)
+calls for is not built: the table is compiled, and the loader, with row validation, lands with
+the `--rules` flag after D86.
+
+**Open question, the key for two send slots (2026-09-10).** Two rules reproduce the hold-out's
+09:05 for a prospect at new on email and 09:20 for a prospect at open on sms: a row keyed on the
+channel, and a row keyed on the record having no `last_interaction`. Every other record with a
+row differs from its pair on the channel as well, so the hold-out cannot tell the two apart.
+The channel rule is in the code, because the channel is already the scheduler's key and whether
+a record carries a last interaction says nothing about the time of day. Under it three records
+of `synthetic_12.jsonl`, each a prospect at open on sms with a last interaction, now send at
+09:20 where their labels say 09:00. Those labels were written from A5, the rule this change
+replaces, so they restate the old assumption rather than observe a send, and they are not
+evidence either way. What would settle it: a labeled record that is a prospect at open on sms
+with a last interaction, or at new on email with one. Until one exists the choice is a stated
+assumption and not a learned rule, and no check measures it.
+
+**Run and debug fact, D82 rows merged (2026-09-10).** Four action types join `ActionTypes`
+(`reset_cadence`, `schedule_sms_reminder`, `branch_on_intent`, `start_esign_flow`), and the
+catalog gains the long branch of prospect at new and a row each for prospect at no show and at
+cancelled by the manager, and resident at renewal window, renewal undecided, welcome, loyalty
+engage and renewal details requested. Every one of those hold-out records states no move date,
+so each row states only its long branch. The call-to-action table maps `reschedule_tour` to
+`reschedule` and `reply_intent` to `intent_capture`, and a record with no `primary_cta` now takes
+its persona and stage's default where one exists (`schedule_tour` for prospect at new,
+`review_renewal_details` for resident at renewal details requested) before the generic `reply`;
+a stated `primary_cta` still wins. On the agent's branch the hold-out's action went from 7 of 12
+to 12 of 12 and call to action from 7 of 11 to 11 of 11, and `synthetic_12.jsonl` held at 12 of 13.
+Three things no check measures: the action check compares the type only, so the follow-up
+values 2 and 5, the reminder's `in_days` and the reply mapping are unscored, and the last two
+are not emitted because `NextAction` has no member for them; `prospect_spanish_locale` is
+labeled a follow-up in 2 days and gets 3 from sample 2's row, and five fields separate the two
+records, so no rule was written; and the labels' resident links and subjects are not built. The
+long-branch name `prospect_welcome_long_horizon` is fitted where more than one field separates
+that record from sample 1; the type is the same on both branches. The generic row is the same
+for every persona, so a resident whose move date falls inside the short horizon, at a stage whose
+row states only the long branch, is answered with the prospect welcome cadence; D83 queues it for
+review. `-warnaserror` proves nothing on an up-to-date tree, since nothing recompiles: the
+warnings check is `dotnet build -warnaserror --no-incremental`. A warnings build that ran beside
+the mutation run on the same folders reported one error that a clean rebuild after stopping it
+did not reproduce: two builds of one tree at once are not a measurement.
+
+**Run and debug fact, Phase 3 re-run after D82 (2026-09-10).** A confirming `mutation.ps1` run
+was started on the sprint tip in the main checkout, and the D82 slot merge's build, suite and
+scoring were started in the same checkout while it ran; its warnings build reported one error
+that a clean rebuild did not reproduce. The mutation task was stopped. Two later process checks
+started from a bash chain reported Stryker still running, and the process ids they named were
+already gone when stopped: the check's own pattern was on the command line of the bash chain
+that launched it, so it matched its parent shell, and a check that excludes only itself and its
+own children cannot tell a shell from a Stryker process. Whether any Stryker process outlived the
+task stop is not established. A check that matched on the process name and on the Stryker
+command line alone, run directly, found none, and every number below was taken again after it on
+a tree with no Stryker process: they match the earlier run exactly. Both D82 halves merged; the
+one conflict, the hold-out row of `BaselineNumbersTests`, was resolved by pinning the numbers the
+merged code produced on its own hold-out run. After both: 86 and 616 tests, 100 percent line,
+branch and method coverage, a clean `dotnet build -warnaserror --no-incremental`. Phase 3's
+check passed: `synthetic_12.jsonl`, the step 9 set of record, reads 12 of 13 with its malformed
+line an error row, unchanged, under the template composer with no model; and every record on all
+four sets carries an action source, a schedule floor and source, a composer and a required-state
+map, or a suppression reason. The hold-out reads 12 of 12, fitted since D81, so it shows the
+rules reproduce their evidence and nothing about generalizing. Every review queue is empty.
+
+**Run and debug fact, the honest number after D82 (2026-09-10).** `synthetic_v2.jsonl` reads 13
+of 30 on the template composer: channel 25 of 29, send day 24 of 26, send hour 19 of 26, action
+17 of 29, call-to-action type 23 of 24, payload 24 of 25, opt-out, language, safety and
+personalization full, and the malformed line 15 an error row. Its sixteen failing records:
+eight are stages no row covers (prospect at toured, applied, approved and lost; resident at
+active, renewal and notice given; prospect at renewal), answered by the generic row, which D83
+queues for review; three are the author's judgment against a stated assumption, an empty
+preference list and a consent only for a channel not preferred both labeled as sent by email
+where A1 and A3 suppress, and an unknown zone labeled in Central time where A6 uses UTC; two
+are the voice hour, labeled 10:00 where A5 says 09:00, and a past move date labeled a new
+cadence where A7 gives the generic follow-up. The last three are the prospect at new on email
+slot: each sends at 09:05 where its label says 10:00. That row is the one the open question of
+2026-09-10 names, and the frozen set disagrees with the channel key there. Choosing the other
+key because of it would fit a rule to the frozen set, which D81 forbids, so the disagreement is
+recorded and the choice stands until a labeled training record settles it. The scorecard is
+committed as `docs/scorecards/synthetic_v2_template.txt`.

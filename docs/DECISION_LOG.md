@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 3 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Deterministic core, reached 2026-09-10 after Phases 0, 1 and 2 passed again (D81).
-Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and the diagnostics explain every decision. Not yet run: D82 is open.
-Next step: merge both halves of D82 when they report, then run this check; then Phase 6 (D86, then D83) and Phase 8 (D87).
+Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Orchestration, entry points, and operations, reached 2026-09-10 after Phase 3 passed again with D82 (Phases 4 and 5 unchanged by this sprint).
+Check: the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code. Not yet run: D86 and D83 are open.
+Next step: merge D86 with its addendum when its benchmark meets the check, then D83; then Phase 8 (D87) and the D88 threshold pin.
 Open decisions: D89, warnings as errors in the build, proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -137,4 +137,5 @@ errors in the build. D81 merged: `synthetic_v2.jsonl`, 29 records and
 a malformed line, written blind, its labels disagreeing on purpose with A6 and A7, a run and
 debug fact; `holdout_12.jsonl` is training data from the same day. Phase 1 passed from a fresh clone and Phase 2 on the
 scorer proofs; D85 and D84 merged, a run and debug fact. D86 streamed its output but missed its memory
-check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts.
+check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts. D82 merged in two halves and Phase 3 passed;
+the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and debug facts.
