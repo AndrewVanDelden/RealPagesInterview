@@ -2824,3 +2824,52 @@ since what the decision set out to bound is what the program holds per record, a
 tune the runtime to pass a number. Scopes: D86's check line and the design doc's benchmark only.
 Evidence: the capped and uncapped tables above. Assumptions: none. Not taken: a check changed
 after its result is the owner's call.
+
+**Run and debug fact, D83 merged (2026-09-10).** A record whose next action came from the
+generic row now also gets a review-queue row naming what had no row: the persona and stage for
+`generic_row_no_match`, and the branch too for `generic_row_no_branch`, with the action given.
+The message still goes out and `--output`, `next_action`, the diagnostics and the exit code are
+unchanged. Every queue row carries `reasons`, and a record refused on safety that the generic
+row also answered is one row with both; `violations` and `draft` keep their place first and are
+null on a row not refused on safety, so a safety row reads as before apart from the two members
+appended after them. The decision's scope named a queue reason carried on the result; the queue
+entry reads the existing `action_plan` instead, so one fact is not stored twice. A record whose
+composition failed is queued when the generic row chose its action, which the decision did not
+say. Queue rows before and after: `sample.jsonl` 0 and 0, `holdout_12.jsonl` 0 and 0,
+`synthetic_12.jsonl` 0 and 3, `synthetic_v2.jsonl` 0 and 11; output, diagnostics without
+`latency_ms` and reports with latency masked identical on all four. The decision's check passed:
+`synthetic_02_unseen_persona_and_stage` is queued with `generic_row_no_match`, and the hold-out's
+queue is empty.
+
+**Run and debug fact, a log line that carried record text (2026-09-10).** The generic-row log
+line has named `persona` and `stage` since it was written, and D83 raised it from Information to
+Warning with a comment calling those values catalog keys. They are the record's own free text,
+and on a missed match they are by definition not catalog keys, so the line broke the rule that a
+log carries no value a record authored; the D83 brief asked for the line to carry them while
+also saying it carried no record text, so the fault began in the brief. Fixed test first on the
+D83 branch: the test gave the record a marker persona and stage and asserted neither reached the
+line, and it failed with `persona=persona-marker-7f3a` in the message; the line now names the
+source and the branch and says the review queue names the pair. A first red on that test came
+from the test's own assumed branch rather than from the leak, and was corrected before the fix
+was written, since a red for the wrong reason proves nothing. The operations guide's logging
+table still listed the line under Information and now lists it under Warning.
+
+**Run and debug fact, D82 rules-file loader merged (2026-09-10).** A rules file in JSON holds
+the action catalog, its generic row and its rows, and the send-slot rows, and replaces the
+compiled ones whole rather than merging with them; the call-to-action table stays compiled. The
+loader reads each row on its own and reports every bad row in one failure, by its 1-based place
+in its array and by its key: a blank persona or stage, a duplicate key, an unknown action type, a
+value that is not positive, a slot whose channel is absent or not sms, email or voice, whose day
+offset is absent, negative or above 365, or whose local time is absent or not 24-hour `HH:mm`.
+A member the format does not define, or one stated twice, is refused rather than skipped, so a
+misspelled member cannot drop a rule silently; a duplicated member fails the whole file, since
+the parse into rows applies that check first. Invalid JSON fails with the exception type and a
+position and no text from the file. `ActionCatalog.Create` now names every bad row where it named
+the first, and exposes its generic row and rows for the round-trip test; `SendSlotTable` is a
+value the scheduler takes, the compiled rows its default. The compiled rules written as a file
+and read back give equal answers for every compiled key on both branches and every channel.
+After the merge all four sets match the D83 runs file for file, queues included. Two findings:
+the 365-day cap on a slot's day offset is the agent's judgment, a guard against date overflow in
+the scheduler with no data behind the number (A25); and the position a parse failure reports
+comes from the shared exception formatter, whose line number is zero-based, harmless for a JSONL
+line and misleading in a multi-line rules file.
