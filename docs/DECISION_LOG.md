@@ -14,8 +14,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review, reached 2026-09-10 after D82's flag merged and Phase 6 held (Phase 7 unchanged but for D88's first half).
-Check: the README's run command and the runbook's steps both work from the tagged commit. Not yet run: the release tag is open.
-Next step: run the runbook from a fresh clone of the pinned commit, then the sprint PR against `dev` and the tag.
+Check: the README's run command and the runbook's steps both work from the tagged commit. Passed 2026-09-10 on a fresh clone of the pinned commit, all 14 runbook assertions; the tag follows the PR.
+Next step: the sprint PR against `dev`, then the tag on the merged commit.
 Open decisions: D89, warnings as errors in the build; the D86 check amendment; both proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -142,4 +142,5 @@ the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and d
 its memory check unmet at default settings and met with the heap capped, and Phase 6 passed. D83 merged, its log line fixed to carry no
 record text, and the D82 rules-file loader merged, both run and debug facts. The `--rules` flag merged, and D87 swept
 every comment in `src` and `tests`, now held by the instruction check, run and debug facts. D88 pinned its thresholds at 82 and 87 percent,
-measured on a clean clone, with a CI job.
+measured on a clean clone, with a CI job. The pinned gate passed and its negative
+control failed on the score, both run and debug facts.

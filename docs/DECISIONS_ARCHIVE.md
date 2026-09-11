@@ -2987,3 +2987,24 @@ redone. Fixed by setting `low` equal to `break` and `high` to 90 in both configu
 low and break are in the order Stryker requires; high and low only color the report, and break
 is the gate. The pin was written without running the thing it configures, which is the failure
 Verify First names; the run that caught it was already planned as the pin's proof.
+
+**Run and debug fact, the mutation gate's negative control (2026-09-10).** Redone after the pin
+fix, in its own clone at `17da08e` with the command line's thresholds set to high 100, low 99
+and break 99: Stryker ran for 97 seconds, scored 87.59 percent, logged "Final mutation score is
+below threshold break", and exited 2. So the break threshold fails a run on the score itself,
+which the first control, refused on the configuration, could not show. The same code scored
+87.94 percent in the measurement run, because a mutant that times out counts as detected and how
+many time out varies between runs; with the command line pinned at 87, that spread of 0.35 points
+leaves a margin of 0.59, which is the input to whether a pin needs headroom below the measured
+score rather than the score rounded down.
+
+**Run and debug fact, the pinned mutation gate passes (2026-09-10).** `mutation.ps1` on `17da08e`,
+the fixed pin, in the isolated measurement clone: exit 0 in 304 seconds, the library 82.44
+percent against a break of 82 and the command line 87.59 percent against 87. Across the runs on
+unchanged code the library read 82.35 and 82.44 and the command line 87.94, 87.59 and 87.59, so
+the smallest margins over the pins are 0.35 and 0.59 points and the largest spread between runs is
+0.09 and 0.35. Each margin exceeds its observed spread, so the pins stay at the score rounded
+down, as D88 says. The spread comes from mutants that time out, which count as detected, so a
+slower CI runner times out more of them and moves the score up rather than down. The margins are
+thin; if the CI job fails on a score within one point of its pin with no code change, headroom
+below the measured score is a decision for the owner, not a pin to lower in place.
