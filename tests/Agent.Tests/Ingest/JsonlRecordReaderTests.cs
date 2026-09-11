@@ -451,6 +451,34 @@ public class JsonlRecordReaderTests
         Assert.DoesNotContain("invalid start of a value", result.Error);
     }
 
+    // The batch reads one record at a time so memory does not grow with the file: taking the
+    // first result reads the first line and nothing after it.
+    [Fact]
+    public void ReadEach_FirstResultTaken_LeavesLaterLinesUnread()
+    {
+        using TextReader reader = new StringReader(MinimalValidLine + "\n{not valid json\n");
+
+        Result<ProspectCase> first = Reader.ReadEach(reader).First();
+
+        Assert.True(first.IsSuccess);
+        Assert.Equal("{not valid json", reader.ReadLine());
+    }
+
+    // A lazy read keeps the whole read's numbering: blank lines count toward the line number
+    // and yield nothing, so a failure names the line an editor shows.
+    [Fact]
+    public void ReadEach_BlankLinesBeforeAMalformedLine_FailureNamesTheFileLineNumber()
+    {
+        using TextReader reader = new StringReader("\n" + MinimalValidLine + "\n   \n{not valid json\n");
+
+        Result<ProspectCase>[] results = Reader.ReadEach(reader).ToArray();
+
+        Assert.Equal(2, results.Length);
+        Assert.True(results[0].IsSuccess);
+        Assert.False(results[1].IsSuccess);
+        Assert.StartsWith("Line 4 failed to parse: JsonException", results[1].Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ProspectCase_WithExpectedPresent_RoundTripsThroughSerializeAndDeserialize()
     {

@@ -13,12 +13,13 @@ namespace Agent.Composition;
 // offline composer, and say so in the diagnostics (D24).
 public static class ModelCallBudget
 {
-    // O(n) in the batch size: one pass over the records, before any call is made; O(1) when an
-    // override is given.
+    // O(n) time in the batch size and O(1) space: one pass over the records, keeping only the
+    // running minimum, before any call is made. With an override the records are never read,
+    // so a caller may pass a lazy read of the input and pay for it only when it is used.
     // D70: an evaluation run may state its own budget, which replaces the records' rather than
     // taking the stricter of the two, or it could never raise one. The p95 check still reads the
     // records' own budget (Evaluator), so a run under an override reports the miss.
-    public static TimeSpan? PerCallBudget(IReadOnlyList<ProspectCase> cases, TimeSpan? evaluationOverride = null)
+    public static TimeSpan? PerCallBudget(IEnumerable<ProspectCase> cases, TimeSpan? evaluationOverride = null)
     {
         if (evaluationOverride is not null)
         {
