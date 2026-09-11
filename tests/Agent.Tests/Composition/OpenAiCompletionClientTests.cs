@@ -26,9 +26,12 @@ public class OpenAiCompletionClientTests
          "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
         """;
 
-    private const string EmptyContentJson = """
+    // A completed call whose one choice has an empty body, with the usage block the vendor
+    // billed it by.
+    private const string EmptyContentUsageJson = """
         {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
-         "choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}]}
+         "choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],
+         "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
         """;
 
     [Fact]
@@ -224,14 +227,22 @@ public class OpenAiCompletionClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.CompleteAsync("system", "user", null, cancellation.Token));
     }
 
+    // A choice with an empty body is a completed call the vendor billed, so it is returned as a
+    // completion with its usage counts rather than thrown: a throw after the usage block was read
+    // lands in the composer's catch for calls that never completed, which counts it as abandoned
+    // with zero tokens. The composer turns the empty content into a failed outcome.
     [Fact]
-    public async Task CompleteAsync_ResponseHasNoContent_ThrowsInvalidOperationException()
+    public async Task CompleteAsync_ResponseHasEmptyContentButCarriesUsage_ReturnsAnEmptyCompletionWithTheVendorsTokenCounts()
     {
-        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, EmptyContentJson));
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, EmptyContentUsageJson));
         using var httpClient = new HttpClient(handler);
         ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync("system", "user"));
+        ModelCompletion completion = await client.CompleteAsync("system", "user");
+
+        Assert.Equal(string.Empty, completion.Content);
+        Assert.Equal(11, completion.InputTokens);
+        Assert.Equal(7, completion.OutputTokens);
     }
 
     // Playbook step 52: a low temperature is set, and never called determinism.

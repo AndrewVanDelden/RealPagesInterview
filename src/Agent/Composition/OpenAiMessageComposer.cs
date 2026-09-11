@@ -104,9 +104,11 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             log.LogWarning("Completion request failed: {CompletionFailure}.", failure);
 
             // ModelCostNotes' second state: the call was made and it is counted; nothing came
-            // back to measure, because every exception caught here is thrown before or instead
-            // of a completion, so the tokens are zero and CompletedCalls beside them is what
-            // says the zero is not a free call.
+            // back to measure, so the tokens are zero and CompletedCalls beside them is what says
+            // the zero is not a free call. That holds only while the client throws before or
+            // instead of a completion. A completed call must not reach this catch: one with no
+            // choice is caught above with its tokens, and one with an empty body is returned as a
+            // completion and fails at the JSON parse below with its tokens and retries.
             return new ComposeOutcome.Failed($"Completion request failed: {failure}")
             {
                 ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0),
