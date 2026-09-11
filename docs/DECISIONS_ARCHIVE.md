@@ -2481,7 +2481,7 @@ tests isolate on, which the file header records. The eight hold-out misses were 
 fields: four action types the samples never showed (`reset_cadence`, `schedule_sms_reminder`,
 `branch_on_intent`, `start_esign_flow`), three call-to-action types (`reschedule`,
 `intent_capture`, `review_renewal_details`), the long branch of the new-prospect row, and a send
-day and hour per stage where the program has one hour per channel. D81 to D88 are the plan to
+day and hour per stage where the program has one hour per channel. D81 to D87 are the plan to
 raise every dimension to 9.
 
 **D81. The hold-out becomes training data and a new frozen set carries the honest number
@@ -2567,27 +2567,15 @@ Evidence: the Sprint 8 and D68 facts recording the two renumbering sweeps. Assum
 Check: a grep for a D or S number under `src` and `tests` returns nothing; build, tests and the
 instruction check unchanged.
 
-**D88. A mutation score beside the coverage gate (proposed 2026-09-10).** Question: coverage at
-100 percent proves every line ran, not that a test would notice a changed line, and the glossary
-already names mutation testing as the number that replaces it. Options: (a) Stryker.NET as a
-tool-manifest tool in `test.ps1` and CI, the threshold pinned at the first measured score and
-raised as it rises, coverage kept; (b) coverage only. Recommendation: (a). The agent confirms the
-current package version and its .NET 10 support from the Stryker documentation before adding it;
-neither was checked when this was written. Scopes: `test.ps1`, `.github/workflows/test.yml`, a
-tool manifest, DESIGN.md section 9. Order: set up in parallel, the threshold pinned after D87
-merges, since every stream moves the score. Evidence: the glossary entries for coverage and
-mutation testing. Assumptions: none. Check: a planted mutant, the planner threshold flipped from
-at most to under, is reported killed, and the score is in `test-output.txt`.
-
-**D81 to D88 taken (2026-09-10).** The owner took every recommendation on 2026-09-10 after PR #32
-merged: D81 (a), D82 (c), D83 (a), D84 (a), D85 (a), D86 (a), D87 (a), D88 (a). The log's open
+**D81 to D87 taken (2026-09-10).** The owner took every recommendation on 2026-09-10 after PR #32
+merged: D81 (a), D82 (c), D83 (a), D84 (a), D85 (a), D86 (a), D87 (a). The log's open
 line said taking D81 sends the project to Phase 2; step 9, the frozen set, is in Phase 0, so the
 project returns to Phase 0 and each later phase's check is run again before the next phase's work
 merges (step 102). Work is written in parallel, one worktree per decision, and merged into the
-sprint branch in phase order (step 103): D81 (Phase 0); D85 and D88 (Phase 2, the harness); D82,
+sprint branch in phase order (step 103): D81 (Phase 0); D85 (Phase 2, the harness); D82,
 D84 and D83 (Phase 3, the core, D82 only after D81 has merged); D86 (Phase 6); D87 (Phase 8). D83
 moves after D86 rather than beside D84, since both D83 and D86 edit the fold in `CliRunner.cs`.
-D88 lands its tool and a first measured score in Phase 2 and pins the threshold after D87. One PR
+One PR
 per sprint (AGENTS.md) rather than per decision (step 103): each decision is its own merge commit
 on the sprint branch, so it is reviewed as a unit inside the one PR.
 
@@ -2595,7 +2583,7 @@ on the sprint branch, so it is reviewed as a unit inside the one PR.
 while the phase read 0, so four of them edit `src` and `tests` on unmerged branches, against the
 AGENTS.md rule that nothing under `src` or `tests` is edited while the phase is 0 or 1. The D85
 agent named the conflict. The exception is deliberate: the owner asked for every agent at once,
-D84 to D88 are later-phase root causes whose decisions are taken, and the rule's guarantee, no code
+D84 to D87 are later-phase root causes whose decisions are taken, and the rule's guarantee, no code
 before intake, is kept where it lands: no branch that touches `src` or `tests` merges into the
 sprint branch until Phase 0's check passes after D81. The D85 review found the new constructor
 kept the caller's list by reference, so a caller that edited it afterward reported rows that
@@ -2633,10 +2621,7 @@ which. Phase 0's check passed with A24 added: the assumptions log has no blank e
 passed from a fresh clone of `sprint-15-architecture` at `06149a7` taken from origin: `.\test.ps1`
 exited 0, 86 and 564 tests, 100 percent line, branch and method coverage in both projects. D85
 merged first, since Phase 2 is the harness, and Phase 2's check, the scorer proofs, passed inside
-the gated suite. D88 is also placed in Phase 2 but touches no file under `src` or `tests` and
-pins no threshold until after D87, so its first half merges when its measurement finishes rather
-than holding the Phase 3 merges behind a mutation run; this is a reorder inside step 103's
-phase order, named here. D84 merged next as the first Phase 3 decision. Its design, which goes
+the gated suite. D84 merged next as the first Phase 3 decision. Its design, which goes
 past the brief: the loop's clean exits attach a verdict object that only the library can
 construct, and the final gate reuses it only for the same validator instance, an equal draft and
 equal constraints, validating everything else, a refused draft, another composer's output, and a
@@ -2672,29 +2657,6 @@ template path reads the file once), `Evaluator` (one public per-record scoring m
 batch path also calls, replacing a one-row scorecard built per record) and the three lines of
 `docs/OPERATIONS.md` the first change made wrong. The check is unchanged: without
 `--eval-report`, peak working set at 12,000 records within 10 percent of 120.
-
-**Run and debug fact, D88 first half merged (2026-09-10).** Stryker.NET 4.16.0 is a local tool
-pinned in `.config/dotnet-tools.json`, confirmed against its NuGet index and the Stryker
-documentation, which states it requires the .NET 10 runtime or newer. It mutates one project
-under test per run, so there are two configurations, `stryker-config.json` for the library and
-`stryker-config.cli.json` for the command line, each with `thresholds.break` at 0, the documented
-default, until the pin after D87. `mutation.ps1` runs both and tees to `mutation-output.txt`.
-Stryker's own MSBuild discovery chose Visual Studio 2022's MSBuild 17.14, which resolved the
-.NET 9 SDK and failed to analyze every `net10.0` project, so the script passes the MSBuild of the
-SDK that `dotnet --version` resolves; a CI image with Visual Studio needs the same. Measured on
-`2772990`, two runs with the same scores: the library 78.23 percent (721 killed, 202 survived, 5
-timeouts, 238 compile errors, 113 ignored of 1279), the command line 87.44 percent (194 killed,
-24 survived, 4 uncovered, 1 timeout, 68 compile errors, 40 ignored of 331), 4.4 minutes on 16
-workers. The planner mutant `days < ShortHorizonThresholdDays` is killed by the boundary test at
-45 days. Two methods, `IngestNotes.Collect` and `OpenAiCompletionClient.CompleteAsync`, are
-unmeasured: a CS0165 compile error in each dropped every mutant there. 69 of the library's 202
-survivors are string mutants in the stop-word lists of `LanguageDetector`. The ten survivors the
-agent ranked first are each a boundary or branch no test pins: the scheduler's roll to the next
-day when the floor equals the send hour, `ActionCatalog.Create` refusing an unknown long-horizon
-type on the generic and the persona rows, the template's "at property" phrase and empty-interest
-sentence, the judge's body `NotMeasured` rule, the fact-coverage half-match boundary, a value
-flag passed last with no value, the deterministic-check set, an empty violations list in the
-prompt, and `--log-file` appending across runs. They are the input to the threshold pin.
 
 **Run and debug fact, D82 send slots merged (2026-09-10).** A send-slot table keyed on persona,
 lifecycle stage and channel gives each row a count of local days after the floor's day and a
@@ -2747,21 +2709,9 @@ that record from sample 1; the type is the same on both branches. The generic ro
 for every persona, so a resident whose move date falls inside the short horizon, at a stage whose
 row states only the long branch, is answered with the prospect welcome cadence; D83 queues it for
 review. `-warnaserror` proves nothing on an up-to-date tree, since nothing recompiles: the
-warnings check is `dotnet build -warnaserror --no-incremental`. A warnings build that ran beside
-the mutation run on the same folders reported one error that a clean rebuild after stopping it
-did not reproduce: two builds of one tree at once are not a measurement.
+warnings check is `dotnet build -warnaserror --no-incremental`.
 
-**Run and debug fact, Phase 3 re-run after D82 (2026-09-10).** A confirming `mutation.ps1` run
-was started on the sprint tip in the main checkout, and the D82 slot merge's build, suite and
-scoring were started in the same checkout while it ran; its warnings build reported one error
-that a clean rebuild did not reproduce. The mutation task was stopped. Two later process checks
-started from a bash chain reported Stryker still running, and the process ids they named were
-already gone when stopped: the check's own pattern was on the command line of the bash chain
-that launched it, so it matched its parent shell, and a check that excludes only itself and its
-own children cannot tell a shell from a Stryker process. Whether any Stryker process outlived the
-task stop is not established. A check that matched on the process name and on the Stryker
-command line alone, run directly, found none, and every number below was taken again after it on
-a tree with no Stryker process: they match the earlier run exactly. Both D82 halves merged; the
+**Run and debug fact, Phase 3 re-run after D82 (2026-09-10).** Both D82 halves merged; the
 one conflict, the hold-out row of `BaselineNumbersTests`, was resolved by pinning the numbers the
 merged code produced on its own hold-out run. After both: 86 and 616 tests, 100 percent line,
 branch and method coverage, a clean `dotnet build -warnaserror --no-incremental`. Phase 3's
@@ -2960,62 +2910,10 @@ docs, the README and AGENTS.md. AGENTS.md states the rule once in its workflow s
 it among the check's rules. The check is CI's first step, so the rule now holds by tooling rather
 than by a sweep that has to be repeated.
 
-**Run and debug fact, D88 pinned (2026-09-10).** The pin waited for the code streams to stop
-moving the score; once D82 to D86 had merged and D87 was a comment sweep, which a mutation run
-cannot see, the score was measured on a fresh clone of the pushed sprint branch at `fba73d7`,
-isolated from the main checkout after an earlier run there shared build folders with a merge.
-`mutation.ps1` exited 0 in 10 minutes: the library 82.35 percent, 938 killed or timed out of
-1,139 with 201 survived, 282 compile errors and 143 ignored; the command line 87.94 percent, 248
-of 282 with 30 survived, 4 uncovered, 71 compile errors and 65 ignored. The library rose from the
-78.23 percent measured before the sprint's tests landed. Each configuration's `thresholds.break`
-is its score rounded down, 82 and 87, so the gate starts where the code is and fails only on a
-drop. A `mutation` job in `.github/workflows/test.yml` runs `mutation.ps1` after the gated suite
-and keeps its output; it gates a merge only once branch protection requires it, which is the
-owner's setting. `test.ps1` does not run it: D88 option (a) named both, and a ten-minute mutation
-run inside every test-first cycle would make the cycle the bottleneck, so the local gate stays
-the coverage suite and the mutation gate is CI's. That departure from the option's wording is
-named here rather than taken silently. The pinned commit's own run and a negative control with
-the command line's threshold raised to 99 are the next run and debug fact.
-
-**Run and debug fact, an invalid pin caught by running the gate (2026-09-10).** The D88 pin
-raised `thresholds.break` to 82 and 87 and left `low` at 60, and Stryker.NET refuses a
-configuration where low is under break: the pinned commit's own run exited 1 within a second in
-both projects with "Threshold low must be more than or equal to threshold break", so the pushed
-pin broke `mutation.ps1` and would have failed the CI job on every run. The negative control,
-break raised to 99, failed with the same message, so it showed nothing about the score and is
-redone. Fixed by setting `low` equal to `break` and `high` to 90 in both configurations, so high,
-low and break are in the order Stryker requires; high and low only color the report, and break
-is the gate. The pin was written without running the thing it configures, which is the failure
-Verify First names; the run that caught it was already planned as the pin's proof.
-
-**Run and debug fact, the mutation gate's negative control (2026-09-10).** Redone after the pin
-fix, in its own clone at `17da08e` with the command line's thresholds set to high 100, low 99
-and break 99: Stryker ran for 97 seconds, scored 87.59 percent, logged "Final mutation score is
-below threshold break", and exited 2. So the break threshold fails a run on the score itself,
-which the first control, refused on the configuration, could not show. The same code scored
-87.94 percent in the measurement run, because a mutant that times out counts as detected and how
-many time out varies between runs; with the command line pinned at 87, that spread of 0.35 points
-leaves a margin of 0.59, which is the input to whether a pin needs headroom below the measured
-score rather than the score rounded down.
-
-**Run and debug fact, the pinned mutation gate passes (2026-09-10).** `mutation.ps1` on `17da08e`,
-the fixed pin, in the isolated measurement clone: exit 0 in 304 seconds, the library 82.44
-percent against a break of 82 and the command line 87.59 percent against 87. Across the runs on
-unchanged code the library read 82.35 and 82.44 and the command line 87.94, 87.59 and 87.59, so
-the smallest margins over the pins are 0.35 and 0.59 points and the largest spread between runs is
-0.09 and 0.35. Each margin exceeds its observed spread, so the pins stay at the score rounded
-down, as D88 says. The spread comes from mutants that time out, which count as detected, so a
-slower CI runner times out more of them and moves the score up rather than down. The margins are
-thin; if the CI job fails on a score within one point of its pin with no code change, headroom
-below the measured score is a decision for the owner, not a pin to lower in place.
-
 **D89 and the D86 check amendment taken (2026-09-10).** The owner took D89 (a), warnings as
-errors through `TreatWarningsAsErrors` in `Directory.Build.props`, so every local build, test run,
-mutation build and CI run enforces it; and the D86 check amendment (a), so D86's check is a run
+errors through `TreatWarningsAsErrors` in `Directory.Build.props`, so every local build, test run and CI run enforces it; and the D86 check amendment (a), so D86's check is a run
 with the managed heap capped at 16 MB in which 12,000 records land within 10 percent of the
-120-record peak working set and a 120,000-record run completes under the same cap. The owner
-also asked for research on making the `mutation` job a required check on `dev` and for the best
-course to be taken; that is D90. D89 is Phase 1 work, the environment, done on this sprint's
+120-record peak working set and a 120,000-record run completes under the same cap. D89 is Phase 1 work, the environment, done on this sprint's
 branch and PR because the phase it touches has passed again in this sprint and the change adds a
 gate rather than a behavior; its check is a planted warning failing `.\test.ps1`.
 
@@ -3025,25 +2923,6 @@ gate rather than a behavior; its check is a planted warning failing `.\test.ps1`
 used`, and with the file removed `.	est.ps1` passed, 97 and 660 tests at 100 percent coverage, so
 the code carries no warning under the setting. CI builds through the same properties file, so
 the same setting holds there by construction; no failing commit was pushed to show it in CI.
-Stryker compiles each mutant with the project settings, so a mutant that raises a warning now
-fails to compile and leaves the score; the pinned gate is run again on this commit.
-
-**D90. The mutation job as a required check on `dev` (proposed 2026-09-10).** Question: the CI
-`mutation` job runs `mutation.ps1` after the gated suite on every pull request into `dev`, and
-branch protection requires only `test`, so a fall in the mutation score does not block a merge.
-Options: (a) add `mutation` to the checks `dev` requires; (b) leave it a report; (c) run it on a
-schedule instead of per pull request. Recommendation: (a), once its runs on the CI runner pass in
-a time a pull request can wait for, since a rule that must hold with no exceptions belongs in
-tooling and a check that does not gate is a report. GitHub reports a required job skipped by a
-condition as a success and keeps a workflow skipped by path or branch filters pending, which
-blocks a merge; the job has no filters and is skipped only when `test` fails, which already
-blocks. The risk is a failure on noise: the smallest margins over the pins are 0.35 and 0.59
-points, and a slower runner times out more mutants, which count as detected and move the score
-up, not down. Scopes: the `dev` branch protection setting only, through the GitHub API.
-Evidence: the troubleshooting page for required status checks on docs.github.com, read
-2026-09-10; the protection read back the same day, `test` required, not strict, admins not
-enforced; and the job runs on PR #33. Assumptions: none. The owner asked for the research and for
-the best course to be taken.
 
 **Run and debug fact, D86 met under its amended check (2026-09-10).** The Release build of the
 pinned code, in the isolated Phase 8 clone, run by the benchmark script the D86 agent wrote, with
@@ -3053,22 +2932,6 @@ at 120,000, every run exiting 0. 12,000 is 4.8 percent above 120, inside the 10 
 amended check allows, and the 120,000-record run completes, so D86 is met. A first attempt
 failed before measuring anything: passed through `powershell -File`, the list of sizes arrived
 as one string the script could not read as integers; passed through `-Command` it ran.
-
-**D90 taken, from the job run on the CI runner (2026-09-10).** The `mutation` job ran on the CI
-runner for the first time on PR #33 at `fbc2f92` and passed in 23 minutes, 19.2 for the library
-and 3.2 for the command line, against about five on a machine giving Stryker 16 workers; GitHub
-documents the `windows-latest` runner as four CPUs in a public repository. The script resolved
-the runner's SDK MSBuild, 10.0.401, and the scores were 82.35 and 87.59 percent, the same as every
-local run on the same code. The run at `d9e5ee1` failed at the instruction check and GitHub
-marked the job skipped, as a job after a failed need is, so a required job never leaves a pull
-request waiting on a check that cannot start. The recommendation stood and was taken: `mutation`
-joins `test` as a check `dev` requires, set through the branch protection API with both bound to
-GitHub Actions, and read back after the change as both checks required, not strict, admins not
-enforced, no required reviews and force pushes off. The workflow gains a concurrency group: a new
-push to a pull request cancels the run for the head it replaced, since three runs were queued at
-once on PR #33 and only the newest head decides a merge, and a push to `dev` or `main` is never
-cancelled. The local rerun under D89 scored 82.35 and 87.59 percent with 282 and 71 compile
-errors, unchanged, so warnings as errors turned no mutant into a compile error.
 
 **Run and debug fact, the PR #33 review fixes (2026-09-10).** An Antigravity review of PR #33
 confirmed four findings, all fixed on `sprint-15-architecture`, three agents working one file
@@ -3091,27 +2954,75 @@ through a second handle; it failed on the unfixed code (`Assert.Contains` found 
 and passed once `target.FlushAsync(cancellationToken)` was added. `dotnet test` on both projects:
 Agent.Cli.Tests 97/97, Agent.Tests 661/661, both at 100 percent line, branch and method coverage.
 
-**Run and debug fact, the PR #33 push broke D90's mutation gate and two fixes were corrected
-(2026-09-11).** The `test` check on the pushed commit passed; the `mutation` check, required by
-D90, failed at 86.71 percent against Agent.Cli's pinned 87 percent break threshold (Agent's score
-was unaffected, 82.37 percent, comment-only change). Both edited spots in `CliRunner.cs`
-introduced a survived mutant. `JudgeAndAppendAsync`'s skip-when-empty guard is a true equivalent
-mutant: `Scorecard.AppendUnprocessed` on an empty list recomputes byte-identical tallies and p95,
-so a mutant that deletes the guard produces no observable difference through `RunAsync`'s output,
-the method's only test surface; killing it would need an internal-visibility seam this codebase
-does not otherwise use (every other internal type here, e.g. `LogLineFormatter`, is asserted by
-its rendered output, never called directly). Reverted; the comment above the method records why,
-without a decision number, per D87. `ModelCallBudgetFromInput`'s early return for an override had
-the same problem in miniature: the fallback path still passed `evaluationOverride` into
-`ModelCallBudget.PerCallBudget`, which returns it unread anyway, so removing the early return
-changed nothing observable either. Fixed by dropping that redundant argument (the fallback is
-only reached when there is no override, so passing one there was always dead) and by extending
-the existing "Composer: openai, model {Model}." log line to a second sentence naming the call
-budget, matching the existing convention of logging a decision's inputs (playbook step 78); two
-new assertions (the default record threshold's 2000ms, and "none" on an empty file) and one
-already-modified test now pin the exact value both branches return, closing the gap a Stryker
-"Equality mutation" and a "String mutation" had opened. Local Stryker runs on `stryker-config.
-cli.json` confirm no survivor remains in either edited region and the score climbed in three
-steps, 87.06, 87.41, 87.76 percent, each still comfortably above the 87 percent break and near
-the original 87.59 percent margin from D90. `.\test.ps1` after every step: 98/98 and 661/661,
-100 percent coverage both projects throughout.
+**Run and debug fact, two PR #33 review fixes corrected (2026-09-11).** After the push, two of
+the review fixes in `CliRunner.cs` were corrected. `JudgeAndAppendAsync`'s skip-when-empty guard
+was reverted: `Scorecard.AppendUnprocessed` on an empty list recomputes byte-identical tallies and
+p95, so the guard changes nothing `RunAsync`'s output, the method's only test surface, can show,
+and pinning it would need an internal-visibility seam this codebase does not otherwise use; the
+comment above the method records why. `ModelCallBudgetFromInput`'s early return for an override
+made the fallback's `evaluationOverride` argument dead, since the fallback is reached only with no
+override, so the argument was dropped, and the existing "Composer: openai, model {Model}." log
+line gained a second sentence naming the call budget, as playbook step 78 logs a decision's
+inputs; two new assertions, the default record threshold's 2000ms and "none" on an empty file,
+and one modified test pin the exact value both branches return. `.\test.ps1` after every step:
+98/98 and 661/661, 100 percent coverage both projects throughout.
+
+**D91. How Sprint 15 closes, and what Sprint 16 holds (taken 2026-09-11).** Question: PR #33
+merged into `dev` at `6e05adb`, and the log's next step, the tag on the merged commit, had not
+been taken; the phase lines, the archive and the narration's provenance still described the
+branch before its last two commits. Options: (a) tag `v1.1.0` on `6e05adb` once CI on that commit
+passes, with one docs PR that replaces the phase lines, records the CI result and the tag, writes
+the step 97 narrative, and moves the narration's provenance to the tagged commit; (b) tag
+`v1.0.1`; (c) no tag until the next sprint lands. Recommendation: (a). The release adds a flag,
+`--rules`, a review-queue reason and a new evaluation set without changing the output contract,
+which is a minor version rather than a patch, and a tag waiting on further work leaves the
+released code undated. Scopes: the tag, `docs/RELEASE_v1.1.0.md`, the GitHub release published
+from it as D79 did for `v1.0.0`, and the docs PR; Sprint 16 is D92 and nothing else.
+Evidence: the owner's answers of 2026-09-11 to four questions, taking the recommendation on each.
+Assumptions: none.
+
+**D92. A completed call with an empty body counts its tokens (taken 2026-09-11).** Question: the
+finding of 2026-09-10 records that `OpenAiCompletionClient` throws when a completion's body is
+empty, after the call completed and its usage was read, and the model composer's general catch
+counts that as no completed call with zero tokens, so a run's token count undercounts what the
+vendor billed. Options: (a) the empty body becomes a failed outcome that still carries a
+completed call and the tokens its usage reported, and the composer's comment states the true
+rule; (b) keep the behavior and document the undercount in DESIGN.md. Recommendation: (a), since
+`model_cost` exists to report spend and D66 already moved spend onto the outcome so a failed
+record keeps it. Scopes: the completion client, the model composer and their tests; if the
+no-completion-choice path has the same defect in the same code it is fixed with it and said so.
+Evidence: that finding. Assumptions: none.
+
+**Run and debug fact, the narration re-run at the merged commit (2026-09-11).** At `6e05adb`, the
+Release build, template composer, reference times as documented, with diagnostics, the review
+queue and the evaluation report on: `sample.jsonl` 2 of 2, `holdout_12.jsonl` 12 of 12,
+`synthetic_12.jsonl` 12 of 13 and `synthetic_v2.jsonl` 13 of 30, safety passed on every scored
+record, exit 0, 0, 2 and 2. `prospect_welcome_day0`'s row, body, send time, action, required
+states, plan, schedule, composition, ingest notes and empty review queue match every value
+`docs/NARRATION.md` states, so its provenance moved to `6e05adb` with no other change. The two
+Sprint 16 agents were started in their own worktrees while CI on `6e05adb` was still running,
+against AGENTS.md's rule that the next sprint waits for the current one to be green; nothing of
+theirs merges before that run passes. The same checkout ran the rest of the runbook: the README
+command exit 0; the hold-out with `--log-file` exit 0 and three lines under
+`TaskId=prospect_welcome_day0`; and the replays of the hold-out and both synthetic sets exit 0, 2
+and 2 with the live tallies, Safety reading 0/0 because a replay reads no diagnostics.
+
+**Run and debug fact, D92 written (2026-09-11).** On `sprint-16-empty-body` at `9b78637`, from
+`6e05adb`: the completion client returns an empty body as a completion carrying its usage
+instead of throwing, so it reaches the composer's JSON parse, the existing exit for a completed
+call whose content is unusable, which keeps the call, its tokens and its retries. Two tests
+failed first: the composer case read `CompletedCalls = 0, InputTokens = 0, OutputTokens = 0`
+where 1, 11 and 7 were expected, and the client case threw `InvalidOperationException`. After
+the change `.\test.ps1` passed 98 and 662 tests at 100 percent, and `BaselineNumbersTests` and
+the prompt goldens did not move. The no-completion-choice path reads its usage before it throws
+and keeps its tokens, so it is not the same defect and was left alone. Two changes follow the
+fix: the empty-body failure text now names the JSON parse, and the judge logs the invalid-JSON
+warning for an empty body where it logged a failed call, still grading it not measured. The
+lead read the diff before the merge and traced the empty string through the parse; nothing to
+report.
+
+**Finding, a no-completion-choice call loses its retry count (2026-09-11).** Found by the D92
+agent: `NoCompletionChoiceException` carries tokens but no retry count, and the composer's catch
+for it never sets `NetworkRetries`, so a no-choice call that followed a transient retry reports
+null retries and the run undercounts retries, not tokens. Untested and unchanged; outside D91's
+scope for Sprint 16, it needs its own decision.

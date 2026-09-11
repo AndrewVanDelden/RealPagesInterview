@@ -805,10 +805,10 @@ public sealed class CliRunner(
     // unprocessedRows is empty (the normal, clean-run case), which is redundant: fold.ScoreBatch
     // already computed the same tallies and p95 for that record set. A skip-when-empty guard was
     // tried and reverted: appending an empty list recomputes byte-identical values, so the guard
-    // changes no output this method's only test surface (RunAsync's output) can observe, and a
-    // mutation test that deletes the guard cannot be told apart from correct code without an
-    // internal-visibility seam this codebase does not otherwise use. Left unconditional rather
-    // than add one for a redundant computation that is cheap at this batch's scale.
+    // changes no output this method's only test surface (RunAsync's output) can observe, and no
+    // test could pin it without an internal-visibility seam this codebase does not otherwise use.
+    // Left unconditional rather than add one for a redundant computation that is cheap at this
+    // batch's scale.
     private static async Task<Scorecard> JudgeAndAppendAsync(
         Scorecard scorecard,
         IReadOnlyList<ScoredRun> runs,
