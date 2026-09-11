@@ -2787,3 +2787,40 @@ slot: each sends at 09:05 where its label says 10:00. That row is the one the op
 key because of it would fit a rule to the frozen set, which D81 forbids, so the disagreement is
 recorded and the choice stands until a labeled training record settles it. The scorecard is
 committed as `docs/scorecards/synthetic_v2_template.txt`.
+
+**Run and debug fact, D86 merged with its addendum (2026-09-10).** The input streams too: the
+reader yields one line at a time, the runner runs the batch straight off it, and a line that
+did not parse waits for every earlier record to be folded so stderr keeps input order. For the
+model composer with no override, a first pass through its own reader keeps only the strictest
+`p95_latency_ms` and rewinds the file; the template path reads the file once, which rests on the
+code and on no test that counts reads. One per-record scoring method on the evaluator serves the
+batch and the fold. What stays resident without `--eval-report` is the window of four runs and
+the failure text of each unparsed line; with it, one score row per record; with `--judge`, one
+scored run per record. Measured on the Release build, median of three runs, peak working set
+without `--eval-report`: 40.9, 42.9, 57.9 and 62.0 MB at 12, 120, 1,200 and 12,000 records,
+against 41.8, 44.1, 70.1 and 187.4 MB before D86. D86's check, within 10 percent of 120 at 12,000,
+is not met: 62.0 against 42.9 is 45 percent. With the managed heap capped at 16 MB the same build
+runs 120 records at 41.0 MB, 12,000 at 44.1 MB, within 8 percent, and 120,000 at 55.4 MB, where
+the code before D86 ran out of memory at 12,000; so the program no longer holds records, the
+default growth is the collector sizing its heap, and about 11 MB of the growth from 12,000 to
+120,000 is outside the managed heap and not attributed without a profiler. After the merge all
+four sets match the D82-merged runs file for file, output and queue raw, diagnostics without
+`latency_ms`, reports with latency masked; 92 and 630 tests pass at 100 percent coverage.
+Phase 6's check passed: the documented command wrote the output, diagnostics and scorecard on
+all four sets and exited 0, 0, 2 and 2. Three behavior changes: a usage error such as an unknown
+composer now exits before any parse-failure line is written; the batch latency now includes
+reading and parsing the input and writing the rows; and the first pass rewinds the input, so a
+path that cannot seek, such as a pipe, would throw on the model path with no override, which no
+documented input is.
+
+**D86 check amendment (proposed 2026-09-10).** Question: the check measures peak working set at
+the runtime's default settings, which moves with the garbage collector's heap sizing as well as
+with what the code keeps, and the measurement above separates the two. Options: (a) the check
+becomes a run with the managed heap capped, 12,000 records within 10 percent of 120, which the
+code now meets, plus the 120,000-record run completing under the same cap; (b) keep the check
+and meet it with a collector setting in the command line's runtime configuration, a product
+change made to satisfy a measure; (c) keep the check and leave D86 open. Recommendation: (a),
+since what the decision set out to bound is what the program holds per record, and (b) would
+tune the runtime to pass a number. Scopes: D86's check line and the design doc's benchmark only.
+Evidence: the capped and uncapped tables above. Assumptions: none. Not taken: a check changed
+after its result is the owner's call.

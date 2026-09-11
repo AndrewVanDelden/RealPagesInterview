@@ -14,9 +14,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 6 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Orchestration, entry points, and operations, reached 2026-09-10 after Phase 3 passed again with D82 (Phases 4 and 5 unchanged by this sprint).
-Check: the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code. Not yet run: D86 and D83 are open.
-Next step: merge D86 with its addendum when its benchmark meets the check, then D83; then Phase 8 (D87) and the D88 threshold pin.
-Open decisions: D89, warnings as errors in the build, proposed 2026-09-10.
+Check: the documented one-line command produces the output file, the diagnostics file, and the scorecard, and exits with the documented code. Passed 2026-09-10 after D86 merged, on all four sets.
+Next step: merge D83 and the rules-file flag (D82), then Phase 8 (D87) and the D88 threshold pin.
+Open decisions: D89, warnings as errors in the build; the D86 check amendment; both proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -138,4 +138,5 @@ a malformed line, written blind, its labels disagreeing on purpose with A6 and A
 debug fact; `holdout_12.jsonl` is training data from the same day. Phase 1 passed from a fresh clone and Phase 2 on the
 scorer proofs; D85 and D84 merged, a run and debug fact. D86 streamed its output but missed its memory
 check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts. D82 merged in two halves and Phase 3 passed;
-the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and debug facts.
+the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and debug facts. D86 merged streaming the input as well,
+its memory check unmet at default settings and met with the heap capped, and Phase 6 passed.
