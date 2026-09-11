@@ -38,6 +38,11 @@ public sealed class CliRunner(
 {
     private static readonly HttpClient SharedHttpClient = new();
 
+    // Records log to error from their own threads while the fold writes its failure lines to the
+    // same writer, so every write goes through one lock. Each log entry and each failure line is
+    // one call, so lines interleave whole and never split.
+    private readonly TextWriter error = TextWriter.Synchronized(error);
+
     // Playbook step 31: the judge model is pinned, not configured. A grade only means
     // something next to yesterday's grade if the same model gave both, and no second known
     // value has earned a setting here (step 41). The composer's model stays configurable
@@ -205,12 +210,6 @@ public sealed class CliRunner(
             (cases, parseFailures) = ReadInput(inputReader, log);
         }
 
-        int failureCount = parseFailures.Count;
-
-        // D71: every input the batch cannot process is a row of the scorecard, starting with the
-        // lines that did not parse; a record that throws in the loop below adds its own.
-        List<RecordScore> unprocessedRows = parseFailures.Select(RecordScore.DidNotParse).ToList();
-
         // D28: the model call is bounded by the strictest latency budget the batch states, so
         // the composer is built after the records are read. Nothing that costs time or money
         // has happened yet (playbook step 77): reading the file is local, and a bad composer
@@ -254,10 +253,9 @@ public sealed class CliRunner(
             new NextActionPlanner(),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
 
-        // Fixed before the loop below can add processing failures onto the same
-        // failureCount: a record that throws stays in `cases` (per-record isolation), so
-        // cases.Count + failureCount after the loop would count it twice.
-        int recordsRead = cases.Count + failureCount;
+        // A record that throws stays in `cases` (per-record isolation), so the records read are
+        // the parsed records plus the lines that did not parse, never plus the records that failed.
+        int recordsRead = cases.Count + parseFailures.Count;
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output/diagnostics path (bad directory, no write permission) must fail immediately,
@@ -294,103 +292,55 @@ public sealed class CliRunner(
 
         log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
 
-        var outputs = new List<AgentOutput>();
-        var diagnosticsRecords = new List<TaskDiagnostics>();
-        var reviewQueue = new List<ReviewQueueEntry>();
-        var scoredRuns = new List<ScoredRun>();
+        // Each file gets a record's rows as the record is folded, so memory holds the window of
+        // runs waiting on an earlier record, never the batch's rows. With --eval-report each
+        // record is scored as it is folded and keeps one small score row, because the p95, the
+        // tallies and the report cover the whole batch; with --judge the scored runs stay too.
+        Evaluator? evaluator = evalReportPath is null ? null : new Evaluator(loggerFactory.CreateLogger<Evaluator>());
+        var fold = new RecordFold(
+            error,
+            new JsonArrayRecordWriter<AgentOutput>(outputStream),
+            diagnosticsStream is null ? null : new JsonArrayRecordWriter<TaskDiagnostics>(diagnosticsStream),
+            reviewQueueStream is null ? null : new JsonArrayRecordWriter<ReviewQueueEntry>(reviewQueueStream),
+            evaluator,
+            keepRunsForJudge: judge is not null);
 
         // D61, per batch: one wall-clock elapsed around the record loop, reported on the two
         // artifacts that are already per batch and never as a row in the diagnostics array.
+        // Rows are written inside the loop as records are folded, so it includes those writes.
         Stopwatch batchStopwatch = Stopwatch.StartNew();
 
-        // D62, per batch: the same arrangement for tokens. Summed off the rows this loop writes,
-        // so the number the scorecard prints is the number a reader adding up the diagnostics
-        // file's model_cost column gets, and null while no record has gone near a model.
-        ModelCostNotes? batchModelCost = null;
-
-        // D37: records run under bounded concurrency, at most MaxConcurrentRecords at once,
-        // because with a model in the path each costs seconds and a sequential batch's wall clock
-        // is their sum. O(n) in the batch size: one agent run per record, at most
-        // MaxConcurrentRecords in flight, and O(n) space for the runs held until the fold below.
-        // Nothing in the template composer path observes cancellationToken itself, so the loop
-        // does: the check here means a cancelled run starts no record, and ParallelOptions stops
-        // starting records once the token is cancelled, after which ForEachAsync throws when the
-        // records already in flight have finished.
+        // Nothing in the template composer path observes cancellationToken itself, so the batch
+        // does: a run cancelled before it starts writes nothing and starts no record.
         cancellationToken.ThrowIfCancellationRequested();
-        var recordRuns = new RecordRun[cases.Count];
-        await Parallel.ForEachAsync(
-            Enumerable.Range(0, cases.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentRecords, CancellationToken = cancellationToken },
-            async (index, recordCancellationToken) => recordRuns[index] = await RunRecordAsync(agent, cases[index], referenceTime, log, recordCancellationToken));
-
-        // D37 and D14: folded in input order, whatever order the records finished in, because
-        // --replay pairs output rows with input records by position, and the diagnostics, the
-        // review queue, the scorecard and stderr's failure lines follow the same order. One
-        // thread, so the lists, the failure count, the batch total and stderr need no lock.
-        foreach (RecordRun run in recordRuns)
-        {
-            if (run is RecordRun.Failed failed)
-            {
-                failureCount++;
-                error.WriteLine($"Record '{failed.Case.TaskId}' failed: {failed.Exception.ToDiagnosticString()}");
-
-                // D71: the scorecard is a file a person keeps, so its row carries the exception
-                // type alone (D46): nothing here knows who wrote the exception's message.
-                unprocessedRows.Add(RecordScore.Unscoreable(failed.Case.TaskId, $"Record failed: {failed.Exception.ToRedactedDiagnosticString()}"));
-                continue;
-            }
-
-            RecordRun.Completed completed = (RecordRun.Completed)run;
-            AgentRunResult result = completed.Result;
-            outputs.Add(result.Output);
-            diagnosticsRecords.Add(new TaskDiagnostics(completed.Case.TaskId, result.Diagnostics, completed.IngestNotes, completed.LatencyMs));
-            batchModelCost = ModelCostNotes.Add(batchModelCost, result.Diagnostics.ModelCost);
-
-            // D43: one row per record the safety gate suppressed, and nothing else. A record
-            // with no consented channel is not here (not contactable is the correct decision,
-            // not a failure) and neither is a composition that produced no draft (there is
-            // nothing to review), which is exactly what a null RejectedDraft says.
-            if (result.RejectedDraft is { } rejectedDraft)
-            {
-                reviewQueue.Add(new ReviewQueueEntry(completed.Case.TaskId, rejectedDraft.Violations, rejectedDraft.Message));
-            }
-
-            scoredRuns.Add(new ScoredRun(completed.Case, result.Output, result.Diagnostics.SafetyViolationCount, completed.LatencyMs));
-        }
+        await fold.BeginAsync(cancellationToken);
+        await RunWindowedAsync(agent, cases, referenceTime, log, fold, cancellationToken);
 
         batchStopwatch.Stop();
         double batchLatencyMs = batchStopwatch.Elapsed.TotalMilliseconds;
+        int failureCount = parseFailures.Count + fold.FailedRecordCount;
 
         log.LogInformation(
             "Batch complete: {Total} record(s), {Failures} failure(s), {ElapsedMs}ms elapsed, model cost {ModelCost}.",
             recordsRead,
             failureCount,
             batchLatencyMs,
-            ModelCostNotes.Describe(batchModelCost));
+            ModelCostNotes.Describe(fold.BatchModelCost));
 
-        var outputWriter = new JsonArrayRecordWriter<AgentOutput>();
-        await outputWriter.WriteAllAsync(outputStream, outputs, cancellationToken);
-
-        if (diagnosticsStream is not null)
-        {
-            var diagnosticsWriter = new JsonArrayRecordWriter<TaskDiagnostics>();
-            await diagnosticsWriter.WriteAllAsync(diagnosticsStream, diagnosticsRecords, cancellationToken);
-        }
-
-        // Written even when the queue is empty (D43): a missing file cannot be told apart
-        // from a flag nobody passed, and an empty queue is the number step 71 asks for.
-        if (reviewQueueStream is not null)
-        {
-            var reviewQueueWriter = new JsonArrayRecordWriter<ReviewQueueEntry>();
-            await reviewQueueWriter.WriteAllAsync(reviewQueueStream, reviewQueue, cancellationToken);
-        }
+        await fold.EndAsync(cancellationToken);
 
         if (evalReportPath is not null)
         {
-            // Scores the results already captured above - never re-runs the agent, so the
-            // report describes exactly what was persisted to --output, not a second,
-            // possibly different sample (this matters for non-deterministic composers).
-            Scorecard scorecard = await ScoreAsync(scoredRuns, judge, loggerFactory, batchLatencyMs, batchModelCost, unprocessedRows, cancellationToken);
+            // Scores the results already written above and never re-runs the agent, so the
+            // report describes exactly what was persisted to --output. Every input the batch
+            // could not process is a row too: the lines that did not parse, then the records
+            // that threw, each in input order.
+            Scorecard scorecard = await JudgeAndAppendAsync(
+                fold.ScoreBatch(batchLatencyMs),
+                fold.JudgedRuns,
+                judge,
+                [.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows],
+                cancellationToken);
             if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
@@ -400,6 +350,53 @@ public sealed class CliRunner(
         // A queued record leaves at exit 0 (D43): suppression is a correct pipeline outcome
         // and failureCount counts records the pipeline could not process at all.
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
+    }
+
+    // Runs the batch with at most MaxConcurrentRecords records ahead of the fold and hands each
+    // finished run to the fold in input order. A record starts only once the record that many
+    // places before it is folded, so memory holds that window of runs, never the batch; the cost
+    // is that a slow record at the head holds back later starts until it finishes. On a cancel or
+    // a throw, the records still in flight are cancelled and awaited before the exception leaves,
+    // so none outlives the run and none replaces that exception.
+    // O(n) time in the batch size, one agent run and one fold per record; O(MaxConcurrentRecords) space.
+    private static async Task RunWindowedAsync(
+        LeasingMessageAgent agent,
+        IReadOnlyList<ProspectCase> cases,
+        DateTimeOffset referenceTime,
+        ILogger<CliRunner> log,
+        RecordFold fold,
+        CancellationToken cancellationToken)
+    {
+        using var inFlightCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var window = new Queue<Task<RecordRun>>(MaxConcurrentRecords);
+        try
+        {
+            foreach (ProspectCase prospectCase in cases)
+            {
+                if (window.Count == MaxConcurrentRecords)
+                {
+                    await fold.AddAsync(await window.Dequeue(), cancellationToken);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                window.Enqueue(Task.Run(() => RunRecordAsync(agent, prospectCase, referenceTime, log, inFlightCancellation.Token)));
+            }
+
+            while (window.Count > 0)
+            {
+                await fold.AddAsync(await window.Dequeue(), cancellationToken);
+            }
+        }
+        finally
+        {
+            if (window.Count > 0)
+            {
+                await inFlightCancellation.CancelAsync();
+
+                // Awaited as a plain Task: suppressing the throw is refused on a task with a result.
+                await Task.WhenAll((IEnumerable<Task>)window).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
     }
 
     // D37: one record's run, from its log scope to its result, returned rather than written
@@ -515,7 +512,10 @@ public sealed class CliRunner(
         }
 
         log.LogInformation("Replay: scoring {Count} output(s) from the file; safety and latency are not measured.", aligned.Value.Count);
-        Scorecard scorecard = await ScoreAsync(aligned.Value, judge, loggerFactory, batchLatencyMs: null, batchModelCost: null, parseFailures.Select(RecordScore.DidNotParse).ToList(), cancellationToken);
+        // No batch latency and no batch cost: no record loop ran here, so nothing was timed and
+        // nothing was spent, and the scorecard says so rather than printing zeros.
+        Scorecard scored = new Evaluator(loggerFactory.CreateLogger<Evaluator>()).Evaluate(aligned.Value);
+        Scorecard scorecard = await JudgeAndAppendAsync(scored, aligned.Value, judge, [.. parseFailures.Select(RecordScore.DidNotParse)], cancellationToken);
         if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
@@ -694,25 +694,20 @@ public sealed class CliRunner(
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
 
-    // The scorecard, and the judge's two verdicts on top of it when the run asked for them.
-    // Both paths score the same way; the judge is one signal beside the deterministic checks
-    // and never replaces one (D30).
-    // Both batch numbers are null on the replay path (D14): no record loop ran there, so nothing
-    // was timed and nothing was spent, and the scorecard says so rather than printing zeros.
-    private static async Task<Scorecard> ScoreAsync(
+    // The judge's two verdicts on top of a scorecard when the run asked for them, then one row
+    // per input the batch could not process. Both paths finish scoring this way. The judge is one
+    // signal beside the deterministic checks and never replaces one, and the unprocessed rows go
+    // last because the judge pairs scorecard rows with runs by position.
+    // O(n) in the scored runs, one judge call each when the judge is on, plus the rebuilt
+    // scorecard's O(n) tallies and O(n log n) p95.
+    private static async Task<Scorecard> JudgeAndAppendAsync(
+        Scorecard scorecard,
         IReadOnlyList<ScoredRun> runs,
         SemanticJudge? judge,
-        ILoggerFactory loggerFactory,
-        double? batchLatencyMs,
-        ModelCostNotes? batchModelCost,
         IReadOnlyList<RecordScore> unprocessedRows,
         CancellationToken cancellationToken)
     {
-        var evaluator = new Evaluator(loggerFactory.CreateLogger<Evaluator>());
-        Scorecard scorecard = evaluator.Evaluate(runs, batchLatencyMs, batchModelCost);
         Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
-
-        // D71: appended after the judge, which pairs rows with runs by position.
         return judged.AppendUnprocessed(unprocessedRows);
     }
 

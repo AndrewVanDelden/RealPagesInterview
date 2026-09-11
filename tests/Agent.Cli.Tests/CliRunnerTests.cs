@@ -488,9 +488,78 @@ public class CliRunnerTests
         }
     }
 
+    // Memory stays bounded because a finished record is folded, its rows written and its stderr
+    // line printed, as soon as every earlier record has finished, and at most four records run
+    // ahead of the fold. t1 fails at once, so the fifth record, t5, can start only after t1 has
+    // left the window, and by then t1's stderr line is already out. A loop that held every
+    // record until the batch ended would print that line only after t5 had composed.
+    [Fact]
+    public async Task RunAsync_RecordPastTheWindow_StartsOnlyAfterTheFirstRecordIsFolded()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string[] records = Enumerable.Range(1, 6).Select(number => RecordJson($"t{number}", "2026-01-10", "2025-12-08T15:04:00Z")).ToArray();
+        await File.WriteAllTextAsync(inputPath, string.Join(Environment.NewLine, records));
+        var errorWriter = new LineSignalingWriter("Record 't1' failed");
+        var composer = new FoldObservingComposer("t1", "t5", errorWriter.Seen);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, composer);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            Assert.True(composer.EarlierRecordFoldedWhenObserverComposed);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(5, output.RootElement.GetArrayLength());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // The batch p95 is judged against the strictest budget any scored record states, whichever
+    // position that record holds and whether or not the others state one. Rows are scored one
+    // at a time as they are folded, so the strictest budget has to survive a later record that
+    // states a looser one and a record that states none.
+    [Fact]
+    public async Task RunAsync_RecordsStateDifferentLatencyBudgets_ScorecardUsesTheStrictest()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true).Replace("\"p95_latency_ms\":2000", "\"p95_latency_ms\":7", StringComparison.Ordinal),
+            RecordJson("t3", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true).Replace("\"p95_latency_ms\":2000,", string.Empty, StringComparison.Ordinal),
+            RecordJson("t4", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true).Replace("\"p95_latency_ms\":2000", "\"p95_latency_ms\":900", StringComparison.Ordinal));
+        await File.WriteAllTextAsync(inputPath, content);
+        var outputWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, new StringWriter());
+        string evalReportPath = TempFilePath(".txt");
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains(", budget 7 ms: ", outputWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+        }
+    }
+
     // D37: cancellation still stops the batch once records run concurrently. The first record
     // cancels the run; the loop starts no record after that, so fewer records compose than the
-    // batch holds, the run throws, and nothing is written to --output.
+    // batch holds and the run throws. Rows are written as records finish, so --output may hold
+    // the rows folded before the cancel, but never a closed array: a cancelled run must not
+    // leave a file that reads as a finished one.
     [Fact]
     public async Task RunAsync_CancelledWhileRecordsAreInFlight_StartsNoFurtherRecordAndThrows()
     {
@@ -507,7 +576,8 @@ public class CliRunnerTests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
 
             Assert.InRange(composer.Calls, 1, records.Length - 1);
-            Assert.Equal(string.Empty, await File.ReadAllTextAsync(outputPath));
+            string written = await File.ReadAllTextAsync(outputPath);
+            Assert.ThrowsAny<JsonException>(() => JsonDocument.Parse(written));
         }
         finally
         {

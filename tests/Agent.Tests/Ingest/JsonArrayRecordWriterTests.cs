@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Agent.Common;
 using Agent.Domain;
 using Agent.Ingest;
 using Xunit;
@@ -7,68 +8,107 @@ namespace Agent.Tests.Ingest;
 
 public class JsonArrayRecordWriterTests
 {
-    private static readonly JsonArrayRecordWriter<AgentOutput> Writer = new();
+    // The file format before rows were written one at a time: the whole list serialized in one
+    // call. A reader of --output or --replay must not be able to tell the two apart.
+    private static readonly JsonSerializerOptions WholeArrayOptions = new(AgentJsonOptions.Default) { WriteIndented = true };
+
+    // An apostrophe and a non-ASCII letter, both of which the default encoder would escape, so a
+    // writer that dropped the relaxed encoder would not match the whole-array form.
+    private static readonly AgentOutput Sent = new(
+        new NextMessage(CommunicationChannel.Email, DateTimeOffset.Parse("2025-12-09T10:00:00-06:00"), "Tour Oak Ridge", "Hi Taylor, it's Café day. Reply STOP to opt out.", new Cta("schedule_tour", null, new Uri("https://oakridge.example/tour"))),
+        new NextAction("follow_up_in_days", null, 3));
+
+    private static readonly AgentOutput Suppressed = new(new NextMessage(CommunicationChannel.None), new NextAction("no_op", Reason: "no_contact_consent"));
+
+    private static async Task<string> WriteRowsAsync(IReadOnlyList<AgentOutput> rows)
+    {
+        using var target = new StringWriter();
+        var writer = new JsonArrayRecordWriter<AgentOutput>(target);
+
+        await writer.BeginAsync();
+        foreach (AgentOutput row in rows)
+        {
+            await writer.WriteRowAsync(row);
+        }
+
+        await writer.EndAsync();
+        return target.ToString();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task RowsWrittenOneAtATime_AreByteIdenticalToTheWholeArraySerializedAtOnce(int rowCount)
+    {
+        AgentOutput[] rows = new[] { Sent, Suppressed }.Take(rowCount).ToArray();
+
+        string written = await WriteRowsAsync(rows);
+
+        Assert.Equal(JsonSerializer.Serialize(rows, WholeArrayOptions), written);
+    }
 
     [Fact]
-    public async Task WriteAllAsync_MultipleRecords_WritesSingleIndentedJsonArray()
+    public async Task WriteRowAsync_BeforeTheArrayEnds_TheRowIsAlreadyOnTheTarget()
     {
-        var records = new[]
-        {
-            new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)),
-            new AgentOutput(NextMessage: null, new NextAction("follow_up_in_days", "check_in", 3)),
-        };
-        using var writer = new StringWriter();
+        using var target = new StringWriter();
+        var writer = new JsonArrayRecordWriter<AgentOutput>(target);
 
-        await Writer.WriteAllAsync(writer, records);
+        await writer.BeginAsync();
+        await writer.WriteRowAsync(Sent);
 
-        using JsonDocument document = JsonDocument.Parse(writer.ToString());
+        string soFar = target.ToString();
+        Assert.StartsWith("[", soFar, StringComparison.Ordinal);
+        Assert.Contains("\"follow_up_in_days\"", soFar, StringComparison.Ordinal);
+        Assert.DoesNotContain("]", soFar.TrimEnd()[^1..], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MultipleRows_WritesSingleIndentedJsonArray()
+    {
+        string written = await WriteRowsAsync([Sent, Suppressed]);
+
+        using JsonDocument document = JsonDocument.Parse(written);
         Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
         Assert.Equal(2, document.RootElement.GetArrayLength());
     }
 
     [Fact]
-    public async Task WriteAllAsync_Record_SerializesWithSnakeCaseFieldNames()
+    public async Task Row_SerializesWithSnakeCaseFieldNames()
     {
-        var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
-        using var writer = new StringWriter();
+        string written = await WriteRowsAsync([Suppressed]);
 
-        await Writer.WriteAllAsync(writer, records);
-
-        Assert.Contains("\"next_action\"", writer.ToString());
-        Assert.Contains("\"next_message\"", writer.ToString());
+        Assert.Contains("\"next_action\"", written, StringComparison.Ordinal);
+        Assert.Contains("\"next_message\"", written, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task WriteAllAsync_Record_IsIndentedForHumanReadability()
+    public async Task Row_IsIndentedForHumanReadability()
     {
-        var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
-        using var writer = new StringWriter();
+        string written = await WriteRowsAsync([Suppressed]);
 
-        await Writer.WriteAllAsync(writer, records);
-
-        Assert.Contains(writer.ToString().Split('\n'), line => line.StartsWith("  {", StringComparison.Ordinal));
+        Assert.Contains(written.Split('\n'), line => line.StartsWith("  {", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task WriteAllAsync_NoRecords_WritesEmptyJsonArray()
+    public async Task NoRows_WritesEmptyJsonArray()
     {
-        using var writer = new StringWriter();
+        string written = await WriteRowsAsync([]);
 
-        await Writer.WriteAllAsync(writer, Array.Empty<AgentOutput>());
-
-        using JsonDocument document = JsonDocument.Parse(writer.ToString());
+        using JsonDocument document = JsonDocument.Parse(written);
         Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
         Assert.Equal(0, document.RootElement.GetArrayLength());
     }
 
     [Fact]
-    public async Task WriteAllAsync_CancellationRequested_ThrowsOperationCanceledException()
+    public async Task WriteRowAsync_CancellationRequested_ThrowsOperationCanceledException()
     {
-        var records = new[] { new AgentOutput(NextMessage: null, new NextAction("start_cadence", "welcome", null)) };
-        using var writer = new StringWriter();
+        using var target = new StringWriter();
+        var writer = new JsonArrayRecordWriter<AgentOutput>(target);
+        await writer.BeginAsync();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Writer.WriteAllAsync(writer, records, cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.WriteRowAsync(Suppressed, cts.Token));
     }
 }
