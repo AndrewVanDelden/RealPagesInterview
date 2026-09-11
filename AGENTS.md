@@ -21,8 +21,8 @@ dotnet run --project src/Agent.Cli -- --input sample.jsonl --output out.json
 
 Every flag and both output files: `docs/OPERATIONS.md`. Exit codes are 0 success, 1 usage
 error, 2 partial failure. `--now` is the run's reference time (D10), defaulting to now; the
-documented runs pass `2025-12-09T00:00:00-06:00` for `holdout_12.jsonl` and
-`2026-03-07T12:00:00Z` for `synthetic_12.jsonl`.
+documented runs pass `2025-12-09T00:00:00-06:00` for `holdout_12.jsonl`, `2026-03-07T12:00:00Z`
+for `synthetic_12.jsonl` and `2026-10-24T22:00:00Z` for `synthetic_v2.jsonl`.
 
 The OpenAI key is `OpenAI:ApiKey` in `dotnet user-secrets` for `src/Agent.Cli`. The user
 sets it. Never read, print, or write the value.
@@ -37,8 +37,8 @@ sets it. Never read, print, or write the value.
 - `tests/Agent.Tests`, `tests/Agent.Cli.Tests`: xUnit, fakes under `TestSupport/`.
 - `docs/`: `DECISION_LOG.md` the current phase and one paragraph per sprint, `DECISIONS_ARCHIVE.md`
   every decision in full, `DESIGN.md` the rules, their evidence and the numbers, `CODE_REVIEW.md` the scope-outs.
-- `sample.jsonl` is the only evidence any rule is fitted to; `holdout_12.jsonl` and
-  `synthetic_12.jsonl` are evaluation sets, run and reported, never fitted to (D9, D6).
+- `sample.jsonl` and `holdout_12.jsonl` are the evidence rules are fitted to (D81);
+  `synthetic_12.jsonl` and `synthetic_v2.jsonl` are evaluation sets, never fitted to (D6, D81).
 
 ## Workflow
 
@@ -103,9 +103,6 @@ sets it. Never read, print, or write the value.
 - `SlotResolution.ShiftedPastGap` and `EarlierOfTwo` cannot fire on the current zone database
   (A5), and are proved against the custom zones in `SlotResolutionTestZones.cs` plus a sweep of
   every system zone. Neither dead code nor a gamed gate (D21, A20).
-- `Scorecard` computes its tallies and its p95 once, in field initializers, so a `with` copy
-  that replaces `RecordScores` carries the old numbers into a report whose rows disagree with
-  them. Build a new `Scorecard`.
 - A golden test normalizes line endings on both sides. A raw string literal carries whatever
   endings git checked the file out with, so a golden compared raw passes on one checkout and
   fails on another.

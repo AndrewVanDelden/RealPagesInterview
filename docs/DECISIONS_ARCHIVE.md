@@ -2590,3 +2590,59 @@ moves after D86 rather than beside D84, since both D83 and D86 edit the fold in 
 D88 lands its tool and a first measured score in Phase 2 and pins the threshold after D87. One PR
 per sprint (AGENTS.md) rather than per decision (step 103): each decision is its own merge commit
 on the sprint branch, so it is reviewed as a unit inside the one PR.
+
+**Run and debug fact, Sprint 15 wave 1 (2026-09-10).** Wave 1 launched five agents in worktrees
+while the phase read 0, so four of them edit `src` and `tests` on unmerged branches, against the
+AGENTS.md rule that nothing under `src` or `tests` is edited while the phase is 0 or 1. The D85
+agent named the conflict. The exception is deliberate: the owner asked for every agent at once,
+D84 to D88 are later-phase root causes whose decisions are taken, and the rule's guarantee, no code
+before intake, is kept where it lands: no branch that touches `src` or `tests` merges into the
+sprint branch until Phase 0's check passes after D81. The D85 review found the new constructor
+kept the caller's list by reference, so a caller that edited it afterward reported rows that
+disagreed with the tallies counted at construction, the bug D85 exists to close; fixed test first
+on the D85 branch, the failing test reporting two rows for one counted, then 86 and 565 tests
+passing at 100 percent coverage. The same agent found that nothing in the repository turns
+warnings into errors: no `TreatWarningsAsErrors` in `Directory.Build.props` or any project, and no
+`-warnaserror` in CI, so the rule holds only when a build passes the flag by hand (D89).
+
+**D89. Warnings as errors in the build (proposed 2026-09-10).** Question: the code rules require
+the strictest checker with warnings as errors, and nothing in the build enforces it; a
+`dotnet build -warnaserror` of the D85 branch was clean, so today the rule holds by chance.
+Options: (a) `TreatWarningsAsErrors` true in `Directory.Build.props`, so every local build, test
+run and CI run enforces it; (b) `-warnaserror` in the CI step only; (c) keep. Recommendation: (a),
+since a rule that must hold with no exceptions belongs in tooling, and (b) lets a local build pass
+that CI then fails. Scopes: `Directory.Build.props`, and any warning the flag surfaces on `dev`.
+Evidence: the wave 1 fact above. Assumptions: none. Check: a planted unused variable fails
+`.\test.ps1` locally and in CI. Order: Phase 1, the environment, so it merges right after D81.
+
+**Run and debug fact, D81 merged (2026-09-10).** `synthetic_v2.jsonl` landed as 29 labeled
+records and one malformed line, line 15, run with `--now 2026-10-24T22:00:00Z`. A separate
+validation, not the author's, parsed 29 lines with unique task ids, found exactly one malformed
+line, 26 sent and 3 suppressed records, every suppressed record in the channel `none` shape with
+`no_op`, and every `send_at` an ISO-8601 time with an offset. The author read only
+`problem_statement.txt` and `sample.jsonl`; AGENTS.md was loaded into its context automatically,
+and the only internal it names that a label uses, the suppression shape, was also in its brief.
+The labels disagree with this program's own assumptions on purpose: a 60-day short horizon
+against A7's 45, a zone inferred from the city against A6's UTC, follow-up gaps of 2, 3 and 7
+days, and every send on a Sunday. Those misses measure disagreement with a stated assumption
+rather than a defect, and D82 is fitted to the hold-out and never to this set. D9 is amended by
+D81 from this date: `holdout_12.jsonl` is training data, and every report names which set is
+which. Phase 0's check passed with A24 added: the assumptions log has no blank evidence cell.
+
+**Run and debug fact, Phases 1 and 2 re-run, D85 and D84 merged (2026-09-10).** Phase 1's check
+passed from a fresh clone of `sprint-15-architecture` at `06149a7` taken from origin: `.\test.ps1`
+exited 0, 86 and 564 tests, 100 percent line, branch and method coverage in both projects. D85
+merged first, since Phase 2 is the harness, and Phase 2's check, the scorer proofs, passed inside
+the gated suite. D88 is also placed in Phase 2 but touches no file under `src` or `tests` and
+pins no threshold until after D87, so its first half merges when its measurement finishes rather
+than holding the Phase 3 merges behind a mutation run; this is a reorder inside step 103's
+phase order, named here. D84 merged next as the first Phase 3 decision. Its design, which goes
+past the brief: the loop's clean exits attach a verdict object that only the library can
+construct, and the final gate reuses it only for the same validator instance, an equal draft and
+equal constraints, validating everything else, a refused draft, another composer's output, and a
+loop outcome a wrapper copied with a new message, since a `with` copy of the public outcome
+record carries the old verdict. The gate compares the draft before the send time is set, and a
+new test pins that no safety check reads the send time. The agent also found that the test
+factory built two validator instances where the runner shares one; it now shares one by default.
+Under production wiring each composed record is validated once, down from twice; a refused draft
+is still validated four times, three in the loop and once at the gate.

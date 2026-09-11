@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 0 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Intake, re-opened 2026-09-10 by D81 under step 102 (step 9, a frozen synthetic set).
-Check: the design doc's assumptions log has an evidence column with no blanks. Not yet run for this sprint.
-Next step: step 9, `synthetic_v2.jsonl` written and committed before any D82 rule; then each later phase's check runs again as its decisions merge, in phase order (D81 to D88 taken).
-Open decisions: none.
+Phase 3 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Deterministic core, reached 2026-09-10 after Phases 0, 1 and 2 passed again (D81).
+Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and the diagnostics explain every decision. Not yet run: D82 is open.
+Next step: merge both halves of D82 when they report, then run this check; D88 merges when its measurement finishes; then Phase 6 (D86, then D83) and Phase 8 (D87).
+Open decisions: D89, warnings as errors in the build, proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -130,4 +130,10 @@ number (D87); a mutation score beside coverage (D88). None taken.
 **D81 to D88 taken, Sprint 15 (2026-09-10).** The owner took every recommendation. The project
 returns to Phase 0, since step 9 is the frozen set, and decisions merge into the sprint branch in
 phase order while their work is written in parallel, one worktree each. D83 moves after D86, and
-D88 pins its threshold after D87.
+D88 pins its threshold after D87. Wave 1 edits `src` and `tests` on unmerged branches while
+the phase reads 0, a deliberate exception held at the merge, and the D85 review found and fixed
+a list the scorecard kept by reference, both a run and debug fact. D89 proposes warnings as
+errors in the build. D81 merged: `synthetic_v2.jsonl`, 29 records and
+a malformed line, written blind, its labels disagreeing on purpose with A6 and A7, a run and
+debug fact; `holdout_12.jsonl` is training data from the same day. Phase 1 passed from a fresh clone and Phase 2 on the
+scorer proofs; D85 and D84 merged, a run and debug fact.

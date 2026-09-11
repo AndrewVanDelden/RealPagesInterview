@@ -105,7 +105,7 @@ public sealed class LeasingMessageAgent(
 
         // Step 3: compose. Three outcomes, and two of them carry a draft (D48): a composed
         // message, and one the compose-validate loop refused on safety. The refused draft is
-        // scheduled and validated below exactly like a composed one, so step 5 is the one
+        // scheduled and validated below like any draft without the loop's verdict, so step 5 is the one
         // place that names the violations; a composition that produced no draft at all is the
         // only one that short-circuits here, because there is nothing to validate.
         ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
@@ -118,12 +118,14 @@ public sealed class LeasingMessageAgent(
 
         NextMessage draft;
         CompositionNotes? compositionNotes;
+        DraftValidation? loopValidation;
 
         switch (composeOutcome)
         {
             case ComposeOutcome.Composed composed:
                 draft = composed.Message.Message;
                 compositionNotes = composed.Message.Notes;
+                loopValidation = composed.Validation;
                 break;
 
             // The notes are the loop's account of a message it is returning, and it is not
@@ -133,6 +135,7 @@ public sealed class LeasingMessageAgent(
                 log.LogWarning("Compose-validate loop refused its draft ({Error}); validating it here to record which checks it failed.", refused.Error);
                 draft = refused.Draft;
                 compositionNotes = null;
+                loopValidation = null;
                 break;
 
             default:
@@ -149,10 +152,17 @@ public sealed class LeasingMessageAgent(
         var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot);
 
         // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
-        // section 5): ValidatingMessageComposer already guarantees a clean message under
-        // normal wiring, but this is the orchestrator's own gate, not borrowed trust in the
-        // composer's cooperation.
-        SafetyValidationResult validation = validator.Validate(finalMessage, prospectCase.ConstraintsOrEmpty);
+        // section 5). The loop's verdict is used only when it answers the question this gate
+        // would ask: this gate's own validator, this draft, this record's constraints. The loop
+        // judged the draft before the send time was set, and the validator reads only the
+        // subject, the body and the constraints, so the send time cannot change the verdict.
+        // Every other draft, a refused one or one from a composer that is not the loop, is
+        // validated here, so no composer's own word that its message is clean is ever taken.
+        CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
+        Option<SafetyValidationResult> loopVerdict = loopValidation is null
+            ? Option<SafetyValidationResult>.None()
+            : loopValidation.ResultFor(validator, draft, constraints);
+        SafetyValidationResult validation = loopVerdict.HasValue ? loopVerdict.Value : validator.Validate(finalMessage, constraints);
 
         bool hasViolations = validation.Violations.Count > 0;
 
