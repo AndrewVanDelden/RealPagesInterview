@@ -29,7 +29,7 @@ internal static class MessageWords
         return words;
     }
 
-    // D13 a: a fact is covered when at least half of its words appear, so "Oak Ridge"
+    // A fact is covered when at least half of its words appear, so "Oak Ridge"
     // covers "Oak Ridge Apartments" the way every label spells it. A fact with no words
     // (punctuation only) is never covered.
     public static bool Covers(HashSet<string> words, string fact)

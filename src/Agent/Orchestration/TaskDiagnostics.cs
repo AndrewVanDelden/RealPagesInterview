@@ -2,7 +2,7 @@ using Agent.Ingest;
 
 namespace Agent.Orchestration;
 
-// D61: LatencyMs is the wall-clock elapsed of exactly one LeasingMessageAgent.RunAsync call,
+// LatencyMs is the wall-clock elapsed of exactly one LeasingMessageAgent.RunAsync call,
 // measured by the batch loop that made it and handed from one variable to this row and to
 // ScoredRun.LatencyMs, so the diagnostics file and the eval report can never state two
 // latencies for one record. It excludes reading and parsing the input line, IngestNotes.Describe,

@@ -2,21 +2,14 @@ using Agent.Common;
 
 namespace Agent.Orchestration;
 
-// D42's first part: the answer to assertions.required_states, which until now was parsed and
-// read by nothing, so a record asserting a state was answered with silence. Every name in the
-// record's own list gets a verdict, from the source D42 names for it, and any other name is
-// recorded by name as one this program has no check for (A14).
-//
-// The keys are the record's own strings, written to the wire verbatim: AgentJsonOptions sets
-// PropertyNamingPolicy and not DictionaryKeyPolicy, so a name the record spelled some other
-// way comes back spelled the way the record spelled it, which is what makes the answer
-// traceable to the assertion. Ordinal comparison for the same reason: these are data values,
-// not identifiers this program coins, so a differently cased name is a different name and has
-// no check.
-//
-// No rule is written for any name beyond the three below. In particular, the hold-out's
-// renewal_offer_loaded stays unrecognized even though its records carry a renewal_offer_id,
-// because the hold-out is an evaluation set and nothing is fitted to it (D9, A19).
+// The answer to assertions.required_states, so a record asserting a state is never answered
+// with silence: each name in the record's own list gets a verdict from the step that proves it,
+// and any other name is recorded as one this program has no check for (A14). Keys are the
+// record's own strings, written verbatim (AgentJsonOptions sets no DictionaryKeyPolicy) and
+// compared ordinally: data values, not names this program coins, so the answer traces to the
+// assertion and a differently cased name is a different name with no check. No rule exists
+// beyond the three below: the hold-out's renewal_offer_loaded stays unrecognized although its
+// records carry a renewal_offer_id, because nothing is fitted to an evaluation set (A19).
 public static class RequiredStateMap
 {
     private const string ConsentVerifiedState = "consent_verified";
@@ -38,10 +31,10 @@ public static class RequiredStateMap
         // and the run, so the second entry would repeat the first.
         foreach (string? state in requiredStates ?? [])
         {
-            // D47: JSON supplies a null element whatever the element type says, and
+            // JSON supplies a null element whatever the element type says, and
             // RespectNullableAnnotations does not reach inside a collection. A null or blank
-            // name asserts no state, so it is skipped; it used to reach the indexer below and
-            // take the whole record out with an ArgumentNullException (A16).
+            // name asserts no state, so it is skipped rather than reaching the indexer below,
+            // whose ArgumentNullException would take the whole record out (A16).
             if (Presence.IsAbsent(state))
             {
                 continue;

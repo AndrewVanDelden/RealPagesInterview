@@ -7,12 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Agent.Orchestration;
 
-// Holds no business rules of its own (DESIGN.md section 5): every decision is
-// delegated to the component that owns it. `.Value` on Option<CommunicationChannel>
-// at step 1 is read one line after the same option was tested for a value, so it is a
-// guarded read and not a second answer to a question already asked: D57 merged the old
-// consent gate into the selector precisely because two components were computing the
-// same predicate. The compose outcome and the final safety validation are different:
+// Holds no business rules of its own (DESIGN.md section 5): every decision is delegated to
+// the component that owns it. `.Value` on Option<CommunicationChannel> at step 1 is read one
+// line after the option was tested, a guarded read: the selector's absence of a value is the
+// one answer to "contactable", so no second component computes the same predicate. The
+// compose outcome and the final safety validation are different:
 // both are real, reachable failure modes (an unsalvageable compose-validate loop, or a
 // violation slipping past composition), so both are handled explicitly below rather
 // than trusted with .Value.
@@ -28,17 +27,16 @@ public sealed class LeasingMessageAgent(
     // the state is earned by a record reaching that step at all. Step 1 runs on every record
     // that reaches the agent and nothing below revisits it, so the verdict is a constant and no
     // input makes it anything else: `channel_preferences: []` reaches step 1, the selector
-    // returns no value there without reading consent once, and the record still records earned,
-    // which is what the deleted consent gate recorded on that input too (D57).
+    // returns no value there without reading consent once, and the record still records earned.
     private const RequiredStateVerdict ConsentVerified = RequiredStateVerdict.Earned;
 
     private readonly ILogger<LeasingMessageAgent> log = logger.OrNullLogger();
 
-    // D16: no log scope is opened here. The caller's batch loop (CliRunner) is the one
+    // No log scope is opened here. The caller's batch loop (CliRunner) is the one
     // owner of the TaskId scope; a second one here rendered every line as
     // "TaskId=x TaskId=x". A library caller that wants correlation opens its own scope.
     //
-    // referenceTime is the run's clock (D10): a value the caller passes, never read here.
+    // referenceTime is the run's clock: a value the caller passes, never read here.
     public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
     {
         // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
@@ -64,7 +62,7 @@ public sealed class LeasingMessageAgent(
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
 
-        // Step 1: select the contactable channel, consent first (D2). No option value means
+        // Step 1: select the contactable channel, consent first. No option value means
         // no preferred channel is consented, which is a no_op with its reason and nothing
         // else runs.
         Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent);
@@ -83,8 +81,8 @@ public sealed class LeasingMessageAgent(
 
         CommunicationChannel channel = contactableChannel.Value;
 
-        // Step 2: plan the next action from the horizon (A7), counted in the record's local
-        // date (D10).
+        // Step 2: plan the next action from the horizon (A7), counted in days from the run's
+        // reference time as a date in the record's own zone.
         DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
         PlannedAction planned = planner.Plan(prospectCase.Persona, prospectCase.LifecycleStage, context.MoveDateTarget, referenceDate);
         NextAction nextAction = planned.Action;
@@ -106,14 +104,14 @@ public sealed class LeasingMessageAgent(
                 planned.Branch);
         }
 
-        // Step 3: compose. Three outcomes, and two of them carry a draft (D48): a composed
+        // Step 3: compose. Three outcomes, and two of them carry a draft: a composed
         // message, and one the compose-validate loop refused on safety. The refused draft is
         // scheduled and validated below like any draft without the loop's verdict, so step 5 is the one
         // place that names the violations; a composition that produced no draft at all is the
         // only one that short-circuits here, because there is nothing to validate.
         ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
-        // D66: what the run spent is read once, here, and reaches every diagnostics this method
+        // What the run spent is read once, here, and reaches every diagnostics this method
         // builds below. It is a fact about the record and not about a message, so unlike the
         // composition notes it survives an outcome that ships nothing.
         ModelCostNotes? modelCost = composeOutcome.ModelCost;
@@ -148,8 +146,8 @@ public sealed class LeasingMessageAgent(
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
-        // diagnostics can name the floor, the zone and the slot the way they name the plan
-        // (D22); the slot is never a wall time the zone did not reach (A20).
+        // diagnostics can name the floor, the zone and the slot the way they name the plan;
+        // the slot is never a wall time the zone did not reach (A20).
         ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage);
         NextMessage finalMessage = draft with { SendAt = scheduled.SendAt };
         var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot, scheduled.Source);
@@ -169,13 +167,13 @@ public sealed class LeasingMessageAgent(
 
         bool hasViolations = validation.Violations.Count > 0;
 
-        // D38: the fair-housing state is the fair-housing check's own verdict, never
-        // "no violations at all". A message that merely omitted its opt-out line used to
+        // The fair-housing state is the fair-housing check's own verdict, never "no
+        // violations at all": a message that merely omitted its opt-out line would otherwise
         // record a fair-housing failure that never happened, and A14 says a state is
         // earned by the step that proves it.
         bool fairHousingCheckPassed = validation.VerdictOf(SafetyCheck.FairHousing) == SafetyCheckVerdict.Passed;
 
-        // D42's second part, and D39's classification of it: brand style is a diagnostic, so
+        // Brand style is a diagnostic, so
         // it is checked here and never gates. A message that breaks a rule still goes out and
         // the state is recorded not earned, because an off-voice message is off-voice and not
         // unlawful. It is not in ValidatingMessageComposer's loop for the same reason.
@@ -212,7 +210,8 @@ public sealed class LeasingMessageAgent(
             // this record joins the other two suppression cases in having none, so it
             // joins them in nulling the field the compose step already wrote.
             //
-            // D43: the draft goes out with the result rather than being dropped here. It
+            // The draft goes out with the result for the review queue rather than being
+            // dropped here: a suppression is a business decision a person has to see. It
             // carries this validation's own violations, by check, so the one gate that
             // rejected the message is the one source of the reason it was rejected.
             return new AgentRunResult(
@@ -226,8 +225,9 @@ public sealed class LeasingMessageAgent(
         return new AgentRunResult(new AgentOutput(finalMessage, nextAction), diagnostics);
     }
 
-    // D3: suppression on the wire is a next_message object with channel none and every
-    // other member null, the oracle's own spelling, never a null object.
+    // Suppression on the wire is a next_message object with channel none and every
+    // other member null, the oracle's own spelling, never a null object, so the output
+    // always has both members.
     private static NextMessage SuppressedMessage() => new(CommunicationChannel.None);
 
     // A14 again, for the two states a step can answer either way. One helper for both, so
@@ -238,7 +238,7 @@ public sealed class LeasingMessageAgent(
     // Neither the safety validator nor the brand-style validator ran on a suppressed record,
     // because it has no message: not evaluated is the honest answer, and it is not a pass
     // (A15).
-    // D66: what the record spent is a parameter rather than a constant here, because the two
+    // What the record spent is a parameter rather than a constant here, because the two
     // callers are different facts. A record with no consented channel never reached a composer
     // and has nothing to report; a composition failure reached one, and its calls were billed
     // for whether or not anything came back.

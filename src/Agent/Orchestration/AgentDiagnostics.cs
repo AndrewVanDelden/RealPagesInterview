@@ -3,48 +3,36 @@ using Agent.Safety;
 
 namespace Agent.Orchestration;
 
-// RequiredStates is the answer to the record's own assertions.required_states (D42): one
-// verdict per name the record asserts, from the source D42 names for it, and NoCheckDefined
-// for any other name. It replaces the ConsentVerified, FairHousingCheckPassed and
-// BrandStyleApplied booleans rather than sitting beside them, for three reasons: a bool and a
-// map entry are two spellings of one fact that a `with` copy can desynchronize; two of the
-// three booleans had no reader outside the tests (LC); and bool? cannot say that this program
-// has no check for a name, which is the fact A14 is about. A record that asserts nothing gets
-// an empty map, which is the complete answer to a list with no items.
-//
-// BrandStyleFailures names the rules a message broke, because a diagnostic that says only
-// "not earned" tells a reader nothing (D42). Empty is a message that was checked and broke no
-// rule; null is a record with no message to check, which is no consented channel or a
-// composition failure. Brand style never suppresses (D39), so a record can carry a failed
-// rule and a sent message at once.
-//
-// SafetyViolationCount is every failed safety check's detail lines, so a message matching six
-// protected-class terms counts six (D38). SuppressionReason says why a record carries no
-// message (D3); None means a message was sent. ActionPlan is how next_action was reached
-// (D18) and is null on a record the channel selector returned no value for (D57), where the
-// planner never ran. Schedule is how send_at was reached (D22) and is null on a record the
-// scheduler never ran for: no consented channel, or a composer that produced no message to
-// schedule. A record suppressed by the final safety check keeps its schedule, the way it
-// keeps its action plan. Composition is which implementation wrote the message and how many
-// compose calls it took (D24, playbook step 57); it is null on a record that has no message,
-// which is no consented channel or a composition failure, and suppression_reason already
-// separates those two.
-//
-// ModelCost and NetworkRetries are what this record's run spent (D66): the token counts of
-// D62 and the transport retries of D28. They are here rather than inside Composition because
-// they are facts about the record and not about a returned message, and Composition is null on
-// every record that has none. A refused draft and a composition failure both made their calls
-// and were both billed for them, so the two counts stay on the row the way latency_ms does
-// (D61). Null on either is the absence of a measurement and never a measured zero, which is
-// the rule D62 and D28 already state; they are last so the key order of every existing
-// diagnostics row is untouched and these two are appended to it.
+// One diagnostics row: how every decision on one record was reached. A null member is a step
+// that never ran or a value never measured, never a pass and never a measured zero.
 public sealed record AgentDiagnostics(
+    // The answer to the record's own assertions.required_states: one verdict per asserted name
+    // from the step that proves it, NoCheckDefined for any other name (A14), and an empty map for
+    // a record that asserts nothing. A map rather than booleans: bool? cannot say "no check for
+    // this name", and a bool beside a map entry is two spellings a `with` copy can desynchronize.
     IReadOnlyDictionary<string, RequiredStateVerdict> RequiredStates,
+    // Every failed safety check's detail lines, so six protected-class terms count six.
     int SafetyViolationCount,
+    // The rules a message broke, since "not earned" alone tells a reader nothing. Empty is a
+    // message checked and clean; null is no message to check (no consented channel, or a
+    // composition failure). Brand style never suppresses, so a failed rule and a sent message
+    // can appear on one record.
     IReadOnlyList<BrandStyleRule>? BrandStyleFailures = null,
+    // Why the record carries no message; None means a message was sent.
     SuppressionReason SuppressionReason = SuppressionReason.None,
+    // How next_action was reached; null where the channel selector returned no value, so the
+    // planner never ran.
     ActionPlanNotes? ActionPlan = null,
+    // How send_at was reached; null where the scheduler never ran: no consented channel, or no
+    // message to schedule. A record suppressed by the final safety check keeps it, as it keeps
+    // its action plan.
     ScheduleNotes? Schedule = null,
+    // Which implementation wrote the message and how many compose calls it took (playbook step
+    // 57); null on a record with no message, and suppression_reason tells those cases apart.
     CompositionNotes? Composition = null,
+    // What the run spent: token counts and transport retries. Here rather than in Composition,
+    // which is null on a refused draft and a composition failure, though both were billed for
+    // their calls. Null is no measurement, never a measured zero. Last, so the key order of
+    // every existing diagnostics row is untouched.
     ModelCostNotes? ModelCost = null,
     int? NetworkRetries = null);

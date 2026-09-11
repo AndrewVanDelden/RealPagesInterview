@@ -2,14 +2,11 @@ using System.Text.RegularExpressions;
 
 namespace Agent.Safety;
 
-// D41: the term proxies match a copy of the text, never the text itself. The probe of
-// 2026-09-09 ran 37 inputs through the patterns as written; three of the misses it found
-// need no adversary at all, and this is what removes them:
-//
+// The term proxies match a normalized copy of the text, never the text itself. A 37-input
+// probe found three misses that need no adversary at all, and this removes them:
 //   families-only    a model composer writes the hyphen as ordinary prose
 //   families  only   two spaces between the words of a two-word term
 //   famil<ZWSP>ies   a format character that arrives by copy and paste
-//
 // The digit patterns deliberately do not use this: a Social Security number and a card
 // number are matched on the raw text, where their own separators are already part of the
 // pattern.
