@@ -3069,3 +3069,24 @@ push to a pull request cancels the run for the head it replaced, since three run
 once on PR #33 and only the newest head decides a merge, and a push to `dev` or `main` is never
 cancelled. The local rerun under D89 scored 82.35 and 87.59 percent with 282 and 71 compile
 errors, unchanged, so warnings as errors turned no mutant into a compile error.
+
+**Run and debug fact, the PR #33 review fixes (2026-09-10).** An Antigravity review of PR #33
+confirmed four findings, all fixed on `sprint-15-architecture`, three agents working one file
+each. `CliRunner.ModelCallBudgetFromInput` built an unread `firstPass` `StreamReader` and reset
+`inputReader.BaseStream.Position` even when `evaluationOverride` was given, though
+`ModelCallBudget.PerCallBudget` never enumerates the records in that case; it now returns the
+override immediately, touching neither, matching the method's own comment. The review's
+non-seekable-stream framing does not apply here: `OpenInputReader` always opens a real file
+(`new StreamReader(path)`), always seekable, so no defensive `CanSeek` check was added, since
+the coverage gate cannot honestly exercise a branch `--input` can never reach. `Scorecard.
+ComputeLatencyP95Ms` is O(n log n), a sort; `Evaluator.Evaluate`'s comment said O(n), and now
+states the true cost. `CliRunner.JudgeAndAppendAsync` called `Scorecard.AppendUnprocessed`
+unconditionally, forcing a full sort-and-tally rebuild even with an empty list on a clean run; it
+now returns the judged scorecard unchanged when there is nothing to append. `JsonArrayRecordWriter.
+FlushAsync` never flushed `target`, so a row could sit in a buffered `StreamWriter`'s memory
+instead of reaching disk; the existing test used an unbuffered `StringWriter` and missed it. A
+new test, `WriteRowAsync_TargetIsABufferedStreamWriter_TheRowReachesTheFileBeforeDisposal`, opens
+a real `FileStream`/`StreamWriter`, writes one row without disposing, and reads the same path
+through a second handle; it failed on the unfixed code (`Assert.Contains` found nothing on disk)
+and passed once `target.FlushAsync(cancellationToken)` was added. `dotnet test` on both projects:
+Agent.Cli.Tests 97/97, Agent.Tests 661/661, both at 100 percent line, branch and method coverage.

@@ -449,14 +449,21 @@ public sealed class CliRunner(
         }
     }
 
-    // The per-call budget for the model composer. Without an override it is the strictest
-    // budget any parsed record states, found by a first pass that keeps only the running
-    // minimum and logs nothing, since the run's own pass reports every line. The pass reads
-    // through its own reader, so the run's reader, which has read nothing yet, still detects a
-    // byte order mark once the file is back at its first byte. With an override nothing is read.
-    // O(n) time in the input lines and O(1) space.
+    // The per-call budget for the model composer. With an override, it is returned as-is and
+    // nothing is read: ModelCallBudget.PerCallBudget returns the override before enumerating its
+    // cases, so a firstPass reader built here would never be read from. Without one it is the
+    // strictest budget any parsed record states, found by a first pass that keeps only the
+    // running minimum and logs nothing, since the run's own pass reports every line. The pass
+    // reads through its own reader, so the run's reader, which has read nothing yet, still
+    // detects a byte order mark once the file is back at its first byte.
+    // O(n) time in the input lines and O(1) space; O(1) with an override.
     private static TimeSpan? ModelCallBudgetFromInput(StreamReader inputReader, TimeSpan? evaluationOverride)
     {
+        if (evaluationOverride is not null)
+        {
+            return evaluationOverride;
+        }
+
         TimeSpan? budget;
         using (AgentLog.Configure(NullLoggerFactory.Instance))
         using (var firstPass = new StreamReader(inputReader.BaseStream, leaveOpen: true))
@@ -792,9 +799,12 @@ public sealed class CliRunner(
     // The judge's two verdicts on top of a scorecard when the run asked for them, then one row
     // per input the batch could not process. Both paths finish scoring this way. The judge is one
     // signal beside the deterministic checks and never replaces one, and the unprocessed rows go
-    // last because the judge pairs scorecard rows with runs by position.
+    // last because the judge pairs scorecard rows with runs by position. AppendUnprocessed
+    // rebuilds the whole scorecard, so with nothing to append (the normal, clean-run case) it is
+    // skipped and the judged scorecard is returned as-is: appending an empty list would rebuild
+    // the identical tallies and p95 at the cost of redoing both from scratch.
     // O(n) in the scored runs, one judge call each when the judge is on, plus the rebuilt
-    // scorecard's O(n) tallies and O(n log n) p95.
+    // scorecard's O(n) tallies and O(n log n) p95 when there are unprocessed rows to append.
     private static async Task<Scorecard> JudgeAndAppendAsync(
         Scorecard scorecard,
         IReadOnlyList<ScoredRun> runs,
@@ -803,7 +813,7 @@ public sealed class CliRunner(
         CancellationToken cancellationToken)
     {
         Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
-        return judged.AppendUnprocessed(unprocessedRows);
+        return unprocessedRows.Count == 0 ? judged : judged.AppendUnprocessed(unprocessedRows);
     }
 
     private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)

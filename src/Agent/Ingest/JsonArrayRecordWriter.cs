@@ -68,5 +68,9 @@ public sealed class JsonArrayRecordWriter<T>
         string text = Encoding.UTF8.GetString(pending.WrittenSpan);
         pending.ResetWrittenCount();
         await target.WriteAsync(text.AsMemory(), cancellationToken);
+        // target is a caller-supplied TextWriter; over a StreamWriter, WriteAsync only reaches
+        // its internal buffer (up to ~1024 characters), not the underlying file. Without this,
+        // a row written here can sit unflushed until something else disposes or flushes target.
+        await target.FlushAsync(cancellationToken);
     }
 }

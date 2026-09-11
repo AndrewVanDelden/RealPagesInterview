@@ -17,7 +17,9 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 {
     private readonly ILogger<Evaluator> log = logger.OrNullLogger();
 
-    // O(n) in the batch size, each record scored once.
+    // O(n log n) in the batch size: the loop itself is O(n), each record scored once, but
+    // the Scorecard constructor this method returns through unconditionally sorts every
+    // record's latency for the p95 (Scorecard.ComputeLatencyP95Ms), which dominates.
     // batchLatencyMs is measured by the caller that ran the loop, not here: nothing in
     // this library reads a clock. batchModelCost is the same for the token totals, which the
     // same caller summed off the diagnostics rows it wrote. Both are carried onto the scorecard

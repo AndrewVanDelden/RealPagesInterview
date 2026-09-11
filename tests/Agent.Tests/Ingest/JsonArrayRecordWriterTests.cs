@@ -64,6 +64,37 @@ public class JsonArrayRecordWriterTests
     }
 
     [Fact]
+    public async Task WriteRowAsync_TargetIsABufferedStreamWriter_TheRowReachesTheFileBeforeDisposal()
+    {
+        // StringWriter above proves the row reaches the TextWriter, but a StreamWriter over a
+        // file keeps its own ~1024-character buffer beneath that: a FlushAsync that stops at
+        // target.WriteAsync leaves the row sitting in the StreamWriter's buffer, never reaching
+        // the file, until something else disposes or flushes it. Production writes through
+        // exactly this StreamWriter-over-file shape (CliRunner), so only a real file, opened a
+        // second time while the first handle is still open, can show whether the bytes landed.
+        string path = Path.GetTempFileName();
+        try
+        {
+            await using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            using var target = new StreamWriter(fileStream);
+            var writer = new JsonArrayRecordWriter<AgentOutput>(target);
+
+            await writer.BeginAsync();
+            await writer.WriteRowAsync(Sent);
+
+            using var readStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(readStream);
+            string onDisk = await reader.ReadToEndAsync();
+
+            Assert.Contains("\"follow_up_in_days\"", onDisk, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task MultipleRows_WritesSingleIndentedJsonArray()
     {
         string written = await WriteRowsAsync([Sent, Suppressed]);
