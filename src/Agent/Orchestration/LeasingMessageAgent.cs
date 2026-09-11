@@ -147,9 +147,9 @@ public sealed class LeasingMessageAgent(
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
         // diagnostics can name the floor, the zone and the slot the way they name the plan
         // (D22); the slot is never a wall time the zone did not reach (A20).
-        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel);
+        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage);
         NextMessage finalMessage = draft with { SendAt = scheduled.SendAt };
-        var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot);
+        var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot, scheduled.Source);
 
         // Step 5: validate. An unsafe or off-brand draft never leaves the agent (DESIGN.md
         // section 5). The loop's verdict is used only when it answers the question this gate
