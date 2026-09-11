@@ -1,4 +1,5 @@
 using Agent.Domain;
+using Agent.Safety;
 
 namespace Agent.Composition;
 
@@ -35,8 +36,13 @@ public abstract record ComposeOutcome
 
     public int? NetworkRetries { get; init; }
 
-    // A message to send.
-    public sealed record Composed(ComposedMessage Message) : ComposeOutcome;
+    // A message to send. Validation is the verdict the compose-validate loop reached on this
+    // message, and only the loop sets it: every other composer leaves it null, and the agent's
+    // final gate validates any message that arrives without a verdict it can use.
+    public sealed record Composed(ComposedMessage Message) : ComposeOutcome
+    {
+        public DraftValidation? Validation { get; internal init; }
+    }
 
     // The two outcomes that carry no message to send, and a reason instead. One case for a
     // caller that needs the reason and not which of the two produced it: the compose-validate

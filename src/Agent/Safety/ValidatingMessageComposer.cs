@@ -70,7 +70,12 @@ public sealed class ValidatingMessageComposer(
 
                 if (validation.Violations.Count == 0)
                 {
-                    return WithAttempts(attemptComposed, attempt, discardedNetworkRetries, discardedModelCost);
+                    return WithAttempts(
+                        attemptComposed,
+                        attempt,
+                        discardedNetworkRetries,
+                        discardedModelCost,
+                        new DraftValidation(validator, attemptComposed.Message.Message, prospectCase.ConstraintsOrEmpty, validation));
                 }
 
                 log.LogWarning(
@@ -123,9 +128,16 @@ public sealed class ValidatingMessageComposer(
             };
         }
 
-        if (validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
+        SafetyValidationResult fallbackValidation = validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty);
+
+        if (fallbackValidation.Violations.Count == 0)
         {
-            return WithAttempts(fallbackComposed, modelAttempts + 1, discardedNetworkRetries, discardedModelCost);
+            return WithAttempts(
+                fallbackComposed,
+                modelAttempts + 1,
+                discardedNetworkRetries,
+                discardedModelCost,
+                new DraftValidation(validator, fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty, fallbackValidation));
         }
 
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
@@ -139,11 +151,14 @@ public sealed class ValidatingMessageComposer(
 
     // D24: the composer that answered keeps its own name, and this loop supplies the count,
     // because the number of calls it took is the loop's fact and not the composer's.
+    // The verdict that passed this message goes out with it, so the agent's final gate reads it
+    // instead of asking the same validator the same question about the same draft again.
     private static ComposeOutcome WithAttempts(
         ComposeOutcome.Composed composed,
         int attempts,
         int? discardedNetworkRetries,
-        ModelCostNotes? discardedModelCost)
+        ModelCostNotes? discardedModelCost,
+        DraftValidation validation)
     {
         (int? networkRetries, ModelCostNotes? modelCost) = CombinedSpend(discardedNetworkRetries, discardedModelCost, composed);
         return composed with
@@ -151,6 +166,7 @@ public sealed class ValidatingMessageComposer(
             Message = composed.Message with { Notes = composed.Message.Notes with { Attempts = attempts } },
             NetworkRetries = networkRetries,
             ModelCost = modelCost,
+            Validation = validation,
         };
     }
 
