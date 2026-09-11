@@ -7,8 +7,8 @@
       "cleartext"
     ],
     "thresholds": {
-      "high": 80,
-      "low": 60,
+      "high": 90,
+      "low": 87,
       "break": 87
     }
   }

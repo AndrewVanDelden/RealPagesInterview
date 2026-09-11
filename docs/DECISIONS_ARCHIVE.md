@@ -2976,3 +2976,14 @@ run inside every test-first cycle would make the cycle the bottleneck, so the lo
 the coverage suite and the mutation gate is CI's. That departure from the option's wording is
 named here rather than taken silently. The pinned commit's own run and a negative control with
 the command line's threshold raised to 99 are the next run and debug fact.
+
+**Run and debug fact, an invalid pin caught by running the gate (2026-09-10).** The D88 pin
+raised `thresholds.break` to 82 and 87 and left `low` at 60, and Stryker.NET refuses a
+configuration where low is under break: the pinned commit's own run exited 1 within a second in
+both projects with "Threshold low must be more than or equal to threshold break", so the pushed
+pin broke `mutation.ps1` and would have failed the CI job on every run. The negative control,
+break raised to 99, failed with the same message, so it showed nothing about the score and is
+redone. Fixed by setting `low` equal to `break` and `high` to 90 in both configurations, so high,
+low and break are in the order Stryker requires; high and low only color the report, and break
+is the gate. The pin was written without running the thing it configures, which is the failure
+Verify First names; the run that caught it was already planned as the pin's proof.
