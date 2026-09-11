@@ -32,7 +32,7 @@ hold-out, so its 12 of 12 proves nothing. The honest number is a set written bli
 Only the model judge can fail a weak message body, and it is off by default. I would make it part
 of every run.
 
-Last result, 2026-09-10, the sprint 15 branch at commit `6086077`, confirmed on a fresh clone at `dbb6b19`, template composer, reference
+Last result, 2026-09-11, the PR #33 merge into `dev` at `6e05adb`, the final Sprint 15 code, template composer, reference
 times as documented: `holdout_12.jsonl` 12 of 12, fitted; `synthetic_12.jsonl` 12 of 13;
 `synthetic_v2.jsonl` 13 of 30, the honest number; each malformed line an error row, and zero
 safety violations on all three.
@@ -69,7 +69,7 @@ safety violations on all three.
 ## The rehearsal: one record, file by file
 
 `prospect_welcome_day0`, the first line of `sample.jsonl`, at `--now 2025-12-09T00:00:00-06:00`.
-Every value below is from a run on 2026-09-10 of the sprint 15 branch at commit `6086077`, and a fresh clone at `dbb6b19` wrote the same rows, with
+Every value below is from a run on 2026-09-11 of the PR #33 merge into `dev` at `6e05adb`, the final Sprint 15 code, with
 the diagnostics file, the review queue and the evaluation report switched on.
 
 - **`src/Agent.Cli/Program.cs` into `src/Agent.Cli/CliRunner.cs`.** The flags are parsed and

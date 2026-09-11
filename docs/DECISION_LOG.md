@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 8 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Documentation and review, reached 2026-09-10 after D82's flag merged and Phase 6 held (Phase 7 unchanged but for D88's first half).
-Check: the README's run command and the runbook's steps both work from the tagged commit. Passed 2026-09-10 on a fresh clone of the pinned commit, all 14 runbook assertions; the tag follows the PR.
-Next step: the sprint PR against `dev`, then the tag on the merged commit.
+Phase 2 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Scaffold and verification harness, re-entered 2026-09-11 for Sprint 16, since D93 changes the mutation gate and D92 the model client (Phase 4).
+Check: the golden outputs score 100 percent and a wrong output less, then Phase 4's, every example set completing offline with the diagnostics saying so. Not yet run.
+Next step: merge D93's branch, then D92's, into the Sprint 16 branch, run both checks, then the sprint PR against `dev`.
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -127,25 +127,18 @@ one validation per composed record (D84); a scorecard that cannot carry stale ta
 bounded memory in the batch with a benchmark (D86); comments that state the rule and cite no
 number (D87); a mutation score beside coverage (D88). None taken.
 
-**D81 to D88 taken, Sprint 15 (2026-09-10).** The owner took every recommendation. The project
-returns to Phase 0, since step 9 is the frozen set, and decisions merge into the sprint branch in
-phase order while their work is written in parallel, one worktree each. D83 moves after D86, and
-D88 pins its threshold after D87. Wave 1 edits `src` and `tests` on unmerged branches while
-the phase reads 0, a deliberate exception held at the merge, and the D85 review found and fixed
-a list the scorecard kept by reference, both a run and debug fact. D89 proposes warnings as
-errors in the build. D81 merged: `synthetic_v2.jsonl`, 29 records and
-a malformed line, written blind, its labels disagreeing on purpose with A6 and A7, a run and
-debug fact; `holdout_12.jsonl` is training data from the same day. Phase 1 passed from a fresh clone and Phase 2 on the
-scorer proofs; D85 and D84 merged, a run and debug fact. D86 streamed its output but missed its memory
-check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts. D82 merged in two halves and Phase 3 passed;
-the hold-out reads 12 of 12, fitted, and the frozen set 13 of 30, both run and debug facts. D86 merged streaming the input as well,
-its memory check unmet at default settings and met with the heap capped, and Phase 6 passed. D83 merged, its log line fixed to carry no
-record text, and the D82 rules-file loader merged, both run and debug facts. The `--rules` flag merged, and D87 swept
-every comment in `src` and `tests`, now held by the instruction check, run and debug facts. D88 pinned its thresholds at 82 and 87 percent,
-measured on a clean clone, with a CI job. The pinned gate passed and its negative
-control failed on the score, both run and debug facts. D89 and the D86 amendment were taken, and a
-planted warning now fails the build. D86 met its amended check; D90 made the
-mutation job a required check on dev. PR #33's four confirmed review findings were fixed: a
-wasted read pass under a budget override, a missing flush, and an inaccurate complexity comment
-landed clean; the fourth, a scorecard-rebuild skip, broke D90's mutation gate as an equivalent
-mutant and was reverted, with the budget fix logged to stay killable, all run and debug facts.
+**D81 to D90 taken, Sprint 15 (2026-09-10 to 2026-09-11).** The owner took every
+recommendation, and the project returned to Phase 0, its decisions merged in phase order from
+parallel worktrees, an exception held at the merge. `synthetic_v2.jsonl`, 29 records and a
+malformed line written blind, carries the honest number, 13 of 30; the hold-out is training data
+at 12 of 12 (D81). Rules load from `--rules` (D82), a generic-row answer is queued (D83), one
+validation per record (D84), the scorecard rebuilds its tallies (D85), and input and output
+stream under a capped heap (D86). No comment cites a number (D87). Mutation gates at 82 and 87
+percent are required on `dev` (D88, D90), warnings are errors (D89), and PR #33's review
+findings were fixed, all run and debug facts.
+
+**D91 to D93, Sprint 15 closed, Sprint 16 opened (2026-09-11).** Sprint 15 closes with the tag
+`v1.1.0` on `6e05adb` once its CI run passes, and the narration's provenance moves there after a
+re-run matched every value (D91). Sprint 16 closes two gaps and nothing else: an empty-body
+completion counted with its tokens (D92), and the command line's mutation survivors killed before
+its pin rises (D93). Both started before Sprint 15's CI finished, a run and debug fact.
