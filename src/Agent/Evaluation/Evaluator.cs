@@ -7,18 +7,19 @@ using Microsoft.Extensions.Logging;
 namespace Agent.Evaluation;
 
 // The scorecard of DESIGN.md section 6, one verdict per check per record, proven able to
-// fail before it measures anything (D13, playbook step 33). Every case's already-executed
+// fail before it measures anything (playbook step 33). Every case's already-executed
 // output (ScoredRun) is compared against its own labeled `expected` oracle; the agent is
 // never re-run here. Deterministic fields are exact; fuzzy fields use the strongest
 // checkable proxy: fact coverage for personalization, stop-word detection for language.
-// The semantic judge for next_action.type is Sprint 6 (D15).
+// A proxy that fails a label passed as the actual is a wrong proxy, corrected here.
+// The semantic judge is SemanticJudge, a separate signal that never decides pass or fail.
 public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 {
     private readonly ILogger<Evaluator> log = logger.OrNullLogger();
 
     // O(n) in the batch size, each record scored once.
-    // batchLatencyMs is measured by the caller that ran the loop (D61), not here: nothing in
-    // this library reads a clock. batchModelCost is the same for D62's token totals, which the
+    // batchLatencyMs is measured by the caller that ran the loop, not here: nothing in
+    // this library reads a clock. batchModelCost is the same for the token totals, which the
     // same caller summed off the diagnostics rows it wrote. Both are carried onto the scorecard
     // unchanged, and a caller that ran no loop passes neither.
     public Scorecard Evaluate(
@@ -43,17 +44,19 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     public RecordScore ScoreRecord(ScoredRun run)
     {
         // Per-record isolation (playbook step 34): a scoring bug on one record yields
-        // one unscoreable row, never a lost batch. No TaskId scope here (D16): the row
-        // carries the id, and the one log line names it.
+        // one unscoreable row, never a lost batch. No TaskId scope here: CliRunner owns it and
+        // a second scope would print the id twice; the row carries the id, and the one log line
+        // names it.
         try
         {
             return Score(run);
         }
         catch (Exception ex)
         {
-            // D46: Score reads the composed message and the record's own labeled
-            // content, so its exceptions go through the redacted formatter like every
-            // other boundary that handles vendor, model, or prospect text. The raw
+            // Score reads the composed message and the record's own labeled content, so
+            // its exceptions go through the redacted formatter (a type name and a bounded
+            // locator, never the content) like every other boundary that handles vendor,
+            // model, or prospect text. The raw
             // exception is never passed to the logger: ILogger's default formatter
             // appends Exception.ToString() in full regardless of the message template.
             string failure = ex.ToRedactedDiagnosticString();
@@ -105,8 +108,9 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             ? CheckResult.NotMeasured
             : Verdict(OptOutInstructions.IsPresent(text));
 
-        // D13 d: exact against the label's own call-to-action type, never against the
-        // product's vocabulary table; the labels use types no constraint mapping states.
+        // Exact against the label's own call-to-action type, never against the product's
+        // vocabulary table: the labels use types no constraint mapping states, and a scorer
+        // that consulted the table would pass the product's own guess back to itself.
         CheckResult ctaType = actual is null || expectedMessage?.Cta?.Type is not { } expectedCtaType
             ? CheckResult.NotMeasured
             : Verdict(actual.Cta?.Type == expectedCtaType);
@@ -119,7 +123,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         CheckResult bodyLanguage = ScoreLanguage(context.Language, words);
 
         // A15: a budget the record does not state is zero; a count the run did not record
-        // is not measured (replay, D14).
+        // is not measured (replay has none to read).
         CheckResult safety = run.SafetyViolationCount is not { } violationCount
             ? CheckResult.NotMeasured
             : Verdict(violationCount <= (thresholds.SafetyViolationsMax ?? 0));
@@ -148,7 +152,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     private static CheckResult Verdict(bool passed) => passed ? CheckResult.Passed : CheckResult.Failed;
 
     // Three spellings of "no message" score as the same channel: a null next_message, the
-    // oracle's object with channel "none" (D3), and DESIGN.md section 2's null channel.
+    // oracle's object with channel "none", and DESIGN.md section 2's null channel.
     // Internal rather than private: SemanticJudge shares this exact rule (BodyOf) rather
     // than restating it, so the two agree on what "no message" means without a second copy.
     internal static CommunicationChannel EffectiveChannel(NextMessage? message) =>
@@ -165,8 +169,8 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             ? $"{message.Subject} {message.Body}"
             : message.Body ?? string.Empty;
 
-    // D4 and D6: to the day and to the hour, compared in the label's own offset so the same
-    // instant written in UTC still matches.
+    // To the day and to the hour, since minutes are not modeled; compared in the label's own
+    // offset so the same instant written in UTC still matches.
     private static (CheckResult Day, CheckResult Hour) ScoreSendAt(DateTimeOffset? expectedAt, DateTimeOffset? actualAt)
     {
         if (expectedAt is not { } expectedSendAt)
@@ -194,7 +198,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         _ => CheckResult.NotMeasured,
     };
 
-    // A13 and D13 c: not measured without a message, without a stated language, or for a
+    // A13: not measured without a message, without a stated language, or for a
     // language the detector does not know; a body with no stop words at all fails.
     private static CheckResult ScoreLanguage(string? languageTag, HashSet<string>? words)
     {
@@ -206,8 +210,9 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         return Verdict(LanguageDetector.Detect(words) == stated);
     }
 
-    // D13 a: coverage of the first name and the property name. A record carrying neither
-    // has nothing to personalize and scores 1.0.
+    // Coverage of the first name and the property name over subject plus body; city and
+    // amenities are not counted, because labels omit them and still pass their thresholds.
+    // A record carrying neither has nothing to personalize and scores 1.0.
     private static double ComputePersonalizationScore(ProspectContext context, HashSet<string> words)
     {
         var facts = new List<string>(2);

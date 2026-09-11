@@ -2,19 +2,7 @@ using Agent.Composition;
 
 namespace Agent.Evaluation;
 
-// The batch verdict. LatencyBudgetMs is the strictest p95_latency_ms any record states
-// (a p95 under the strictest budget is under every budget), null when none states one.
-//
-// D61: BatchLatencyMs is one wall-clock elapsed around the whole record loop, not a sum or a
-// percentile of the per-record numbers, and it lives here rather than in the diagnostics file
-// because that file is one row per unit of work. Null on a run that executed no record loop,
-// which is --replay (D14), where nothing was timed.
-//
-// D62: BatchModelCost is the same arrangement for tokens. It is the sum of the model cost on
-// the diagnostics rows the batch wrote, so a reader who adds that column up gets this number,
-// and it is null when no record on the run went near a model.
-//
-// A class, not a record: the tallies and the p95 are computed once from the rows, so a copy
+// The batch verdict. A class, not a record: the tallies and the p95 are computed once from the rows, so a copy
 // that swapped the rows would report totals that disagree with them. With one constructor and
 // no `with`, the only way to get different rows is a new scorecard, which recomputes both.
 public sealed class Scorecard
@@ -43,10 +31,18 @@ public sealed class Scorecard
 
     public IReadOnlyList<RecordScore> RecordScores { get; }
 
+    // The strictest p95_latency_ms any record states (a p95 under the strictest budget is under
+    // every budget), null when none states one.
     public int? LatencyBudgetMs { get; }
 
+    // One wall-clock elapsed around the whole record loop, not a sum or a percentile of the
+    // per-record numbers; here rather than in the diagnostics file, which is one row per unit of
+    // work. Null on a run that executed no record loop, which is --replay, where nothing was timed.
     public double? BatchLatencyMs { get; }
 
+    // The same arrangement for tokens: the sum of the model cost on the diagnostics rows the
+    // batch wrote, so a reader who adds that column up gets this number; null when no record on
+    // the run went near a model.
     public ModelCostNotes? BatchModelCost { get; }
 
     public int TotalCount => RecordScores.Count;
@@ -62,7 +58,7 @@ public sealed class Scorecard
             ? CheckResult.NotMeasured
             : p95 <= budget ? CheckResult.Passed : CheckResult.Failed;
 
-    // D71: every input the batch could not process, a line that did not parse or a record that
+    // Every input the batch could not process, a line that did not parse or a record that
     // threw, as one unscoreable row each. Called after the judge, which pairs rows with runs by
     // position, so these rows sit past the last run.
     // O((n + m) log(n + m)) for the p95 sort and O(n + m) for the tallies, both redone in full
