@@ -156,8 +156,8 @@ public class TemplateMessageComposerTests
     }
 
     // A10: sms carries the numbered reply options in the body and in cta.options,
-    // the way sample 1's label does; the content comes from the catalog, since no input
-    // field states it.
+    // the way sample 1's label does; the option text comes from the record's language set,
+    // keyed by the call-to-action type, since no input field states it.
     [Fact]
     public async Task ComposeAsync_SmsWithKnownCta_CarriesNumberedOptionsInBodyAndCta()
     {
