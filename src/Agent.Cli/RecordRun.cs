@@ -12,7 +12,7 @@ internal abstract record RecordRun(ProspectCase Case)
 {
     public sealed record Completed(ProspectCase Case, IngestNotes IngestNotes, AgentRunResult Result, double LatencyMs) : RecordRun(Case);
 
-    // Per-record isolation: every input shape has a default (D1), so only a bug throws, and it
-    // costs its own record and nothing else.
+    // Per-record isolation: every input shape has a default, so no input makes a record throw;
+    // only a bug does, and it costs its own record and nothing else.
     public sealed record Failed(ProspectCase Case, Exception Exception) : RecordRun(Case);
 }

@@ -37,7 +37,7 @@ public class CliRunnerTests
     // A record the template composer cannot compose safely for, using nothing but the
     // record's own data: city_interest is written into the body verbatim ("We heard you're
     // looking in families only."), and "families only" is a steering term the fair-housing
-    // check of D38 fails on. The record asserts fair_housing_check_passed so the states map
+    // check fails on. The record asserts fair_housing_check_passed so the states map
     // has to answer for it.
     private static string SteeringRecordJson(string taskId) =>
         RecordJson(taskId, "2026-01-10", "2025-12-08T15:04:00Z")
@@ -112,7 +112,7 @@ public class CliRunnerTests
         }
     }
 
-    // D70: the budget an evaluation run states for the composer's model calls is a positive whole
+    // The budget an evaluation run states for the composer's model calls is a positive whole
     // number of milliseconds; anything else bounds nothing a call could satisfy.
     [Theory]
     [InlineData("abc")]
@@ -141,8 +141,8 @@ public class CliRunnerTests
         }
     }
 
-    // D70: on any composer but openai the flag would bound nothing, and a flag that silently
-    // does nothing is a flag someone trusts.
+    // On any composer but openai the flag would bound nothing, and a flag that silently does
+    // nothing is a flag someone trusts, so it is refused.
     [Fact]
     public async Task RunAsync_ModelCallBudgetWithoutTheOpenAiComposer_WritesCleanErrorAndReturnsUsageError()
     {
@@ -166,7 +166,7 @@ public class CliRunnerTests
         }
     }
 
-    // D70: the flag changes what bounds a model call, never whether the key a call needs is
+    // The flag changes what bounds a model call, never whether the key a call needs is
     // required.
     [Fact]
     public async Task RunAsync_ModelCallBudgetWithTheOpenAiComposerAndNoKey_StillRefusesOnTheMissingKey()
@@ -191,8 +191,9 @@ public class CliRunnerTests
         }
     }
 
-    // D71: a line that did not parse is a failure the scorecard shows, not only the exit code:
-    // one ERROR row naming the line, counted in the overall and never passed.
+    // A line that did not parse is a failure the scorecard shows, not only the exit code: one
+    // ERROR row naming the line, counted in the overall and never passed, so a scorecard read
+    // alone never shows a clean run for an input with a bad line.
     [Fact]
     public async Task RunAsync_OneLineFailsToParse_ScorecardCarriesAnErrorRowCountedInTheOverall()
     {
@@ -224,9 +225,10 @@ public class CliRunnerTests
         }
     }
 
-    // D71: a record that threw inside the agent left the batch loop by a continue and vanished
-    // from the scorecard the same way. It is a row under its own task id, its reason the
-    // exception type alone (D46), since the message of an exception is not known to be safe.
+    // A record that threw inside the agent is a scorecard row too, under its own task id, so it
+    // cannot vanish from the report. Its reason is the exception type alone, never the message,
+    // since an exception's message can carry vendor, model or record text and is not known to be
+    // safe to print.
     [Fact]
     public async Task RunAsync_OneRecordThrows_ScorecardCarriesAnErrorRowUnderItsTaskId()
     {
@@ -260,7 +262,7 @@ public class CliRunnerTests
         }
     }
 
-    // D71: replay reads --input through the same reader, so a line that did not parse is the
+    // Replay reads --input through the same reader, so a line that did not parse is the
     // same row there.
     [Fact]
     public async Task RunAsync_ReplayWithAnUnparsableInputLine_ScorecardCarriesAnErrorRow()
@@ -354,8 +356,8 @@ public class CliRunnerTests
         }
     }
 
-    // Per-record isolation. No input can make a record throw any more (D1 gives every
-    // shape a default), so the fault is injected through the composer seam.
+    // Per-record isolation. No input can make a record throw (every input shape has a
+    // default), so the fault is injected through the composer seam.
     [Fact]
     public async Task RunAsync_OneRecordThrows_OtherRecordStillWrittenAndReturnsPartialFailure()
     {
@@ -386,7 +388,7 @@ public class CliRunnerTests
         }
     }
 
-    // D37 and D14: records run at the same time and finish in whatever order they finish, and
+    // Records run at the same time and finish in whatever order they finish, and
     // every file the batch writes still lists them in input order, because --replay pairs output
     // rows with input records by position. StaggeredComposer holds the three records until all
     // are composing at once, which only a concurrent loop reaches, and releases the last input
@@ -446,7 +448,7 @@ public class CliRunnerTests
         }
     }
 
-    // D37 and D16: the TaskId scope is per record while records overlap. StaggeredComposer holds
+    // The TaskId scope is per record while records overlap. StaggeredComposer holds
     // three records composing at once and then fails each with a fault naming it, so every
     // failure is logged while another record's scope is still open. Each "Record failed." entry
     // ends in its own TaskId and no other, and the stderr lines, written once the batch is done,
@@ -705,7 +707,7 @@ public class CliRunnerTests
         }
     }
 
-    // D37: cancellation still stops the batch once records run concurrently. The first record
+    // Cancellation still stops the batch once records run concurrently. The first record
     // cancels the run; the loop starts no record after that, so fewer records compose than the
     // batch holds and the run throws. Rows are written as records finish, so --output may hold
     // the rows folded before the cancel, but never a closed array: a cancelled run must not
@@ -736,7 +738,7 @@ public class CliRunnerTests
         }
     }
 
-    // D10: the run's reference time comes from --now; the send day follows it (A4).
+    // The run's reference time comes from --now, never a clock; the send day follows it (A4).
     [Fact]
     public async Task RunAsync_NowFlagProvided_SendAtFollowsTheReferenceDay()
     {
@@ -784,7 +786,8 @@ public class CliRunnerTests
         }
     }
 
-    // D1: the diagnostics file names every unknown member and every defaulted decision input.
+    // The diagnostics file names every unknown member and every defaulted decision input, so a
+    // default a decision used is never silent.
     [Fact]
     public async Task RunAsync_RecordWithUnknownAndAbsentMembers_DiagnosticsNameThem()
     {
@@ -815,8 +818,9 @@ public class CliRunnerTests
         }
     }
 
-    // D3 on the wire: a record with no consented channel is a next_message object with
-    // channel none, a no_op with its reason, and a diagnostics row naming the suppression.
+    // Suppression on the wire: a record with no consented channel is still a next_message
+    // object, with channel none, so the output always has both members; plus a no_op with its
+    // reason, and a diagnostics row naming the suppression.
     [Fact]
     public async Task RunAsync_NoConsentedChannel_WritesNoneMessageNoOpAndSuppressionReason()
     {
@@ -1119,8 +1123,8 @@ public class CliRunnerTests
             Assert.Contains("Record processed", logContent);
             Assert.DoesNotContain("Record 't1' processed", logContent);
             Assert.Contains("TaskId=t1", logContent);
-            // D16: one scope owner. Two scopes pushing the same key rendered every agent
-            // line as "TaskId=t1 TaskId=t1" (the retrospective's logging defect 1).
+            // One scope owner, CliRunner. Two scopes pushing the same key rendered every agent
+            // line as "TaskId=t1 TaskId=t1".
             Assert.DoesNotContain("TaskId=t1 TaskId=t1", logContent);
         }
         finally
@@ -1159,8 +1163,8 @@ public class CliRunnerTests
         }
     }
 
-    // D64: --output gets the guard --log-file already has. An unwritable path ended the
-    // process on an unhandled DirectoryNotFoundException with an exit code that is none of
+    // --output gets the guard --log-file has: an unwritable path is one stderr line and exit
+    // code 1, never an unhandled DirectoryNotFoundException with an exit code that is none of
     // the three documented ones (playbook step 79). ThrowingComposer proves the other half,
     // step 77's fail fast before work that costs time or money: it throws for t1, so a run
     // that reached the record loop would say "Injected fault" on stderr and exit 2.
@@ -1188,7 +1192,7 @@ public class CliRunnerTests
         }
     }
 
-    // D64, --diagnostics: its own flag in its own message. A guard that named --output for
+    // --diagnostics: its own flag in its own message. A guard that named --output for
     // every unwritable path would send an operator to the wrong flag.
     [Fact]
     public async Task RunAsync_DiagnosticsPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
@@ -1216,7 +1220,7 @@ public class CliRunnerTests
         }
     }
 
-    // D64, --review-queue: same guard, its own flag, and still before the record loop.
+    // --review-queue: same guard, its own flag, and still before the record loop.
     [Fact]
     public async Task RunAsync_ReviewQueuePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
     {
@@ -1243,7 +1247,7 @@ public class CliRunnerTests
         }
     }
 
-    // D64, --eval-report: the report describes the batch, so it is written after the batch
+    // --eval-report: the report describes the batch, so it is written after the batch
     // and its guard is at the write rather than before the loop. The batch's own output file
     // is still complete; only the report the run asked for could not be written, and that is
     // exit code 1 with one stderr line naming the flag, not a stack trace.
@@ -1273,7 +1277,7 @@ public class CliRunnerTests
         }
     }
 
-    // D64: --replay writes its scorecard through the same method, so the unwritable
+    // --replay writes its scorecard through the same method, so the unwritable
     // --eval-report rule holds there too. A guard that reported the failure and still let the
     // run exit 0 would tell a caller the report is on disk when it is not.
     [Fact]
@@ -1303,11 +1307,10 @@ public class CliRunnerTests
         }
     }
 
-    // D65: --input gets the guard the four output flags got in D64. It opened unguarded, so a
-    // path that names no file ended the process on an unhandled FileNotFoundException with a
-    // stack trace on stderr and an exit code that is none of the three documented ones. Exit 1
-    // and not 2: 2 means some records were processed and some were not, and a file that never
-    // opened has no records at all.
+    // --input gets the open guard the output flags have: a path that names no file is one
+    // stderr line with no stack trace, never an unhandled FileNotFoundException with an exit
+    // code that is none of the three documented ones. Exit 1 and not 2: 2 means some records
+    // were processed and some were not, and a file that never opened has no records at all.
     [Fact]
     public async Task RunAsync_InputPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
     {
@@ -1325,8 +1328,8 @@ public class CliRunnerTests
         Assert.False(File.Exists(outputPath));
     }
 
-    // D65: the second reader path, --replay, opened unguarded in the same way and gets the
-    // same guard with its own flag in its own message.
+    // The second reader path, --replay, gets the same guard with its own flag in its own
+    // message.
     [Fact]
     public async Task RunAsync_ReplayPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
     {
@@ -1351,9 +1354,9 @@ public class CliRunnerTests
         }
     }
 
-    // D65's second half: an empty value threw ArgumentException, which is not the IOException
-    // the open guards filter on, so every path guarded in D64 still ended the process
-    // unhandled when its flag was given "". It is closed in the argument parsing instead of by
+    // An empty value throws ArgumentException, which is not the IOException the open guards
+    // filter on, so every guarded path would end the process unhandled when its flag was
+    // given "". It is closed in the argument parsing instead of by
     // widening a catch filter, because no value any flag of this program takes means anything
     // when empty. The message names the argument the empty one follows, so an operator with
     // six flags on the line knows which one to fix.
@@ -1373,10 +1376,10 @@ public class CliRunnerTests
         Assert.False(File.Exists(outputPath));
     }
 
-    // A whitespace-only value is not the empty string the Length check above catches, but it
-    // resolves to the same "no real path" fact: Path.GetFullPath throws ArgumentException on
-    // it, which is not the IOException the open guards filter on, so it escaped as an
-    // unhandled exception the same way "" did before D65 (Antigravity review, PR #26).
+    // A whitespace-only value is not the empty string, but it resolves to the same "no real
+    // path" fact: Path.GetFullPath throws ArgumentException on it, which is not the IOException
+    // the open guards filter on, so without the blank-argument check it would escape as an
+    // unhandled exception the same way "" would.
     [Fact]
     public async Task RunAsync_OptionGivenAWhitespaceOnlyValue_WritesCleanErrorAndReturnsUsageError()
     {
@@ -1500,7 +1503,7 @@ public class CliRunnerTests
         }
     }
 
-    // D14: --replay re-scores an existing output file against --input without running the
+    // --replay re-scores an existing output file against --input without running the
     // agent. The composer injected here throws on the only record, so a run that reached
     // the agent would exit 2; exit 0 proves nothing ran but the scorer.
     [Fact]
@@ -1626,7 +1629,7 @@ public class CliRunnerTests
         Assert.Contains("--replay", errorWriter.ToString());
     }
 
-    // --output and --replay select mutually exclusive modes (D14); passing both used to
+    // --output and --replay select mutually exclusive modes; passing both used to
     // silently run --replay and never write --output, with no diagnostic.
     [Fact]
     public async Task RunAsync_OutputAndReplayBothGiven_WritesUsageAndReturnsUsageError()
@@ -1675,8 +1678,8 @@ public class CliRunnerTests
 
             Assert.Equal(CliExitCodes.PartialFailure, exitCode);
             string logContent = await File.ReadAllTextAsync(logFilePath);
-            // The elapsed and the model cost D61 and D62 added to this line follow the counts,
-            // which are what this test is about; the comma is where they start.
+            // The elapsed time and the model cost on this line follow the counts, which are
+            // what this test is about; the comma is where they start.
             Assert.Contains("Batch complete: 2 record(s), 1 failure(s),", logContent);
         }
         finally
@@ -1687,7 +1690,7 @@ public class CliRunnerTests
         }
     }
 
-    // D30: the judge is off unless --judge is passed, and it needs the same key the model
+    // The judge is off unless --judge is passed, and it needs the same key the model
     // composer does. An empty input file builds it and scores nothing, so no call is made.
     [Fact]
     public async Task RunAsync_JudgeRequestedWithApiKeyAndNoRecords_ScoresWithoutCallingTheModel()
@@ -1783,8 +1786,8 @@ public class CliRunnerTests
 
     // A record whose own city_interest is "families only" has that text written into its
     // body by the template composer ("We heard you're looking in families only."), so every
-    // compose attempt and the fallback are refused by the safety gate. Before D48's seam
-    // change the refusal destroyed the draft: this run reported composition_failed, recorded
+    // compose attempt and the fallback are refused by the safety gate. The refusal must carry
+    // the draft out: when it destroyed the draft, this run reported composition_failed, recorded
     // fair_housing_check_passed as not_evaluated, and could queue nothing. All three are
     // asserted here, through the real CLI wiring, because that wiring is what made
     // SuppressionReason.SafetyViolation unreachable.
@@ -1828,7 +1831,7 @@ public class CliRunnerTests
         }
     }
 
-    // D43: the file is written even when nothing was queued, because a missing file cannot
+    // The file is written even when nothing was queued, because a missing file cannot
     // be told apart from a flag nobody passed, and an empty queue is the number step 71 asks
     // for. A consent-suppressed record is in the same run to prove the second half of the
     // rule: not contactable is the correct decision, so it is never a queue row.
@@ -1864,7 +1867,7 @@ public class CliRunnerTests
         }
     }
 
-    // D43: a queued record leaves the run at exit 0. Suppression is a correct pipeline
+    // A queued record leaves the run at exit 0. Suppression is a correct pipeline
     // outcome, not a processing failure, and exit 2 would tell an operator the batch broke.
     [Fact]
     public async Task RunAsync_QueuedRecordAndACleanRecord_StillReturnsSuccess()
@@ -1955,7 +1958,7 @@ public class CliRunnerTests
         }
     }
 
-    // D43 and D14: --replay runs no validator at all, so it has nothing to queue. Asking for
+    // --replay runs no validator at all, so it has nothing to queue. Asking for
     // a queue from a replay is a usage error rather than a silently empty file that reads as
     // a clean run.
     [Fact]
@@ -1985,8 +1988,8 @@ public class CliRunnerTests
         }
     }
 
-    // D61: the per-record number is the wall-clock elapsed of exactly one RunAsync call, and
-    // it is on the diagnostics row from now on. Shape and presence only: it is wall clock and
+    // The per-record number is the wall-clock elapsed of exactly one RunAsync call, and it is
+    // on every diagnostics row. Shape and presence only: it is wall clock and
     // moves between runs on unchanged code (DESIGN.md section 9), so no test pins a
     // millisecond count.
     [Fact]
@@ -2023,7 +2026,7 @@ public class CliRunnerTests
         }
     }
 
-    // D61 option (c): one measurement with two readers. The diagnostics row and the scorecard
+    // One measurement with two readers. The diagnostics row and the scorecard
     // row state the same number for the same record, because the loop hands both the same
     // variable. Two stopwatches around the same call would disagree here.
     [Fact]
@@ -2067,7 +2070,7 @@ public class CliRunnerTests
         }
     }
 
-    // D61, per batch: one wall-clock elapsed around the record loop, on the two artifacts that
+    // Per batch: one wall-clock elapsed around the record loop, on the two artifacts that
     // are already per batch. It is not a row in the diagnostics array, which stays one row per
     // unit of work. The pattern pins the shape and never a duration.
     [Fact]
@@ -2095,8 +2098,9 @@ public class CliRunnerTests
         }
     }
 
-    // D62, the first state through the whole program: the default composer issues no request,
-    // so every row states no measurement and the batch has none to total.
+    // Cost when no model call is made, the first of its three states, through the whole
+    // program: the default composer issues no request, so every row states no measurement
+    // (null, never a zero) and the batch has none to total.
     [Fact]
     public async Task RunAsync_TemplateComposer_BatchLineAndScorecardStateNoModelCall()
     {
@@ -2129,10 +2133,10 @@ public class CliRunnerTests
         }
     }
 
-    // D62, the third state through the whole program, and the batch total over it: two records,
-    // one completed call each, and a batch line that adds them up. The client is fake, so no
-    // network call and no key are involved; what is real is the composer, the compose-validate
-    // loop, the agent and the writer the counts travel through.
+    // Cost when calls complete, the third of its three states, through the whole program, and
+    // the batch total over it: two records, one completed call each, and a batch line that adds
+    // them up. The client is fake, so no network call and no key are involved; what is real is
+    // the composer, the compose-validate loop, the agent and the writer the counts travel through.
     [Fact]
     public async Task RunAsync_ModelComposerWithCompletedCalls_TotalsTheTokensEveryRecordSpent()
     {
@@ -2175,12 +2179,12 @@ public class CliRunnerTests
         }
     }
 
-    // D66 through the whole program, on D48's steering record. The model answers both
-    // attempts with a body that repeats the record's own steering language, so both are
-    // rejected on safety; the template fallback writes the same language out of the record's
-    // own city_interest and is refused too. Nothing ships, so the record has no composition
-    // notes - and the two completed calls the vendor billed for are on the row beside its
-    // latency, where a suppression cannot take them with it.
+    // A record's model cost survives its suppression, through the whole program, on the
+    // steering record. The model answers both attempts with a body that repeats the record's own
+    // steering language, so both are rejected on safety; the template fallback writes the same
+    // language out of the record's own city_interest and is refused too. Nothing ships, so the
+    // record has no composition notes, and the two completed calls the vendor billed for are on
+    // the row beside its latency, where a suppression cannot take them with it.
     [Fact]
     public async Task RunAsync_SuppressedRecordThatCalledTheModel_KeepsTheCostOnItsDiagnosticsRow()
     {
@@ -2219,7 +2223,7 @@ public class CliRunnerTests
 
     // The second rule the same record proves: the batch total is summed off the rows the loop
     // writes, so a record whose cost survives its suppression changes the batch number too.
-    // Before D66 both the row and the total read as a run that never called a model.
+    // Otherwise both the row and the total would read as a run that never called a model.
     [Fact]
     public async Task RunAsync_SuppressedRecordThatCalledTheModel_CountsTowardTheBatchTotal()
     {
