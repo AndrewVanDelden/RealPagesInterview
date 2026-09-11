@@ -3027,3 +3027,20 @@ the code carries no warning under the setting. CI builds through the same proper
 the same setting holds there by construction; no failing commit was pushed to show it in CI.
 Stryker compiles each mutant with the project settings, so a mutant that raises a warning now
 fails to compile and leaves the score; the pinned gate is run again on this commit.
+
+**D90. The mutation job as a required check on `dev` (proposed 2026-09-10).** Question: the CI
+`mutation` job runs `mutation.ps1` after the gated suite on every pull request into `dev`, and
+branch protection requires only `test`, so a fall in the mutation score does not block a merge.
+Options: (a) add `mutation` to the checks `dev` requires; (b) leave it a report; (c) run it on a
+schedule instead of per pull request. Recommendation: (a), once its runs on the CI runner pass in
+a time a pull request can wait for, since a rule that must hold with no exceptions belongs in
+tooling and a check that does not gate is a report. GitHub reports a required job skipped by a
+condition as a success and keeps a workflow skipped by path or branch filters pending, which
+blocks a merge; the job has no filters and is skipped only when `test` fails, which already
+blocks. The risk is a failure on noise: the smallest margins over the pins are 0.35 and 0.59
+points, and a slower runner times out more mutants, which count as detected and move the score
+up, not down. Scopes: the `dev` branch protection setting only, through the GitHub API.
+Evidence: the troubleshooting page for required status checks on docs.github.com, read
+2026-09-10; the protection read back the same day, `test` required, not strict, admins not
+enforced; and the job runs on PR #33. Assumptions: none. The owner asked for the research and for
+the best course to be taken.
