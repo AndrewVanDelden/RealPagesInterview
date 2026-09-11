@@ -73,9 +73,10 @@ public class LeasingMessageAgentTests
 
         // D22: the send is explained by the same run. Sample 1's last interaction is before
         // the reference time, so the reference time is the floor (A4), and its zone reaches
-        // 09:00 once on that day, so the slot is exact (A20).
+        // 09:00 once on that day, so the slot is exact (A20). No slot row answers a prospect at
+        // new on sms, so the channel's hour set the time.
         Assert.Equal(
-            new ScheduleNotes(ScheduleFloor.ReferenceTime, TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, SlotResolution.Exact),
+            new ScheduleNotes(ScheduleFloor.ReferenceTime, TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, SlotResolution.Exact, SendSlotSource.ChannelDefault),
             result.Diagnostics.Schedule);
     }
 

@@ -129,21 +129,34 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"action_plan\":null", json);
     }
 
-    // D22 and the Phase 3 check: send_at has three inputs (A4's floor, A6's zone, A5's hour),
-    // and the diagnostics name all three. The two enums are spelled the way every other enum
-    // on the wire is (D3).
+    // send_at has four inputs: the floor, the zone, what the zone did to the slot, and the rule
+    // that chose the day and the time. The diagnostics name all four, and the three enums are
+    // spelled the way every other enum on the wire is.
     [Fact]
-    public void Serializes_Schedule_WithSnakeCaseFloorAndSlot()
+    public void Serializes_Schedule_WithSnakeCaseFloorSlotAndSource()
     {
         var diagnostics = new AgentDiagnostics(
             NoStates,
             0,
             ActionPlan: new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
-            Schedule: new ScheduleNotes(ScheduleFloor.LastInteraction, "America/Chicago", SlotResolution.ShiftedPastGap));
+            Schedule: new ScheduleNotes(ScheduleFloor.LastInteraction, "America/Chicago", SlotResolution.ShiftedPastGap, SendSlotSource.SlotRow));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
 
-        Assert.Contains("\"schedule\":{\"floor\":\"last_interaction\",\"time_zone_id\":\"America/Chicago\",\"slot\":\"shifted_past_gap\"}", json);
+        Assert.Contains("\"schedule\":{\"floor\":\"last_interaction\",\"time_zone_id\":\"America/Chicago\",\"slot\":\"shifted_past_gap\",\"source\":\"slot_row\"}", json);
+    }
+
+    [Fact]
+    public void Serializes_ScheduleFromTheChannelHour_AsChannelDefault()
+    {
+        var diagnostics = new AgentDiagnostics(
+            NoStates,
+            0,
+            Schedule: new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact, SendSlotSource.ChannelDefault));
+
+        string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
+
+        Assert.Contains("\"source\":\"channel_default\"", json);
     }
 
     // A record with no message was never scheduled, so there is no send to explain. Same rule
@@ -170,7 +183,7 @@ public class AgentDiagnosticsTests
             NoStates,
             0,
             ActionPlan: new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow),
-            Schedule: new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact),
+            Schedule: new ScheduleNotes(ScheduleFloor.ReferenceTime, "America/Chicago", SlotResolution.Exact, SendSlotSource.ChannelDefault),
             Composition: new CompositionNotes(ComposerNames.Template, Attempts: 3, LocaleApplied: true));
 
         string json = JsonSerializer.Serialize(diagnostics, AgentJsonOptions.Default);
