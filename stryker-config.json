@@ -1,0 +1,15 @@
+{
+  "stryker-config": {
+    "project": "Agent.csproj",
+    "reporters": [
+      "html",
+      "json",
+      "cleartext"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    }
+  }
+}
