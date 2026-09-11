@@ -145,7 +145,7 @@ every comment in `src` and `tests`, now held by the instruction check, run and d
 measured on a clean clone, with a CI job. The pinned gate passed and its negative
 control failed on the score, both run and debug facts. D89 and the D86 amendment were taken, and a
 planted warning now fails the build. D86 met its amended check; D90 made the
-mutation job a required check on dev. PR #33's four confirmed review findings were fixed, run
-and debug facts: a wasted read pass and position reset under a budget override, a missing flush
-leaving output rows unwritten, an inaccurate complexity comment, and a redundant scorecard
-rebuild on a clean run.
+mutation job a required check on dev. PR #33's four confirmed review findings were fixed: a
+wasted read pass under a budget override, a missing flush, and an inaccurate complexity comment
+landed clean; the fourth, a scorecard-rebuild skip, broke D90's mutation gate as an equivalent
+mutant and was reverted, with the budget fix logged to stay killable, all run and debug facts.

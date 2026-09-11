@@ -664,6 +664,39 @@ public class CliRunnerTests
             string[] lines = errorWriter.ToString().Split(Environment.NewLine);
             Assert.Single(lines, line => line.StartsWith("Record failed to parse: Line 2", StringComparison.Ordinal));
             Assert.Single(lines, line => line.Contains("Could not parse the 'expected' field", StringComparison.Ordinal));
+
+            // Both records state p95_latency_ms 2000 (RecordJson's default) and neither overrode
+            // it, so the first pass must have actually read them: proves ModelCallBudgetFromInput
+            // computed the budget rather than skipping straight to null.
+            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: 2000ms.", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // With --model-call-budget-ms, the logged budget is the override, not anything read from
+    // the file; BuildOpenAiComposer receives whatever ModelCallBudgetFromInput returns.
+    [Fact]
+    public async Task RunAsync_OpenAiComposerWithModelCallBudgetOverride_LogsTheOverrideNotAFileReadBudget()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, string.Empty);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([new("OpenAI:ApiKey", "fake-key-for-coverage")])
+            .Build();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(configuration, new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai", "--model-call-budget-ms", "30000"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: 30000ms.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -932,7 +965,9 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-            Assert.Contains("Composer: openai, model gpt-4o-mini.", errorWriter.ToString(), StringComparison.Ordinal);
+            // No record states a budget and there is no override, so the strictest-budget pass
+            // over an empty file finds nothing to bound the call.
+            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: none.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {

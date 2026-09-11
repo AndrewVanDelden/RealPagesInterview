@@ -468,9 +468,9 @@ public sealed class CliRunner(
         using (AgentLog.Configure(NullLoggerFactory.Instance))
         using (var firstPass = new StreamReader(inputReader.BaseStream, leaveOpen: true))
         {
+            // No override to pass here: the guard above already returned when there was one.
             budget = ModelCallBudget.PerCallBudget(
-                new JsonlRecordReader().ReadEach(firstPass).Where(read => read.IsSuccess).Select(read => read.Value),
-                evaluationOverride);
+                new JsonlRecordReader().ReadEach(firstPass).Where(read => read.IsSuccess).Select(read => read.Value));
         }
 
         inputReader.BaseStream.Position = 0;
@@ -799,12 +799,16 @@ public sealed class CliRunner(
     // The judge's two verdicts on top of a scorecard when the run asked for them, then one row
     // per input the batch could not process. Both paths finish scoring this way. The judge is one
     // signal beside the deterministic checks and never replaces one, and the unprocessed rows go
-    // last because the judge pairs scorecard rows with runs by position. AppendUnprocessed
-    // rebuilds the whole scorecard, so with nothing to append (the normal, clean-run case) it is
-    // skipped and the judged scorecard is returned as-is: appending an empty list would rebuild
-    // the identical tallies and p95 at the cost of redoing both from scratch.
+    // last because the judge pairs scorecard rows with runs by position.
     // O(n) in the scored runs, one judge call each when the judge is on, plus the rebuilt
-    // scorecard's O(n) tallies and O(n log n) p95 when there are unprocessed rows to append.
+    // scorecard's O(n) tallies and O(n log n) p95. AppendUnprocessed reruns both even when
+    // unprocessedRows is empty (the normal, clean-run case), which is redundant: fold.ScoreBatch
+    // already computed the same tallies and p95 for that record set. A skip-when-empty guard was
+    // tried and reverted: appending an empty list recomputes byte-identical values, so the guard
+    // changes no output this method's only test surface (RunAsync's output) can observe, and a
+    // mutation test that deletes the guard cannot be told apart from correct code without an
+    // internal-visibility seam this codebase does not otherwise use. Left unconditional rather
+    // than add one for a redundant computation that is cheap at this batch's scale.
     private static async Task<Scorecard> JudgeAndAppendAsync(
         Scorecard scorecard,
         IReadOnlyList<ScoredRun> runs,
@@ -813,7 +817,7 @@ public sealed class CliRunner(
         CancellationToken cancellationToken)
     {
         Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
-        return unprocessedRows.Count == 0 ? judged : judged.AppendUnprocessed(unprocessedRows);
+        return judged.AppendUnprocessed(unprocessedRows);
     }
 
     private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
@@ -824,8 +828,11 @@ public sealed class CliRunner(
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
         // Playbook step 78: the log states the inputs a decision used, and which model wrote a
-        // run's prose is one; the key is never logged, the model name is configuration.
-        loggerFactory.CreateLogger<CliRunner>().LogInformation("Composer: openai, model {Model}.", model);
+        // run's prose is one, as is the per-call budget a record's threshold or an override set;
+        // the key is never logged, neither the model name nor the budget is secret.
+        string callBudgetDescription = callTimeout is { } budget ? $"{(long)budget.TotalMilliseconds}ms" : "none";
+        loggerFactory.CreateLogger<CliRunner>().LogInformation(
+            "Composer: openai, model {Model}. Call budget: {CallBudget}.", model, callBudgetDescription);
 
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());

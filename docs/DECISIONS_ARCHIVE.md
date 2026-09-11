@@ -3090,3 +3090,28 @@ a real `FileStream`/`StreamWriter`, writes one row without disposing, and reads 
 through a second handle; it failed on the unfixed code (`Assert.Contains` found nothing on disk)
 and passed once `target.FlushAsync(cancellationToken)` was added. `dotnet test` on both projects:
 Agent.Cli.Tests 97/97, Agent.Tests 661/661, both at 100 percent line, branch and method coverage.
+
+**Run and debug fact, the PR #33 push broke D90's mutation gate and two fixes were corrected
+(2026-09-11).** The `test` check on the pushed commit passed; the `mutation` check, required by
+D90, failed at 86.71 percent against Agent.Cli's pinned 87 percent break threshold (Agent's score
+was unaffected, 82.37 percent, comment-only change). Both edited spots in `CliRunner.cs`
+introduced a survived mutant. `JudgeAndAppendAsync`'s skip-when-empty guard is a true equivalent
+mutant: `Scorecard.AppendUnprocessed` on an empty list recomputes byte-identical tallies and p95,
+so a mutant that deletes the guard produces no observable difference through `RunAsync`'s output,
+the method's only test surface; killing it would need an internal-visibility seam this codebase
+does not otherwise use (every other internal type here, e.g. `LogLineFormatter`, is asserted by
+its rendered output, never called directly). Reverted; the comment above the method records why,
+without a decision number, per D87. `ModelCallBudgetFromInput`'s early return for an override had
+the same problem in miniature: the fallback path still passed `evaluationOverride` into
+`ModelCallBudget.PerCallBudget`, which returns it unread anyway, so removing the early return
+changed nothing observable either. Fixed by dropping that redundant argument (the fallback is
+only reached when there is no override, so passing one there was always dead) and by extending
+the existing "Composer: openai, model {Model}." log line to a second sentence naming the call
+budget, matching the existing convention of logging a decision's inputs (playbook step 78); two
+new assertions (the default record threshold's 2000ms, and "none" on an empty file) and one
+already-modified test now pin the exact value both branches return, closing the gap a Stryker
+"Equality mutation" and a "String mutation" had opened. Local Stryker runs on `stryker-config.
+cli.json` confirm no survivor remains in either edited region and the score climbed in three
+steps, 87.06, 87.41, 87.76 percent, each still comfortably above the 87 percent break and near
+the original 87.59 percent margin from D90. `.\test.ps1` after every step: 98/98 and 661/661,
+100 percent coverage both projects throughout.
