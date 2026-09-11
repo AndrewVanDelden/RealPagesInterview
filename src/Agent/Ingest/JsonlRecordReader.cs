@@ -8,10 +8,10 @@ namespace Agent.Ingest;
 
 public sealed class JsonlRecordReader
 {
-    // D1: the three members a record must carry. Until step 68's redaction the error row
-    // named a missing one only because the deserializer's own message did; that message can
-    // no longer be reported, so the guarantee is stated here instead, from this program's
-    // own schema names rather than from anything the record wrote.
+    // The three members a record must carry; a line missing one is an error row naming it.
+    // The deserializer's own message would name it too, but that message quotes the record's
+    // text and is never reported (step 68), so the names come from this program's own schema
+    // rather than from anything the record wrote.
     //
     // Read from ProspectCase's own [JsonConstructor] rather than spelled out a second time
     // (A17): the constructor's parameters are what RespectRequiredConstructorParameters

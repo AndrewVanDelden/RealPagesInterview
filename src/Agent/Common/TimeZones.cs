@@ -27,14 +27,14 @@ public static class TimeZones
     public static DateOnly ToLocalDate(DateTimeOffset instant, string? timeZoneId) =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, ResolveOrUtc(timeZoneId)).DateTime);
 
-    // D21 and A20: the send slot (A5) is a local wall time, and a zone does not reach every
-    // wall time exactly once. On the day a zone springs forward the slot may never happen; on
-    // the day it falls back the slot happens twice. Stamping GetUtcOffset(wall time) on the
-    // wall time, which is what the arithmetic reads like, emits an offset the zone never had
-    // at the instant it names, and the offset travels with the value, so no reader downstream
-    // can tell. Both branches are unreachable from the current zone database at 09:00 and
-    // 10:00; the rule is stated over a zone's adjustment rules, and the tests build zones
-    // whose transitions do cover the slot.
+    // A20: the send slot (A5) is a local wall time, and a zone does not reach every wall time
+    // exactly once. On the day a zone springs forward the slot may never happen, and resolves
+    // to the first instant at or after it, closest to the stated hour; on the day it falls
+    // back the slot happens twice, and resolves to the earlier. Stamping GetUtcOffset(wall
+    // time) on the wall time, the obvious arithmetic, emits an offset the zone never had at
+    // that instant, and the offset travels with the value, so no reader downstream can tell.
+    // Both branches are unreachable from the current zone database at 09:00 and 10:00; the
+    // rule is stated over a zone's adjustment rules, and the tests build zones that reach it.
     public static ResolvedSlot ResolveSlot(TimeZoneInfo timeZone, DateTime localWallTime)
     {
         if (timeZone.IsInvalidTime(localWallTime))
@@ -52,7 +52,7 @@ public static class TimeZones
         return new ResolvedSlot(new DateTimeOffset(localWallTime, timeZone.GetUtcOffset(localWallTime)), SlotResolution.Exact);
     }
 
-    // D21: the earliest instant at or after a gap's local wall time, found without assuming
+    // The earliest instant at or after a gap's local wall time, found without assuming
     // the gap's width - a zone's rule tables are not public API, so this locates the boundary
     // by search rather than by reading the rule. GetUtcOffset on an invalid wall time returns
     // the offset from before the transition (documented behavior), so stamping that offset on
