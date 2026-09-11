@@ -8,15 +8,19 @@ namespace Agent.Decisions;
 // send that many local days past the floor's day and sets its local time; with no row the send
 // is the channel's hour on the floor day. A same-day slot already passed rolls to the next day.
 // The slot is a wall time a zone may skip or repeat, so TimeZones.ResolveSlot turns it into an
-// instant and says what the zone did. No quiet-hours window: DESIGN.md section 8.
-public sealed class SendScheduler
+// instant and says what the zone did. No quiet-hours window: DESIGN.md section 8. The slot
+// table is a value the caller can substitute, and the compiled table is the default.
+public sealed class SendScheduler(SendSlotTable? slotTable = null)
 {
-    private static readonly IReadOnlyDictionary<CommunicationChannel, TimeOnly> DefaultSendHour = new Dictionary<CommunicationChannel, TimeOnly>
+    // The channels a message is sent on, each with its hour; a slot row may name only these.
+    internal static readonly IReadOnlyDictionary<CommunicationChannel, TimeOnly> DefaultSendHour = new Dictionary<CommunicationChannel, TimeOnly>
     {
         [CommunicationChannel.Sms] = new TimeOnly(9, 0),
         [CommunicationChannel.Email] = new TimeOnly(10, 0),
         [CommunicationChannel.Voice] = new TimeOnly(9, 0),
     };
+
+    private readonly SendSlotTable _slotTable = slotTable ?? SendSlotTable.Default;
 
     public ScheduledSend Resolve(
         DateTimeOffset referenceTime,
@@ -31,7 +35,7 @@ public sealed class SendScheduler
             throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unknown communication channel.");
         }
 
-        Option<SendSlotRow> row = SendSlotTable.Find(persona, lifecycleStage, channel);
+        Option<SendSlotRow> row = _slotTable.Find(persona, lifecycleStage, channel);
 
         (int daysAfterFloorDay, TimeOnly localTime, SendSlotSource source) = row.HasValue
             ? (row.Value.DaysAfterFloorDay, row.Value.LocalTime, SendSlotSource.SlotRow)

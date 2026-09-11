@@ -131,6 +131,48 @@ public class ActionCatalogTests
         Assert.Contains("Generic catalog row", result.Error, StringComparison.Ordinal);
     }
 
+    // Every bad row is in the one failure, each named by its 1-based position and its key, so
+    // whoever fixes a rules file sees the whole list at once instead of one row per run.
+    [Fact]
+    public void Create_SeveralBadRows_NamesEveryOneByPositionAndKey()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [
+                Row(" ", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()),
+                Row("prospect", "open", Option<NextAction>.None(), Option<NextAction>.Some(FollowUp)),
+                Row(" Prospect", "OPEN", Option<NextAction>.None(), Option<NextAction>.Some(new NextAction("send_postcard"))),
+                Row("resident", "", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 0)), Option<NextAction>.None()),
+            ]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(
+            [
+                "Catalog row 1 (/new): persona is blank.",
+                "Catalog row 3 (prospect/open): duplicates catalog row 2.",
+                "Catalog row 3 (prospect/open): long horizon action type 'send_postcard' is unknown.",
+                "Catalog row 4 (resident/): lifecycle stage is blank.",
+                "Catalog row 4 (resident/): short horizon action value 0 must be positive.",
+            ],
+            result.Error.Split(Environment.NewLine));
+    }
+
+    [Fact]
+    public void Create_GenericRowWithTwoBadBranches_NamesBoth()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            new GenericActionRow(new NextAction("send_postcard"), new NextAction(ActionTypes.FollowUpInDays, Value: -1)),
+            []);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(
+            [
+                "Generic catalog row: short horizon action type 'send_postcard' is unknown.",
+                "Generic catalog row: long horizon action value -1 must be positive.",
+            ],
+            result.Error.Split(Environment.NewLine));
+    }
+
     [Fact]
     public void Resolve_KeyWithStatedBranch_ReturnsTheRowAction()
     {
