@@ -1,6 +1,6 @@
 namespace Agent.Composition;
 
-// D62: a 200 with no completion choice can still carry a real usage block the vendor billed
+// A 200 with no completion choice can still carry a real usage block the vendor billed
 // for (OpenAiCompletionClient.CompleteAsync reads result.Value to find the missing choice, and
 // result.Value.Usage is already available there). The tokens have nowhere else to travel once
 // the exception is thrown, so they ride on it rather than being read and discarded.

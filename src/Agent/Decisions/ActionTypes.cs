@@ -14,9 +14,9 @@ public static class ActionTypes
     // Sample 2: a prospect 68 days out.
     public const string FollowUpInDays = "follow_up_in_days";
 
-    // D2: the action on a record that is not contactable. No catalog row emits it; the agent
-    // emits it at step 1, when the channel selector returns no value (D57), before the
-    // planner runs.
+    // The action on a record none of whose preferred channels is consented. No catalog row
+    // emits it; the agent emits it at step 1, when the channel selector returns no value, with
+    // reason no_contact_consent, and nothing else runs: consent is decided before the planner.
     public const string NoOp = "no_op";
 
     // Hold-out prospect_no_show_reengage: a prospect who missed a tour starts over.

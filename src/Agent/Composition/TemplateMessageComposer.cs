@@ -4,12 +4,12 @@ using Agent.Domain;
 
 namespace Agent.Composition;
 
-// The offline composer and the fallback (A18). Every fact is optional (D1): an absent
+// The offline composer and the fallback (A18). Every fact is optional in the input: an absent
 // first name means no name in the greeting, an absent property means no property fact and
 // no link, an absent primary_cta means the generic reply call to action (A9, A12). The
 // opt-out phrase is always present, and so is the channel's call-to-action payload: sms
-// enumerates the options, email carries the link (A10, D25). The prose comes from the
-// record's language set (A13, D26); the sentence order lives here because every set shares
+// enumerates the options, email carries the link (A10). The prose comes from the
+// record's language set (A13); the sentence order lives here because every set shares
 // it, and a language with no set is served in English with LocaleApplied false.
 public sealed class TemplateMessageComposer : IMessageComposer
 {
