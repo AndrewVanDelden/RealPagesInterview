@@ -7,12 +7,12 @@ using Xunit;
 namespace Agent.Tests.Evaluation;
 
 // Playbook step 36: the scorecard is wired into CI so a regression in any per-check number
-// fails the build. These are measurements, not targets (D6, D9): a number that rises is
-// recorded here and in README.md together, never chased. The template composer runs on every
-// set with the set's documented reference time; latency is not measured in the suite.
-// D71: a line that did not parse is a row of the report too, so the overall pinned here is the
-// one the CLI prints. synthetic_12.jsonl's line 11 is the only such line on any set, and its
-// 12/13 is a drop taken on that decision, not a regression.
+// fails the build. These are measurements, not targets: the sets are evaluation data, never
+// fitted to, so a number that rises is recorded here and in README.md together, never chased.
+// The template composer runs on every set with the set's documented reference time; latency
+// is not measured in the suite. A line that did not parse is a row of the report too, so the
+// overall pinned here is the one the CLI prints. synthetic_12.jsonl's line 11 is the only
+// such line on any set, and its 12/13 is a deliberate drop, not a regression.
 public class BaselineNumbersTests
 {
     [Theory]

@@ -6,9 +6,9 @@ using Xunit;
 
 namespace Agent.Tests.Composition;
 
-// D27: the client runs on the official OpenAI package, so these tests drive the real SDK
-// pipeline over a fake transport. What they pin is this project's contract with it: the
-// request the SDK builds from our options, the retries it spends and reports (D28), and the
+// The client runs on the official OpenAI package, not hand-rolled HTTP, so these tests drive
+// the real SDK pipeline over a fake transport. What they pin is this project's contract with
+// it: the request the SDK builds from our options, the retries it spends and reports, and the
 // failures the composer above has to catch.
 public class OpenAiCompletionClientTests
 {
@@ -59,8 +59,9 @@ public class OpenAiCompletionClientTests
         Assert.Equal(401, exception.Status);
     }
 
-    // D28 and playbook step 49: a transient failure is retried once, and the count reaches
-    // the diagnostics rather than disappearing inside the pipeline.
+    // Playbook step 49: a transient failure is retried once, and the count reaches
+    // the diagnostics rather than disappearing inside the pipeline, since a retry nobody can see
+    // is silent degradation.
     [Fact]
     public async Task CompleteAsync_TransientFailureThenSuccess_RetriesOnceAndReportsIt()
     {
@@ -77,11 +78,12 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
-    // D37's first prerequisite: a call's retries are the ones that call spent, not a difference
-    // read across a counter the client shares. Two calls in flight on one client at once: the
-    // first meets a 429 and is retried, and the second answers cleanly but only after the
-    // first's retry has been sent. A before-and-after difference of one shared counter hands
-    // both calls attempts that were not theirs.
+    // Retries are counted per call, which is what lets the batch run records concurrently: a
+    // call's retries are the ones that call spent, not a difference read across a counter the
+    // client shares. Two calls in flight on one client at once: the first meets a 429 and is
+    // retried, and the second answers cleanly but only after the first's retry has been sent. A
+    // before-and-after difference of one shared counter hands both calls attempts that were not
+    // theirs.
     [Fact]
     public async Task CompleteAsync_TwoConcurrentCallsOneRetried_EachReportsOnlyItsOwnRetries()
     {
@@ -129,12 +131,12 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
-    // D28: the budget is a stated value, so a call that outlives it fails instead of holding
+    // The budget is a stated value, so a call that outlives it fails instead of holding
     // the batch open, and the client names the failure TimeoutException so the composer
-    // catches a timeout by its own type. D33: the timeout is not retried. It says the
+    // catches a timeout by its own type. The timeout is not retried. It says the
     // completion did not fit the budget, and an identical second call inside the same budget
     // has no mechanism by which it would, while about a third of abandoned attempts are billed
-    // in full (D31 addendum): one HTTP attempt, never two.
+    // in full: one HTTP attempt, never two.
     [Fact]
     public async Task CompleteAsync_CallOutlivesTheTimeout_ThrowsTimeoutExceptionWithoutRetrying()
     {
@@ -147,10 +149,10 @@ public class OpenAiCompletionClientTests
         Assert.Equal(1, handler.CallCount);
     }
 
-    // D35: a timeout is not retried (D33), so dividing the budget by the attempts the client may
-    // make only halved the one attempt that actually happens. D32 measured a completion at about
-    // 1.5 to 4.5 s, so an attempt that needs 1200 ms of a 2000 ms budget is the case that
-    // matters: it completes, where the division abandoned it at 1000 ms.
+    // A timeout is not retried, so dividing the budget by the attempts the client may make would
+    // only halve the one attempt that actually happens. A completion was measured at about 1.5 to
+    // 4.5 s, so an attempt that needs 1200 ms of a 2000 ms budget is the case that matters: it
+    // completes, where a divided budget abandoned it at 1000 ms.
     [Fact]
     public async Task CompleteAsync_AttemptNeedsMoreThanHalfTheBudget_StillCompletes()
     {
@@ -164,9 +166,10 @@ public class OpenAiCompletionClientTests
         Assert.Equal(1, handler.CallCount);
     }
 
-    // D35's stated cost: the attempt after a transient status is given the whole budget too, so
-    // a call that met a 429 can take the first attempt, the backoff and a second full budget.
-    // The call completes rather than being cut at the budget it has already exceeded.
+    // The stated cost of giving one attempt the whole budget: the attempt after a transient
+    // status is given the whole budget too, so a call that met a 429 can take the first attempt,
+    // the backoff and a second full budget. The call completes rather than being cut at the
+    // budget it has already exceeded.
     [Fact]
     public async Task CompleteAsync_TransientStatusThenASlowAttempt_GivesTheRetryTheWholeBudgetToo()
     {
@@ -190,10 +193,10 @@ public class OpenAiCompletionClientTests
         Assert.Equal(2, handler.CallCount);
     }
 
-    // D33 retries only a transient status, so a request that fails with no response at all is
-    // not retried either: the SDK would otherwise make it twice and hand the composer an
-    // AggregateException of the two, a type its catch list does not name, which escapes the
-    // agent and costs the record its output row. One attempt, and the SDK's own
+    // Only a transient status (408, 429, 5xx) is retried, so a request that fails with no
+    // response at all is not retried either: the SDK would otherwise make it twice and hand the
+    // composer an AggregateException of the two, a type its catch list does not name, which
+    // escapes the agent and costs the record its output row. One attempt, and the SDK's own
     // ClientResultException, which the composer does catch.
     [Fact]
     public async Task CompleteAsync_RequestFailsWithNoResponse_IsNotRetried()
@@ -299,11 +302,11 @@ public class OpenAiCompletionClientTests
         await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
     }
 
-    // D62: a 200 with no choice can still carry a real usage block, because the vendor can
+    // A 200 with no choice can still carry a real usage block, because the vendor can
     // bill a call whose output was withheld (a moderation refusal is one live shape of this).
     // result.Value.Content is what throws when there is no choice, and result.Value.Usage is
     // already readable at that point, so the tokens must not collapse into the same zero an
-    // abandoned-at-timeout call reports (Claude Code review, PR #26).
+    // abandoned-at-timeout call reports: no call, abandoned and completed are three facts.
     [Fact]
     public async Task CompleteAsync_ResponseHasNoChoiceButCarriesUsage_ThrowsWithTheVendorsTokenCounts()
     {
@@ -339,9 +342,9 @@ public class OpenAiCompletionClientTests
         Assert.Equal(0, exception.OutputTokens);
     }
 
-    // D62: cost in the diagnostics is measured tokens, and the measurement is the vendor's own
-    // usage block on the completion. Confirmed by reflection over the restored OpenAI 2.13.0
-    // assembly on 2026-09-09: ChatCompletion.Usage is a ChatTokenUsage with int
+    // Cost in the diagnostics is measured tokens, never money, and the measurement is the
+    // vendor's own usage block on the completion. Confirmed by reflection over the restored OpenAI
+    // 2.13.0 assembly on 2026-09-09: ChatCompletion.Usage is a ChatTokenUsage with int
     // InputTokenCount, int OutputTokenCount and int TotalTokenCount, and the wire names it
     // reads are prompt_tokens and completion_tokens.
     [Fact]
@@ -360,7 +363,7 @@ public class OpenAiCompletionClientTests
     // A 200 whose body carries no usage block at all: the SDK leaves Usage null, so there is
     // nothing measured and the counts are zero. The call still completed, and it is
     // ModelCostNotes.CompletedCalls beside them, not the zeros, that says whether a bill
-    // exists (D62).
+    // exists.
     [Fact]
     public async Task CompleteAsync_ResponseHasNoUsage_ReportsZeroTokens()
     {

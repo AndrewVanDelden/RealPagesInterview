@@ -100,7 +100,7 @@ public class ValidatingMessageComposerTests
         Assert.Empty(finalValidation.Violations);
     }
 
-    // D34: an attempt that returned no message (a transport failure, a timeout, a malformed
+    // An attempt that returned no message (a transport failure, a timeout, a malformed
     // completion) is not a content problem a second prompt could fix, so it goes straight to
     // the fallback and the inner composer is called once.
     [Fact]
@@ -128,7 +128,7 @@ public class ValidatingMessageComposerTests
         Assert.Equal(2, innerComposer.CallCount);
     }
 
-    // D48: nothing unsafe ships, and the draft is no longer destroyed on the way out. The
+    // Nothing unsafe ships, and the draft is not destroyed on the way out. The
     // refusal carries the fallback draft, which is the one the orchestrator validates and
     // the review queue holds.
     [Fact]
@@ -178,8 +178,8 @@ public class ValidatingMessageComposerTests
         Assert.Contains(innerComposer.LastPriorViolations, violation => violation.Contains("families only", StringComparison.Ordinal));
     }
 
-    // D34: the fallback answers a no-message first attempt even where a second model attempt
-    // would have come back clean, because the loop no longer makes one. The notes count the
+    // The fallback answers a no-message first attempt even where a second model attempt
+    // would have come back clean, because the loop makes none. The notes count the
     // one model attempt and the fallback, so Attempts reads 2 and not 3.
     [Fact]
     public async Task ComposeAsync_FirstAttemptReturnsNoMessage_TheFallbackAnswersOnTheSecondCall()
@@ -223,7 +223,7 @@ public class ValidatingMessageComposerTests
     }
 
     // The error text can carry raw model response content on the OpenAI path, so the log
-    // records the failure category and the text itself never reaches a log sink. Since D34 it
+    // records the failure category and the text itself never reaches a log sink. It
     // reaches no later attempt either: a no-message attempt goes straight to the fallback.
     [Fact]
     public async Task ComposeAsync_FirstAttemptResultFailure_LogsTheCategoryAndNotTheErrorText()
@@ -269,7 +269,7 @@ public class ValidatingMessageComposerTests
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Error);
     }
 
-    // D24: the notes name the composer whose text was returned and the number of calls this
+    // The notes name the composer whose text was returned and the number of calls this
     // loop made to get it, so the fallback after two rejected attempts is visible as the
     // template composer on the third call rather than as a clean first attempt.
     [Fact]
@@ -298,7 +298,7 @@ public class ValidatingMessageComposerTests
         Assert.Equal(new CompositionNotes(SequenceMessageComposer.Name, Attempts: 2, LocaleApplied: true), ComposedOf(outcome).Notes);
     }
 
-    // D28 addendum: a retry the first (rejected) attempt spent is still a retry this record
+    // A retry the first (rejected) attempt spent is still a retry this record
     // spent, so the winning second attempt's own count is not the whole story on its own.
     [Fact]
     public async Task ComposeAsync_FirstAttemptHasRetriesThenFailsValidation_SecondAttemptSucceeds_SumsNetworkRetries()
@@ -321,8 +321,8 @@ public class ValidatingMessageComposerTests
     // the winner; this is the other branch, an attempt that made no message at all (a
     // Result.Failure, the same shape a wrong-cta_type or malformed-JSON response takes on the
     // OpenAI path). A retry that attempt spent is still a retry this record spent, whether or
-    // not the attempt produced a message (Claude Code review, PR #26). D34 sends that attempt
-    // straight to the fallback, which spends none, so its retries are the whole count.
+    // not the attempt produced a message. A no-message attempt goes straight to the fallback,
+    // which spends none, so its retries are the whole count.
     [Fact]
     public async Task ComposeAsync_FirstAttemptFailsWithRetries_TheFallbackCarriesTheFailedAttemptsRetries()
     {
@@ -358,9 +358,9 @@ public class ValidatingMessageComposerTests
         Assert.Equal(2, outcome.NetworkRetries);
     }
 
-    // D62: this loop owns the per-record sum, for the reason it owns Attempts (D24 addendum).
-    // A composer knows what its own call cost and nothing about the calls the attempts beside
-    // it made, so a record's cost is a fact only the code that ran every attempt has.
+    // This loop owns the per-record sum, for the reason it owns Attempts: a composer knows what
+    // its own call cost and nothing about the calls the attempts beside it made, so a record's
+    // cost is a fact only the code that ran every attempt has.
     [Fact]
     public async Task ComposeAsync_FirstAttemptCostsTokensThenFailsValidation_SumsTheModelCostOntoTheWinner()
     {
@@ -384,7 +384,7 @@ public class ValidatingMessageComposerTests
             outcome.ModelCost);
     }
 
-    // The 2026-09-08 live run, in the shape this loop sees it since D34: the attempt is
+    // The 2026-09-08 live run, in the shape this loop sees it: the attempt is
     // abandoned at its timeout, the template fallback answers with no second model attempt,
     // and the record still states that one call was made and no tokens came back. The fallback
     // has no cost of its own, so without the accumulation the bill would vanish behind a
@@ -419,7 +419,7 @@ public class ValidatingMessageComposerTests
         Assert.Null(outcome.ModelCost);
     }
 
-    // D66: the exit this loop had no way to report through. Both attempts were rejected on
+    // The exit whose spend used to vanish. Both attempts were rejected on
     // safety and the fallback's own draft was too, so nothing ships and the record carries no
     // composition notes at all - and the two calls it made, and the retries under them, are
     // still what this record spent. Reported on the outcome itself, which every case answers
@@ -445,8 +445,8 @@ public class ValidatingMessageComposerTests
 
     // The other exit with no message: the fallback built none either, so the record is a
     // composition failure rather than a refusal. The attempt was abandoned at its timeout and
-    // D34 sent it straight to the fallback, and an abandoned call returns no completion to read
-    // a retry count off (D28's addendum), so the retries stay null - no measurement, not a
+    // went straight to the fallback, and an abandoned call returns no completion to read
+    // a retry count off, so the retries stay null - no measurement, not a
     // measured zero - while the call itself is still counted.
     [Fact]
     public async Task ComposeAsync_FallbackProducesNoMessage_TheFailureCarriesWhatTheAttemptSpent()
@@ -466,7 +466,7 @@ public class ValidatingMessageComposerTests
         Assert.Null(failed.NetworkRetries);
     }
 
-    // D67 (a): a fallback composer that spends is billed like any attempt. The refusal adds the
+    // A fallback composer that spends is billed like any attempt. The refusal adds the
     // fallback outcome's own counts to what the rejected attempts spent, the way WithAttempts
     // adds the winner's, so the three exits read alike. The template fallback this program
     // wires spends nothing, so this fake is the only fallback that can show the difference.
@@ -493,7 +493,7 @@ public class ValidatingMessageComposerTests
         Assert.Equal(4, refused.NetworkRetries);
     }
 
-    // D67 (a), the other no-message exit: the fallback made a call that returned nothing
+    // The other no-message exit: the fallback made a call that returned nothing
     // usable. That call is still one this record spent, so the failure carries it beside the
     // attempts' spend rather than reading the fallback's outcome for its error alone.
     [Fact]

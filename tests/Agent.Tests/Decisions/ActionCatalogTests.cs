@@ -5,10 +5,11 @@ using Xunit;
 
 namespace Agent.Tests.Decisions;
 
-// D17 and D18. The catalog is keyed on persona and lifecycle stage and holds one action per
-// horizon branch. A branch a row does not state has no evidence behind it (A8), so it falls
-// to the generic row and the match says so; a persona or stage with no row does the same.
-// Create is the one gate every catalog goes through, including Default.
+// The catalog is a table in one source file, keyed on persona and lifecycle stage, and holds
+// one action per horizon branch. A branch a row does not state has no evidence behind it (A8),
+// so it falls to the generic row and the match says so; a persona or stage with no row does
+// the same. Create is the one gate every catalog goes through, including Default, so a bad
+// row fails there and never inside the planner.
 public class ActionCatalogTests
 {
     private static readonly NextAction Cadence = new(ActionTypes.StartCadence, "prospect_welcome_short_horizon");

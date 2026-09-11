@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Agent.Tests.Safety;
 
-// Playbook step 63, D41: the allow-list is a span list, never a term list, so every row
+// Playbook step 63: the allow-list is a span list, never a term list, so every row
 // is tested in both directions. The exempt span yields no violation, and the same bare
 // term in a steering sentence still yields one, which is what proves the term stayed live
 // instead of being switched off across the whole message.
@@ -13,16 +13,16 @@ public class SafetyValidatorAllowListTests
     private static readonly ISafetyValidator Validator = new SafetyValidator();
 
     // Every constraint absent, so the two gated checks report NotApplicable and the count
-    // below is the fair-housing check's own answer and nothing else (D1, D38).
+    // below is the fair-housing check's own answer and nothing else.
     private static readonly CaseConstraints FairHousingOnly = new();
 
     private static NextMessage Message(string body) => new(CommunicationChannel.Sms, null, null, body, null);
 
     private static SafetyValidationResult Validate(string body) => Validator.Validate(Message(body), FairHousingOnly);
 
-    // The single most important finding of the D41 probe: the disclosure a compliant
-    // leasing message is expected to carry matches six terms and is suppressed, so the
-    // proxy blocks the compliant message and passes nothing in its place.
+    // The single most important finding of the probe that ran 37 inputs through these patterns:
+    // the disclosure a compliant leasing message is expected to carry matches six terms and is
+    // suppressed, so the proxy blocks the compliant message and passes nothing in its place.
     [Theory]
     [InlineData("We are an equal housing opportunity provider. We do not discriminate on the basis of race, color, religion, national origin, familial status, disability, or sex.")]
     [InlineData("Oak Ridge is an equal housing opportunity provider and does not discriminate based on race, color, religion, national origin, familial status, disability, or sex.")]
@@ -141,7 +141,7 @@ public class SafetyValidatorAllowListTests
         Assert.Contains("gender", violation);
     }
 
-    // D41, case 26: a fourteen-digit confirmation number matched the long-digit run.
+    // A fourteen-digit confirmation number matched the long-digit run.
     // Fixed by an exempt span, not by loosening the pattern.
     [Theory]
     [InlineData("Your confirmation number is 12345678901234.")]

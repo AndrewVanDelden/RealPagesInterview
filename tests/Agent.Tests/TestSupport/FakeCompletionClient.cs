@@ -2,7 +2,7 @@ using Agent.Composition;
 
 namespace Agent.Tests.TestSupport;
 
-// inputTokens and outputTokens are what the vendor's usage block would have said (D62). They
+// inputTokens and outputTokens are what the vendor's usage block would have said. They
 // are stated per fake rather than defaulted to something plausible: a test that says nothing
 // about tokens is a test about something else, and zero is what an unmeasured call reports.
 internal sealed class FakeCompletionClient(
