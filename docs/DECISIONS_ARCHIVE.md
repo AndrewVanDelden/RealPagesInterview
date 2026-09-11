@@ -2628,3 +2628,21 @@ days, and every send on a Sunday. Those misses measure disagreement with a state
 rather than a defect, and D82 is fitted to the hold-out and never to this set. D9 is amended by
 D81 from this date: `holdout_12.jsonl` is training data, and every report names which set is
 which. Phase 0's check passed with A24 added: the assumptions log has no blank evidence cell.
+
+**Run and debug fact, Phases 1 and 2 re-run, D85 and D84 merged (2026-09-10).** Phase 1's check
+passed from a fresh clone of `sprint-15-architecture` at `06149a7` taken from origin: `.\test.ps1`
+exited 0, 86 and 564 tests, 100 percent line, branch and method coverage in both projects. D85
+merged first, since Phase 2 is the harness, and Phase 2's check, the scorer proofs, passed inside
+the gated suite. D88 is also placed in Phase 2 but touches no file under `src` or `tests` and
+pins no threshold until after D87, so its first half merges when its measurement finishes rather
+than holding the Phase 3 merges behind a mutation run; this is a reorder inside step 103's
+phase order, named here. D84 merged next as the first Phase 3 decision. Its design, which goes
+past the brief: the loop's clean exits attach a verdict object that only the library can
+construct, and the final gate reuses it only for the same validator instance, an equal draft and
+equal constraints, validating everything else, a refused draft, another composer's output, and a
+loop outcome a wrapper copied with a new message, since a `with` copy of the public outcome
+record carries the old verdict. The gate compares the draft before the send time is set, and a
+new test pins that no safety check reads the send time. The agent also found that the test
+factory built two validator instances where the runner shares one; it now shares one by default.
+Under production wiring each composed record is validated once, down from twice; a refused draft
+is still validated four times, three in the loop and once at the gate.
