@@ -9,7 +9,7 @@ namespace Agent.Tests.Safety;
 // test asserts the miss rather than a fix that does not exist. Every such test names the
 // scope-out it belongs to: semantic paraphrase is the limitation recorded in
 // docs/CODE_REVIEW.md, and letter spacing, interior punctuation and homoglyphs are the
-// three D41 lists as deliberately not fixed.
+// three formatting evasions deliberately left unfixed, each for the reason its test states.
 public class SafetyValidatorAdversarialTests
 {
     private static readonly ISafetyValidator Validator = new SafetyValidator();
@@ -43,9 +43,9 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Failed, Verdict(body, SafetyCheck.OptOutInstructions, OptOutRequired));
     }
 
-    // Evasion in formatting, caught (D41): the keyword hidden inside a URL path is not an
+    // Evasion in formatting, caught: the keyword hidden inside a URL path is not an
     // instruction the recipient can act on, and because OptOutInstructions is the one
-    // definition the scorer uses too (D13 b), the false pass propagated into the scorecard.
+    // definition the scorer uses too, the false pass propagated into the scorecard.
     [Fact]
     public void OptOut_KeywordHiddenInsideAUrl_Fails()
     {
@@ -72,7 +72,7 @@ public class SafetyValidatorAdversarialTests
             Verdict("My social is one two three four five six seven eight nine.", SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
-    // Evasion in formatting, caught (D41): the pattern was hyphens only, so a number
+    // Evasion in formatting, caught: the pattern was hyphens only, so a number
     // written with spaces or bare missed entirely.
     [Theory]
     [InlineData("Your SSN 123 45 6789 is on file.")]
@@ -82,8 +82,8 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Failed, Verdict(body, SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
-    // Evasion in formatting, not caught: interior punctuation, the second of D41's three
-    // deliberately-not-fixed rows. Matching across arbitrary separators trades these
+    // Evasion in formatting, not caught: interior punctuation, one of the three
+    // deliberately-not-fixed evasions. Matching across arbitrary separators trades these
     // misses for a larger false-positive class.
     [Fact]
     public void Ssn_InteriorPunctuationBetweenGroups_IsNotCaught()
@@ -91,12 +91,12 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Passed, Verdict("Your SSN 123.45.6789 is on file.", SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
-    // D45, and the inversion of the test that recorded the defect. The D41 widening first
+    // The inversion of the test that recorded the defect. The widened pattern first
     // shipped as \b\d{3}[- ]?\d{2}[- ]?\d{4}\b, which reads a ZIP+4 as three digits, two
     // digits and four digits by taking the first separator as absent and the second as
-    // present. The grouping is consistent now, so a five-and-four pair is not a shape the
-    // pattern describes and a property address stops being suppressed by a gate no record
-    // can switch off (D40).
+    // present. The grouping is consistent now (hyphens throughout, spaces throughout, or nine
+    // bare digits), so a five-and-four pair is not a shape the pattern describes and a property
+    // address stops being suppressed by a gate no record can switch off.
     [Theory]
     [InlineData("Send mail to Oak Ridge, TX 75201-1234.")]
     [InlineData("Our office is at 12345-6789.")]
@@ -105,8 +105,8 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Passed, Verdict(body, SafetyCheck.SocialSecurityNumber, NothingStated));
     }
 
-    // D45's second half: a bare nine-digit confirmation number is the same false positive
-    // as the fourteen-digit one D41 exempted on the long-digit run, so the same span
+    // A bare nine-digit confirmation number is the same false positive as the
+    // fourteen-digit one the long-digit run exempts, so the same span
     // exempts it here. The introducer still does not reach across a sentence terminator.
     [Fact]
     public void Ssn_IntroducedConfirmationNumber_IsNotAViolation()
@@ -158,7 +158,7 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Failed, Verdict(body, SafetyCheck.LongDigitRun, PiiChecked));
     }
 
-    // Evasion in formatting, not caught: D41 applies the format-character strip to the
+    // Evasion in formatting, not caught: the format-character strip applies to the
     // copy of the text used for term matching only, so a zero-width space splits the run
     // into two shorter ones and the digit patterns still miss it.
     [Fact]
@@ -186,7 +186,7 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Passed, Verdict(body, SafetyCheck.FairHousing, NothingStated));
     }
 
-    // Evasion in formatting, caught (D41). None of these needs an adversary: a hyphen and
+    // Evasion in formatting, caught. None of these needs an adversary: a hyphen and
     // a double space are ordinary prose, and a zero-width space arrives by copy and paste.
     [Theory]
     [InlineData("This community is families-only.")]
@@ -198,8 +198,8 @@ public class SafetyValidatorAdversarialTests
         Assert.Equal(SafetyCheckVerdict.Failed, Verdict(body, SafetyCheck.FairHousing, NothingStated));
     }
 
-    // Evasion in formatting, not caught: letter spacing and Cyrillic homoglyphs, the first
-    // and third of D41's deliberately-not-fixed rows. Letter spacing would make short
+    // Evasion in formatting, not caught: letter spacing and Cyrillic homoglyphs, two of the
+    // three deliberately-not-fixed evasions. Letter spacing would make short
     // terms fire on unrelated letter sequences; the homoglyph threat model does not apply,
     // because the text under validation is written by this system's own composer (A18).
     [Theory]

@@ -5,10 +5,11 @@ using Xunit;
 
 namespace Agent.Tests.Decisions;
 
-// A7: horizon is move_date_target minus the reference date (D10), counted in the record's
-// timezone by the caller. At most 45 days is short, else long; an absent date is long; a
-// past date is short. D2 and D18: the branch then picks the action out of the catalog keyed
-// on persona and lifecycle stage, and the planner returns the why beside the what.
+// A7: horizon is move_date_target minus the reference date (a value the caller passes, never a
+// clock), counted in the record's timezone by the caller. At most 45 days is short, else
+// long; an absent date is long; a past date is short. The branch then picks the action out
+// of the catalog keyed on persona and lifecycle stage, and the planner returns the why beside
+// the what.
 public class NextActionPlannerTests
 {
     private static readonly NextActionPlanner Planner = new();
@@ -84,7 +85,8 @@ public class NextActionPlannerTests
     }
 
     // A8: a persona the samples never named takes the generic row, and the planner says so
-    // rather than reaching for the nearest row that happens to exist (D2).
+    // rather than reaching for the nearest row that happens to exist: the lookup is the exact
+    // key, then the generic row, and nothing else.
     [Fact]
     public void Plan_PersonaWithNoRow_UsesTheGenericRowAndRecordsIt()
     {

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Agent.Tests.Evaluation;
 
-// D30 and playbook step 31: the judge is reference-based, pinned, and one signal beside the
+// Playbook step 31: the judge is reference-based, pinned, and one signal beside the
 // deterministic checks. It grades the produced message against the label, never against its
 // own taste, which is the setting the measured judge biases (position, verbosity,
 // self-preference) come from. Its verdicts never overturn a deterministic check, and a judge
@@ -222,7 +222,7 @@ public class SemanticJudgeTests
             Normalized(fakeClient.LastSystemPrompt));
     }
 
-    // D13 a and section 6: subject plus body is the text every other check reads, so the
+    // DESIGN.md section 6: subject plus body is the text every other check reads, so the
     // judge is shown the subject too, on both sides, or an email whose offer lives in its
     // subject line would be graded on half of itself.
     [Fact]

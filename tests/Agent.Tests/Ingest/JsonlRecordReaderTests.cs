@@ -141,7 +141,7 @@ public class JsonlRecordReaderTests
         Assert.DoesNotContain("Missing required member", result.Error);
     }
 
-    // D1 (DECISIONS_ARCHIVE.md): every member is optional except task_id, consent, and
+    // Every member is optional except task_id, consent, and
     // channel_preferences. An absent optional value type is null, never a silent default
     // (the year-0001 dates of retrospective finding 4), and never an error row.
     [Fact]
@@ -249,8 +249,8 @@ public class JsonlRecordReaderTests
         Assert.Equal(0.95, parsedCase.Thresholds!.UnknownMembers!["locale_accuracy_min"].GetDouble());
     }
 
-    // D11: the twelve-record evaluation set is in the repo. Every line must be a success
-    // row before anything can be scored; this is the Phase 2 precondition for the harness.
+    // The twelve-record evaluation set is in the repo, so CI can read it. Every line must be a
+    // success row before anything can be scored; this is the Phase 2 precondition for the harness.
     [Fact]
     public void ReadAll_ParsesHoldoutTwelve_EveryLineIsASuccessRow()
     {
@@ -262,7 +262,7 @@ public class JsonlRecordReaderTests
         Assert.All(results, result => Assert.True(result.IsSuccess, result.IsSuccess ? string.Empty : result.Error));
     }
 
-    // D6: the synthetic set carries one deliberately malformed line (DESIGN.md section 4,
+    // The synthetic set carries one deliberately malformed line (DESIGN.md section 4,
     // item 10) between good lines; it is one failure row naming its line, never a lost file.
     [Fact]
     public void ReadAll_ParsesSyntheticTwelve_TwelveSuccessRowsAndOneFailureNamingLineEleven()
@@ -369,7 +369,7 @@ public class JsonlRecordReaderTests
     }
 
     // The hold-out oracle spells a suppressed message as a next_message object with
-    // channel "none" and null fields (retrospective D3), not as a null object. Both
+    // channel "none" and null fields, not as a null object. Both
     // spellings must parse so the record can be scored.
     [Fact]
     public void ReadAll_ExpectedSuppressedWithChannelNone_ParsesToNoneChannelAndNullBody()

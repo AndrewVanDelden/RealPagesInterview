@@ -5,7 +5,7 @@ using Xunit;
 
 namespace Agent.Tests.Composition;
 
-// D28 and playbook step 49: the per-call timeout is the strictest latency budget the batch
+// Playbook step 49: the per-call timeout is the strictest latency budget the batch
 // states, so the bound on a model call is a number the input asked for rather than a default
 // nobody chose. The same "strictest stated budget" rule the evaluator scores the p95 against
 // (A15), so the call is bounded by the number the run is judged by.
@@ -47,7 +47,7 @@ public class ModelCallBudgetTests
         Assert.Null(ModelCallBudget.PerCallBudget([WithBudget(0)]));
     }
 
-    // D70: an evaluation run may state its own budget for the composer's model calls, because
+    // An evaluation run may state its own budget for the composer's model calls, because
     // on these sets the records' 2000 ms cannot fit one completion, measured at 2 to 4 s a call.
     // The override replaces the records' budget rather than taking the stricter of the two, or
     // it could never raise a budget at all.

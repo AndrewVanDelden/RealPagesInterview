@@ -13,7 +13,7 @@ public class AgentDiagnosticsTests
     private static readonly IReadOnlyDictionary<string, RequiredStateVerdict> NoStates =
         new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal);
 
-    // D3: the suppression reason is spelled in snake_case on the wire, the same spelling
+    // The suppression reason is spelled in snake_case on the wire, the same spelling
     // next_action.reason uses, so a diagnostics row and an output row read alike.
     [Fact]
     public void Serializes_SuppressionReason_InSnakeCase()
@@ -35,10 +35,10 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"suppression_reason\":\"none\"", json);
     }
 
-    // D42: the answer to assertions.required_states. The keys are the record's own strings and
+    // The answer to assertions.required_states. The keys are the record's own strings and
     // are written verbatim - AgentJsonOptions sets PropertyNamingPolicy and not
     // DictionaryKeyPolicy - so an answer can be traced back to the assertion that asked for it.
-    // The verdicts are spelled the way every other enum on the wire is (D3).
+    // The verdicts are spelled the way every other enum on the wire is.
     [Fact]
     public void Serializes_RequiredStates_WithVerbatimKeysAndSnakeCaseVerdicts()
     {
@@ -72,7 +72,7 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"required_states\":{}", json);
     }
 
-    // D42: a diagnostic that says only "false" tells a reader nothing, so the row names the
+    // A diagnostic that says only "false" tells a reader nothing, so the row names the
     // rules that failed. The rule names are spelled in snake_case the way every other enum on
     // the wire is; the converter is on BrandStyleRule itself because these reach the wire as
     // list elements.
@@ -101,9 +101,9 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"brand_style_failures\":null", neverChecked);
     }
 
-    // D18 and the Phase 3 check: the diagnostics say which horizon branch the record took,
-    // how many days that was, and which catalog row answered. Both enums are spelled the
-    // way every other enum on the wire is (D3).
+    // The Phase 3 check, that the diagnostics explain every decision: they say which horizon
+    // branch the record took, how many days that was, and which catalog row answered. Both enums
+    // are spelled the way every other enum on the wire is.
     [Fact]
     public void Serializes_ActionPlan_WithSnakeCaseBranchAndSource()
     {
@@ -171,10 +171,10 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"schedule\":null", json);
     }
 
-    // D24 and playbook step 57: the diagnostics name the implementation that wrote the
+    // Playbook step 57: the diagnostics name the implementation that wrote the
     // message and how many compose calls it took, so a run that quietly fell back to the
-    // offline composer reads differently from one the model answered first time. D66 leaves
-    // these three here and moves nothing else in: they describe a returned message, and a
+    // offline composer reads differently from one the model answered first time. Only these
+    // three live on the composition object: they describe a returned message, and a
     // record with no message has no answer to any of them.
     [Fact]
     public void Serializes_Composition_WithComposerAndAttempts()
@@ -193,9 +193,9 @@ public class AgentDiagnosticsTests
             json);
     }
 
-    // D62's and D28's first state on the wire, at the level D66 moved them to: no model call
-    // was made, so both members are null and not a row of zeros. Null is the absence of a
-    // measurement; zero would be one.
+    // The first cost state on the wire, at the row's own level where the spend counts live: no
+    // model call was made, so the cost and the retries are both null and not a row of zeros. Null
+    // is the absence of a measurement; zero would be one.
     [Fact]
     public void Serializes_ARecordThatMadeNoModelCall_AsANullModelCostAndNullRetries()
     {
@@ -209,9 +209,9 @@ public class AgentDiagnosticsTests
         Assert.Contains("\"model_cost\":null,\"network_retries\":null}", json);
     }
 
-    // D62's second and third states on the wire, in the shape a reader of the diagnostics file
+    // The second and third cost states on the wire, in the shape a reader of the diagnostics file
     // sees them: two calls, one of them abandoned at its timeout, and the tokens the one that
-    // completed reported. D66 puts both counts at the row's own level, after composition, so a
+    // completed reported. Both counts sit at the row's own level, after composition, so a
     // suppressed record with no composition object still carries them.
     [Fact]
     public void Serializes_ModelCost_WithEveryCountItMeasured()
@@ -230,8 +230,8 @@ public class AgentDiagnosticsTests
             json);
     }
 
-    // The record D66 is about, on the wire: it made two calls and ships nothing, so it has no
-    // composition object and the two counts are still there beside it.
+    // The record the row-level counts exist for, on the wire: it made two calls and ships
+    // nothing, so it has no composition object and the two counts are still there beside it.
     [Fact]
     public void Serializes_ASuppressedRecordThatCalledTheModel_WithNoCompositionAndItsCostIntact()
     {

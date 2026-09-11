@@ -141,7 +141,7 @@ public class TemplateMessageComposerTests
         Assert.Equal("reply", result.Message.Cta!.Type);
     }
 
-    // D24 and playbook step 57: the result names the implementation that produced it, so a
+    // Playbook step 57: the result names the implementation that produced it, so a
     // fallback on an openai run shows up in the diagnostics instead of passing for a clean run.
     [Fact]
     public async Task ComposeAsync_AnyRecord_NamesItselfAsTheComposerOfOneAttempt()
@@ -155,7 +155,7 @@ public class TemplateMessageComposerTests
         Assert.Equal(1, result.Notes.Attempts);
     }
 
-    // A10 and D25: sms carries the numbered reply options in the body and in cta.options,
+    // A10: sms carries the numbered reply options in the body and in cta.options,
     // the way sample 1's label does; the content comes from the catalog, since no input
     // field states it.
     [Fact]
@@ -222,7 +222,7 @@ public class TemplateMessageComposerTests
         Assert.Equal(new Uri(expectedLink), result.Message.Cta!.Link);
     }
 
-    // A9 and D25: an unknown primary_cta passes through as the type, and the payload comes
+    // A9: an unknown primary_cta passes through as the type, and the payload comes
     // from the generic row, since the shape is the channel's rule (A10) and only the content
     // is the catalog's.
     [Fact]
@@ -348,7 +348,7 @@ public class TemplateMessageComposerTests
         Assert.Null(result.Message.Cta!.Link);
     }
 
-    // A13 and D26: a record that states Spanish gets a Spanish message, its options
+    // A13: a record that states Spanish gets a Spanish message, its options
     // included, and the notes record that the locale was applied.
     [Fact]
     public async Task ComposeAsync_SpanishSms_ComposesInSpanishWithSpanishOptions()
@@ -400,7 +400,7 @@ public class TemplateMessageComposerTests
         Assert.True(result.Notes.LocaleApplied);
     }
 
-    // D26: no component gates on a language allowlist. A language this composer holds no
+    // No component gates on a language allowlist. A language this composer holds no
     // template set for is served in English and says so, which is a limit of the template
     // file, not a rule about which languages a prospect may use.
     [Fact]
@@ -431,9 +431,9 @@ public class TemplateMessageComposerTests
         Assert.True(result.Notes.LocaleApplied);
     }
 
-    // D62, the first state: this composer issues no request, so there is no measurement to
-    // report and the member is null. Null is the absence of a measurement; a zero would be one,
-    // and would read as a model call that cost nothing.
+    // Cost state one of three (no call, abandoned, completed): this composer issues no request,
+    // so there is no measurement to report and the member is null. Null is the absence of a
+    // measurement; a zero would be one, and would read as a model call that cost nothing.
     [Fact]
     public async Task ComposeAsync_AnyRecord_NotesStateNoModelCallAtAll()
     {

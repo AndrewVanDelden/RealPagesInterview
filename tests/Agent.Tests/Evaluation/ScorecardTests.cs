@@ -147,7 +147,7 @@ public class ScorecardTests
         Assert.All(Enum.GetValues<EvaluationCheck>(), check => Assert.Equal(CheckResult.NotMeasured, score.ResultOf(check)));
     }
 
-    // D71: an input the batch could not process is a row, never a silence. It counts in the
+    // An input the batch could not process is a row, never a silence. It counts in the
     // overall and never passes, and it measures no check, so no per-check tally and no latency
     // number moves, and the batch numbers the run measured ride along unchanged.
     [Fact]
@@ -173,7 +173,7 @@ public class ScorecardTests
         Assert.Same(batchModelCost, appended.BatchModelCost);
     }
 
-    // D71: a line that did not parse has no task id to show, since the id is what failed to
+    // A line that did not parse has no task id to show, since the id is what failed to
     // parse; the reader's own failure text names the line instead.
     [Fact]
     public void DidNotParse_NamesTheLineThroughTheReadersFailureAndNeverPasses()

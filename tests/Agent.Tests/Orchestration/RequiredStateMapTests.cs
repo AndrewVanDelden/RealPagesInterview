@@ -3,7 +3,7 @@ using Xunit;
 
 namespace Agent.Tests.Orchestration;
 
-// D42's first part and A14: every name in the record's own required_states gets a verdict,
+// A14: every name in the record's own required_states gets a verdict,
 // and a name this program has no check for is recorded as not earned, by name.
 public class RequiredStateMapTests
 {
@@ -15,7 +15,7 @@ public class RequiredStateMapTests
         RequiredStateMap.For(requiredStates, consentVerified, fairHousingCheckPassed, brandStyleApplied);
 
     // The three names both samples assert, each answered by its own source: the channel
-    // selector's read of consent (D57), the FairHousing check alone (D38), and the
+    // selector's read of consent, the FairHousing check alone rather than every check, and the
     // brand-style validator.
     [Fact]
     public void For_TheThreeStatesWithChecks_AnswersEachFromItsOwnSource()
@@ -31,10 +31,10 @@ public class RequiredStateMapTests
         Assert.Equal(RequiredStateVerdict.NotEvaluated, map["brand_style_applied"]);
     }
 
-    // D42 and docs/CODE_REVIEW.md: the hold-out names renewal_offer_loaded and some of those
+    // docs/CODE_REVIEW.md: the hold-out names renewal_offer_loaded and some of those
     // records carry a renewal_offer_id a rule could obviously be fitted to, which is exactly
-    // why no rule is written for it (D9, A19). Not earned is the honest answer, and the
-    // verdict says why it is not earned: this program has no check for the name.
+    // why no rule is written for it: the hold-out is an evaluation set (A19). Not earned is the
+    // honest answer, and the verdict says why it is not earned: no check exists for the name.
     [Fact]
     public void For_AStateWithNoCheck_RecordsItByNameAsNoCheckDefined()
     {
@@ -45,7 +45,7 @@ public class RequiredStateMapTests
     }
 
     // A record that asserts nothing has asked no question, so the map is the complete answer
-    // to a list with no items rather than an absent answer. Absent assertions (D1: every
+    // to a list with no items rather than an absent answer. Absent assertions (every
     // member below task_id, consent and channel_preferences is optional) and an absent list
     // reach the same place.
     [Fact]
@@ -69,7 +69,7 @@ public class RequiredStateMapTests
         Assert.Equal(RequiredStateVerdict.NotEarned, map["consent_verified"]);
     }
 
-    // D47. JSON supplies a null list element whatever the element type says, and
+    // JSON supplies a null list element whatever the element type says, and
     // RespectNullableAnnotations does not reach inside a collection, so this list really can
     // hold one. A null name asserts no state, so it is skipped rather than thrown on: it used
     // to reach the dictionary indexer and take the whole record out with an

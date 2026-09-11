@@ -51,7 +51,7 @@ internal static class RealAgentFactory
     }
 
     // The failure text of every line of the named fixture that did not parse, in file order:
-    // the rows D71 appends to a scorecard, so a baseline pins the overall the CLI prints.
+    // the rows a scorecard appends for them, so a baseline pins the overall the CLI prints.
     public static IReadOnlyList<string> ReadFailures(string fileName)
     {
         using IDisposable scope = AgentLog.Configure(NullLoggerFactory.Instance);

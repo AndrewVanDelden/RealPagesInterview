@@ -25,8 +25,8 @@ public class OptOutInstructionsTests
         Assert.True(OptOutInstructions.IsPresent(text));
     }
 
-    // D41: the keyword inside a URL path is not an instruction the recipient can act on,
-    // and because this is the one definition the scorer uses too (D13 b), the false pass
+    // The keyword inside a URL path is not an instruction the recipient can act on,
+    // and because this is the one definition the scorer uses too, the false pass
     // propagated into the scorecard. URL spans are removed before the keyword scan only.
     [Theory]
     [InlineData("Visit https://oakridge.example/STOP-by-today for hours.")]
@@ -37,7 +37,7 @@ public class OptOutInstructionsTests
         Assert.False(OptOutInstructions.IsPresent(text));
     }
 
-    // The phrase check is deliberately left as it is (D41 scopes the fix to the bare
+    // The phrase check is deliberately left as it is (the URL fix is scoped to the bare
     // keyword), so a URL whose path spells the phrase still counts. Pinned as the
     // remaining hole rather than left undocumented.
     [Fact]

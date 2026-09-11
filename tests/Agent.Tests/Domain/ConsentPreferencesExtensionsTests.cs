@@ -33,7 +33,7 @@ public class ConsentPreferencesExtensionsTests
         Assert.False(consent.IsOptedIn(CommunicationChannel.Unknown));
     }
 
-    // D1: an absent opt-in member is not consent.
+    // An absent opt-in member is not consent.
     [Fact]
     public void IsOptedIn_OptInMemberAbsent_ReturnsFalse()
     {
