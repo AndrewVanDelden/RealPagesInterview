@@ -14,7 +14,7 @@ public class ScorecardTests
     {
         RecordScore[] scores = Enumerable.Range(1, 20).Select(i => Score($"t{i}", latencyMs: i)).ToArray();
 
-        var scorecard = new Scorecard(scores, LatencyBudgetMs: 2000);
+        var scorecard = new Scorecard(scores, latencyBudgetMs: 2000);
 
         Assert.Equal(19, scorecard.LatencyP95Ms);
         Assert.Equal(CheckResult.Passed, scorecard.LatencyP95);
@@ -23,7 +23,7 @@ public class ScorecardTests
     [Fact]
     public void LatencyP95Ms_IgnoresRecordsWithNoLatency()
     {
-        var scorecard = new Scorecard([Score("t1", latencyMs: 40), Score("t2", latencyMs: null)], LatencyBudgetMs: 30);
+        var scorecard = new Scorecard([Score("t1", latencyMs: 40), Score("t2", latencyMs: null)], latencyBudgetMs: 30);
 
         Assert.Equal(40, scorecard.LatencyP95Ms);
         Assert.Equal(CheckResult.Failed, scorecard.LatencyP95);
@@ -32,7 +32,7 @@ public class ScorecardTests
     [Fact]
     public void LatencyP95_NoLatencyMeasured_NotMeasured()
     {
-        var scorecard = new Scorecard([Score("t1", latencyMs: null)], LatencyBudgetMs: 2000);
+        var scorecard = new Scorecard([Score("t1", latencyMs: null)], latencyBudgetMs: 2000);
 
         Assert.Null(scorecard.LatencyP95Ms);
         Assert.Equal(CheckResult.NotMeasured, scorecard.LatencyP95);
@@ -41,7 +41,7 @@ public class ScorecardTests
     [Fact]
     public void LatencyP95_NoBudgetStated_NotMeasured()
     {
-        var scorecard = new Scorecard([Score("t1", latencyMs: 5)], LatencyBudgetMs: null);
+        var scorecard = new Scorecard([Score("t1", latencyMs: 5)], latencyBudgetMs: null);
 
         Assert.Equal(5, scorecard.LatencyP95Ms);
         Assert.Equal(CheckResult.NotMeasured, scorecard.LatencyP95);
@@ -50,7 +50,7 @@ public class ScorecardTests
     [Fact]
     public void AllPassed_EveryRecordPassedButP95Failed_False()
     {
-        var scorecard = new Scorecard([Score("t1", latencyMs: 100)], LatencyBudgetMs: 50);
+        var scorecard = new Scorecard([Score("t1", latencyMs: 100)], latencyBudgetMs: 50);
 
         Assert.Equal(1, scorecard.PassedCount);
         Assert.False(scorecard.AllPassed);
@@ -59,7 +59,7 @@ public class ScorecardTests
     [Fact]
     public void AllPassed_EveryRecordPassedAndP95NotMeasured_True()
     {
-        var scorecard = new Scorecard([Score("t1", latencyMs: null)], LatencyBudgetMs: 50);
+        var scorecard = new Scorecard([Score("t1", latencyMs: null)], latencyBudgetMs: 50);
 
         Assert.True(scorecard.AllPassed);
     }
@@ -74,7 +74,7 @@ public class ScorecardTests
                 Score("t3", every: CheckResult.NotMeasured),
                 RecordScore.Unscoreable("t4", "no label"),
             ],
-            LatencyBudgetMs: null);
+            latencyBudgetMs: null);
 
         Assert.Equal(1, scorecard.PassedCountOf(EvaluationCheck.Channel));
         Assert.Equal(2, scorecard.MeasuredCountOf(EvaluationCheck.Channel));
@@ -140,9 +140,9 @@ public class ScorecardTests
         var batchModelCost = new ModelCostNotes(2, 2, 100, 40);
         var scorecard = new Scorecard(
             [Score("t1", latencyMs: 40), Score("t2", latencyMs: 10)],
-            LatencyBudgetMs: 2000,
-            BatchLatencyMs: 55,
-            BatchModelCost: batchModelCost);
+            latencyBudgetMs: 2000,
+            batchLatencyMs: 55,
+            batchModelCost: batchModelCost);
 
         Scorecard appended = scorecard.AppendUnprocessed([RecordScore.Unscoreable("t3", "Record failed: InvalidOperationException")]);
 

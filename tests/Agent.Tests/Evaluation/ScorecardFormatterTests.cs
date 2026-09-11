@@ -135,7 +135,7 @@ public class ScorecardFormatterTests
     [Fact]
     public void Format_BatchWasTimed_PrintsTheBatchElapsed()
     {
-        var scorecard = new Scorecard([PassingScore("t1")], 2000, BatchLatencyMs: 250);
+        var scorecard = new Scorecard([PassingScore("t1")], 2000, batchLatencyMs: 250);
 
         string report = ScorecardFormatter.Format(scorecard);
 
@@ -163,7 +163,7 @@ public class ScorecardFormatterTests
         var scorecard = new Scorecard(
             [PassingScore("t1")],
             2000,
-            BatchModelCost: new ModelCostNotes(Calls: 3, CompletedCalls: 2, InputTokens: 22, OutputTokens: 14));
+            batchModelCost: new ModelCostNotes(Calls: 3, CompletedCalls: 2, InputTokens: 22, OutputTokens: 14));
 
         string report = ScorecardFormatter.Format(scorecard);
 

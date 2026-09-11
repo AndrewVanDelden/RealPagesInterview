@@ -13,19 +13,39 @@ namespace Agent.Evaluation;
 // D62: BatchModelCost is the same arrangement for tokens. It is the sum of the model cost on
 // the diagnostics rows the batch wrote, so a reader who adds that column up gets this number,
 // and it is null when no record on the run went near a model.
-public sealed record Scorecard(
-    IReadOnlyList<RecordScore> RecordScores,
-    int? LatencyBudgetMs,
-    double? BatchLatencyMs = null,
-    ModelCostNotes? BatchModelCost = null)
+//
+// A class, not a record: the tallies and the p95 are computed once from the rows, so a copy
+// that swapped the rows would report totals that disagree with them. With one constructor and
+// no `with`, the only way to get different rows is a new scorecard, which recomputes both.
+public sealed class Scorecard
 {
-    // Computed once at construction, so a `with` copy that replaces RecordScores would carry
-    // these numbers unchanged: build a new Scorecard instead (SemanticJudge does).
     // Computed once at construction, not on every read: ScorecardFormatter reads
     // LatencyP95Ms and LatencyP95 (which reads LatencyP95Ms again) in the same report, and
     // PassedCountOf/MeasuredCountOf are each called once per check per report.
-    private readonly double? latencyP95Ms = ComputeLatencyP95Ms(RecordScores);
-    private readonly IReadOnlyDictionary<EvaluationCheck, (int Passed, int Measured)> tallies = ComputeTallies(RecordScores);
+    private readonly double? latencyP95Ms;
+    private readonly IReadOnlyDictionary<EvaluationCheck, (int Passed, int Measured)> tallies;
+
+    public Scorecard(
+        IReadOnlyList<RecordScore> recordScores,
+        int? latencyBudgetMs,
+        double? batchLatencyMs = null,
+        ModelCostNotes? batchModelCost = null)
+    {
+        RecordScores = recordScores;
+        LatencyBudgetMs = latencyBudgetMs;
+        BatchLatencyMs = batchLatencyMs;
+        BatchModelCost = batchModelCost;
+        latencyP95Ms = ComputeLatencyP95Ms(recordScores);
+        tallies = ComputeTallies(recordScores);
+    }
+
+    public IReadOnlyList<RecordScore> RecordScores { get; }
+
+    public int? LatencyBudgetMs { get; }
+
+    public double? BatchLatencyMs { get; }
+
+    public ModelCostNotes? BatchModelCost { get; }
 
     public int TotalCount => RecordScores.Count;
 
@@ -41,16 +61,13 @@ public sealed record Scorecard(
             : p95 <= budget ? CheckResult.Passed : CheckResult.Failed;
 
     // D71: every input the batch could not process, a line that did not parse or a record that
-    // threw, as one unscoreable row each. Built rather than copied with `with`, because the
-    // tallies and the p95 are computed at construction. Called after the judge, which pairs rows
-    // with runs by position, so these rows sit past the last run.
+    // threw, as one unscoreable row each. Called after the judge, which pairs rows with runs by
+    // position, so these rows sit past the last run.
     // O((n + m) log(n + m)) for the p95 sort and O(n + m) for the tallies, both redone in full
     // over `RecordScores` and `unprocessedRows` together: the appended rows are always
     // unmeasured (Unscoreable/DidNotParse rows carry a null LatencyMs and every check as
-    // NotMeasured), so they cannot move either number, but the constructor recomputes both
-    // from scratch anyway rather than carrying the input scorecard's own values forward, the
-    // same cost SemanticJudge.JudgeAsync's own rebuild already pays for the same reason: a
-    // `with` copy would carry stale cached fields (Claude Code review of PR #28).
+    // NotMeasured), so they cannot move either number, but the constructor is the one place
+    // either number is computed, so the new scorecard pays for both.
     public Scorecard AppendUnprocessed(IReadOnlyList<RecordScore> unprocessedRows) =>
         new([.. RecordScores, .. unprocessedRows], LatencyBudgetMs, BatchLatencyMs, BatchModelCost);
 

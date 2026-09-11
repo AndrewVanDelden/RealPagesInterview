@@ -103,9 +103,6 @@ sets it. Never read, print, or write the value.
 - `SlotResolution.ShiftedPastGap` and `EarlierOfTwo` cannot fire on the current zone database
   (A5), and are proved against the custom zones in `SlotResolutionTestZones.cs` plus a sweep of
   every system zone. Neither dead code nor a gamed gate (D21, A20).
-- `Scorecard` computes its tallies and its p95 once, in field initializers, so a `with` copy
-  that replaces `RecordScores` carries the old numbers into a report whose rows disagree with
-  them. Build a new `Scorecard`.
 - A golden test normalizes line endings on both sides. A raw string literal carries whatever
   endings git checked the file out with, so a golden compared raw passes on one checkout and
   fails on another.
