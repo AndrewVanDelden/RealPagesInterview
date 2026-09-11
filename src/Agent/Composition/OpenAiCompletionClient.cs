@@ -105,9 +105,10 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         {
             // A 200 whose body carries no choice at all. ClientResult deserializes on the first
             // read of Value, not on the await, so the SDK throws from inside itself after the call
-            // has returned. Named here as the same failure an empty message body is, which the
-            // composer turns into a failed outcome and the compose-validate loop into a fallback;
-            // an unhandled exception would cost the record its output row. Unlike a timeout,
+            // has returned. Named here so the composer turns it into a failed outcome and the
+            // compose-validate loop into a fallback; an unhandled exception would cost the record
+            // its output row. There is no content to return, unlike an empty message body, which
+            // is returned below as a completion. Unlike a timeout,
             // result.Value has been read (it is what threw), so its Usage is real, and the vendor
             // can bill a response with no choice: the tokens ride on the exception, because they
             // have nowhere else to travel once this throws.
@@ -124,9 +125,12 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         // the TimeoutException above is thrown before result.Value is ever read.
         ChatTokenUsage? usage = result.Value.Usage;
 
-        return content.Length > 0
-            ? new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0)
-            : throw new InvalidOperationException("OpenAI response contained no completion content.");
+        // An empty body is returned, not thrown. The call completed and its usage block is read
+        // above, so it is a billed call, and the caller already has an exit for a completed call
+        // whose content is unusable that keeps its counts: the composer's JSON parse fails on it
+        // and reports the tokens and retries. A throw here would reach the composer's catch for
+        // calls that never completed, which records them as abandoned with zero tokens.
+        return new ModelCompletion(content, retries, usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0);
     }
 
     // "json_object" only guarantees syntactically valid JSON; it says nothing about shape.

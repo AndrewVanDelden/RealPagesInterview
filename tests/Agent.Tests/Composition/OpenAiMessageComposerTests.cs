@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Agent.Common;
 using Agent.Composition;
@@ -723,6 +724,31 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
         Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), result.ModelCost);
+    }
+
+    // An empty body is the other completed call that brings back nothing to send, and the vendor
+    // bills it by the same usage block. Driven through the real client over a fake transport,
+    // because what is pinned is the seam between the two: which side of the composer's catches
+    // the empty body lands on decides whether its tokens are counted or read as an abandoned
+    // call's zero.
+    [Fact]
+    public async Task ComposeAsync_CompletedCallReturnedAnEmptyBody_FailureCountsTheCompletedCallAndItsTokens()
+    {
+        const string emptyBodyJson = """
+            {"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini",
+             "choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],
+             "usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+            """;
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, emptyBodyJson));
+        using var httpClient = new HttpClient(handler);
+        var composer = new OpenAiMessageComposer(new OpenAiCompletionClient(httpClient, "fake-key"));
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(outcome);
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), result.ModelCost);
+        Assert.Equal(0, result.NetworkRetries);
     }
 
     // A call that completed and came back unusable is still a call the vendor billed for: the
