@@ -4,5 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- Every warning is an error on every build: locally, in the test gate, in the mutation run
+         and in CI. A rule that must hold with no exceptions belongs in the build, not in a flag
+         a person has to remember to pass. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>

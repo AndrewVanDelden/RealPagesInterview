@@ -3008,3 +3008,22 @@ down, as D88 says. The spread comes from mutants that time out, which count as d
 slower CI runner times out more of them and moves the score up rather than down. The margins are
 thin; if the CI job fails on a score within one point of its pin with no code change, headroom
 below the measured score is a decision for the owner, not a pin to lower in place.
+
+**D89 and the D86 check amendment taken (2026-09-10).** The owner took D89 (a), warnings as
+errors through `TreatWarningsAsErrors` in `Directory.Build.props`, so every local build, test run,
+mutation build and CI run enforces it; and the D86 check amendment (a), so D86's check is a run
+with the managed heap capped at 16 MB in which 12,000 records land within 10 percent of the
+120-record peak working set and a 120,000-record run completes under the same cap. The owner
+also asked for research on making the `mutation` job a required check on `dev` and for the best
+course to be taken; that is D90. D89 is Phase 1 work, the environment, done on this sprint's
+branch and PR because the phase it touches has passed again in this sprint and the change adds a
+gate rather than a behavior; its check is a planted warning failing `.\test.ps1`.
+
+**Run and debug fact, D89 in the build (2026-09-10).** `TreatWarningsAsErrors` is true in
+`Directory.Build.props`. The check ran: a planted file holding an unused local variable made
+`.	est.ps1` exit 1 with `error CS0219: The variable unused is assigned but its value is never
+used`, and with the file removed `.	est.ps1` passed, 97 and 660 tests at 100 percent coverage, so
+the code carries no warning under the setting. CI builds through the same properties file, so
+the same setting holds there by construction; no failing commit was pushed to show it in CI.
+Stryker compiles each mutant with the project settings, so a mutant that raises a warning now
+fails to compile and leaves the score; the pinned gate is run again on this commit.
