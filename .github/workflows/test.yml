@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [dev, main]
 
+# A new push to a pull request cancels the run for the head it replaced, since only the newest
+# head's checks decide the merge and the mutation job takes tens of minutes on a four-core runner.
+# A push to dev or main is never cancelled: each merge keeps its own complete run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: windows-latest

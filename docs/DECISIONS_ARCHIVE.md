@@ -3044,3 +3044,28 @@ Evidence: the troubleshooting page for required status checks on docs.github.com
 2026-09-10; the protection read back the same day, `test` required, not strict, admins not
 enforced; and the job runs on PR #33. Assumptions: none. The owner asked for the research and for
 the best course to be taken.
+
+**Run and debug fact, D86 met under its amended check (2026-09-10).** The Release build of the
+pinned code, in the isolated Phase 8 clone, run by the benchmark script the D86 agent wrote, with
+`DOTNET_GCHeapHardLimit` at 16 MB on the child process, peak working set polled every 5 ms,
+median of three runs, no `--eval-report`: 43.4 MB at 120 records, 45.5 MB at 12,000 and 55.2 MB
+at 120,000, every run exiting 0. 12,000 is 4.8 percent above 120, inside the 10 percent the
+amended check allows, and the 120,000-record run completes, so D86 is met. A first attempt
+failed before measuring anything: passed through `powershell -File`, the list of sizes arrived
+as one string the script could not read as integers; passed through `-Command` it ran.
+
+**D90 taken, from the job run on the CI runner (2026-09-10).** The `mutation` job ran on the CI
+runner for the first time on PR #33 at `fbc2f92` and passed in 23 minutes, 19.2 for the library
+and 3.2 for the command line, against about five on a machine giving Stryker 16 workers; GitHub
+documents the `windows-latest` runner as four CPUs in a public repository. The script resolved
+the runner's SDK MSBuild, 10.0.401, and the scores were 82.35 and 87.59 percent, the same as every
+local run on the same code. The run at `d9e5ee1` failed at the instruction check and GitHub
+marked the job skipped, as a job after a failed need is, so a required job never leaves a pull
+request waiting on a check that cannot start. The recommendation stood and was taken: `mutation`
+joins `test` as a check `dev` requires, set through the branch protection API with both bound to
+GitHub Actions, and read back after the change as both checks required, not strict, admins not
+enforced, no required reviews and force pushes off. The workflow gains a concurrency group: a new
+push to a pull request cancels the run for the head it replaced, since three runs were queued at
+once on PR #33 and only the newest head decides a merge, and a push to `dev` or `main` is never
+cancelled. The local rerun under D89 scored 82.35 and 87.59 percent with 282 and 71 compile
+errors, unchanged, so warnings as errors turned no mutant into a compile error.
