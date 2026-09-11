@@ -2590,3 +2590,27 @@ moves after D86 rather than beside D84, since both D83 and D86 edit the fold in 
 D88 lands its tool and a first measured score in Phase 2 and pins the threshold after D87. One PR
 per sprint (AGENTS.md) rather than per decision (step 103): each decision is its own merge commit
 on the sprint branch, so it is reviewed as a unit inside the one PR.
+
+**Run and debug fact, Sprint 15 wave 1 (2026-09-10).** Wave 1 launched five agents in worktrees
+while the phase read 0, so four of them edit `src` and `tests` on unmerged branches, against the
+AGENTS.md rule that nothing under `src` or `tests` is edited while the phase is 0 or 1. The D85
+agent named the conflict. The exception is deliberate: the owner asked for every agent at once,
+D84 to D88 are later-phase root causes whose decisions are taken, and the rule's guarantee, no code
+before intake, is kept where it lands: no branch that touches `src` or `tests` merges into the
+sprint branch until Phase 0's check passes after D81. The D85 review found the new constructor
+kept the caller's list by reference, so a caller that edited it afterward reported rows that
+disagreed with the tallies counted at construction, the bug D85 exists to close; fixed test first
+on the D85 branch, the failing test reporting two rows for one counted, then 86 and 565 tests
+passing at 100 percent coverage. The same agent found that nothing in the repository turns
+warnings into errors: no `TreatWarningsAsErrors` in `Directory.Build.props` or any project, and no
+`-warnaserror` in CI, so the rule holds only when a build passes the flag by hand (D89).
+
+**D89. Warnings as errors in the build (proposed 2026-09-10).** Question: the code rules require
+the strictest checker with warnings as errors, and nothing in the build enforces it; a
+`dotnet build -warnaserror` of the D85 branch was clean, so today the rule holds by chance.
+Options: (a) `TreatWarningsAsErrors` true in `Directory.Build.props`, so every local build, test
+run and CI run enforces it; (b) `-warnaserror` in the CI step only; (c) keep. Recommendation: (a),
+since a rule that must hold with no exceptions belongs in tooling, and (b) lets a local build pass
+that CI then fails. Scopes: `Directory.Build.props`, and any warning the flag surfaces on `dev`.
+Evidence: the wave 1 fact above. Assumptions: none. Check: a planted unused variable fails
+`.\test.ps1` locally and in CI. Order: Phase 1, the environment, so it merges right after D81.
