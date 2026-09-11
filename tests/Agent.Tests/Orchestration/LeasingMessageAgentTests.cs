@@ -162,13 +162,24 @@ public class LeasingMessageAgentTests
             new SendScheduler(),
             new NextActionPlanner(),
             capturingLogger);
-        ProspectCase unmatched = SampleProspectCases.Minimal() with { Persona = "resident", LifecycleStage = "renewal" };
+        const string PersonaMarker = "persona-marker-7f3a";
+        const string StageMarker = "stage-marker-7f3a";
+        ProspectCase unmatched = SampleProspectCases.Minimal() with { Persona = PersonaMarker, LifecycleStage = StageMarker };
 
         await agent.RunAsync(unmatched, ReferenceTime);
 
         // The enum renders as its C# name, the way channel=Sms already does on the composed
         // line; the diagnostics file is where the snake_case spelling lives (D3).
-        Assert.Contains(capturingLogger.Entries, entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        // Warning, because the action is one no catalog row states and a person has to review it;
+        // exactly one line, naming the source and the branch. The persona and stage are the
+        // record's own free text, so they stay out of the log and go to the review queue instead.
+        CapturingLogger<LeasingMessageAgent>.LogEntry fallback = Assert.Single(
+            capturingLogger.Entries,
+            entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, fallback.Level);
+        Assert.Contains($"branch={HorizonBranch.Short}", fallback.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(PersonaMarker, fallback.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(StageMarker, fallback.Message, StringComparison.Ordinal);
     }
 
     // The other side of the same branch: a record whose row states the action it needs is not

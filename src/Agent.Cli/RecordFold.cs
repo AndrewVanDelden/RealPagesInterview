@@ -92,12 +92,18 @@ internal sealed class RecordFold(
 
         BatchModelCost = ModelCostNotes.Add(BatchModelCost, result.Diagnostics.ModelCost);
 
-        // One queue row per record the safety gate suppressed, and nothing else. A record with no
-        // consented channel is not here (not contactable is the correct decision, not a failure),
-        // and neither is a composition with no draft (nothing to review): a null RejectedDraft.
-        if (reviewQueueRows is not null && result.RejectedDraft is { } rejectedDraft)
+        // One queue row per record a person has to review, and ReviewQueueEntry.For decides which:
+        // a draft the safety gate refused, an action the generic row chose, or both on one row. A
+        // record with no consented channel is never here, because not contactable is the correct
+        // decision and not a failure. A queued record is not a failed one, so it changes no count.
+        if (reviewQueueRows is not null)
         {
-            await reviewQueueRows.WriteRowAsync(new ReviewQueueEntry(completed.Case.TaskId, rejectedDraft.Violations, rejectedDraft.Message), cancellationToken);
+            Option<ReviewQueueEntry> entry = ReviewQueueEntry.For(completed.Case, result);
+
+            if (entry.HasValue)
+            {
+                await reviewQueueRows.WriteRowAsync(entry.Value, cancellationToken);
+            }
         }
 
         if (evaluator is not null)
