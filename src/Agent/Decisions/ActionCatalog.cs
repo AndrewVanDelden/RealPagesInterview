@@ -17,10 +17,10 @@ public enum ActionSource
 
 public sealed record ActionCatalogMatch(NextAction Action, ActionSource Source);
 
-// D2 and D17: the catalog keyed on persona and lifecycle stage. The table in this file is the
-// default, and a rules file can replace it. Create is the one gate every catalog goes through,
-// Default included, so a malformed table is a failure with a message rather than a wrong
-// action at run time.
+// The action catalog, keyed on persona and lifecycle stage: a lookup is an exact key or the
+// generic row, never the nearest row. The table in this file is the default, and a rules file
+// can replace it. Create is the one gate every catalog goes through, Default included, so a
+// malformed table is a failure with a message rather than a wrong action at run time.
 public sealed class ActionCatalog
 {
     private const string GenericRowLabel = "Generic catalog row";
@@ -166,8 +166,9 @@ public sealed class ActionCatalog
             : Result<ActionCatalog>.Failure(string.Join(Environment.NewLine, failures));
     }
 
-    // O(1): one hash lookup, then one branch read. The record's persona and stage are
-    // untrusted free text (D1), so they are normalized the same way the rows were.
+    // O(1): one hash lookup, then one branch read. The record's persona and stage are optional,
+    // untrusted free text, so an absent one takes the generic row and a present one is
+    // normalized the same way the rows were.
     public ActionCatalogMatch Resolve(string? persona, string? lifecycleStage, HorizonBranch branch)
     {
         if (persona is null || lifecycleStage is null)

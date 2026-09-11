@@ -5,11 +5,11 @@ namespace Agent.Composition;
 
 // One call to action: the type that goes on the wire and the path an email link ends in
 // (A9, A21). The sms reply options are not here: they are prose, so they live in the
-// language sets with the rest of the words a person reads (D26), and one list in one place
-// is the point of a table.
+// language sets with the rest of the words a person reads, and one list in one place is the
+// point of a table.
 internal sealed record CallToAction(string Type, string LinkPath);
 
-// D25 and playbook step 42: the call-to-action vocabulary in one table. Nothing else in the
+// Playbook step 42: the call-to-action vocabulary in one table. Nothing else in the
 // program spells a call-to-action type or a link path. The payload shape stays the channel's
 // rule (A10), which is why an unrecognized call to action still gets a payload; its wording
 // comes from the record's language set.
