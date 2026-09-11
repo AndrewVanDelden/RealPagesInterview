@@ -8,8 +8,8 @@ namespace Agent.Orchestration;
 // record's own strings, written verbatim (AgentJsonOptions sets no DictionaryKeyPolicy) and
 // compared ordinally: data values, not names this program coins, so the answer traces to the
 // assertion and a differently cased name is a different name with no check. No rule exists
-// beyond the three below: the hold-out's renewal_offer_loaded stays unrecognized although its
-// records carry a renewal_offer_id, because nothing is fitted to an evaluation set (A19).
+// beyond the three below: of the three hold-out records asserting renewal_offer_loaded, two
+// carry a renewal_offer_id and one does not, and no check scores a state, so nothing says what earns it.
 public static class RequiredStateMap
 {
     private const string ConsentVerifiedState = "consent_verified";

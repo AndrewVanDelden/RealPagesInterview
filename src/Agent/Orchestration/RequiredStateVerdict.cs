@@ -20,7 +20,7 @@ public enum RequiredStateVerdict
     // A step for this state exists but did not run: no consented channel, or composition
     // failed, so there was no message to check. Not a pass, the rule A15 states for the scorer.
     NotEvaluated,
-    // No step proves this name, such as the hold-out's renewal_offer_loaded: a rule for it
-    // would be fitted to an evaluation set (A19).
+    // No step proves this name, such as the hold-out's renewal_offer_loaded: no labeled record
+    // says what would earn it, so a check for it would be a guess recorded as a verdict.
     NoCheckDefined,
 }
