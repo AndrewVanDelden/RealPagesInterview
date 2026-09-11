@@ -95,15 +95,14 @@ public sealed class LeasingMessageAgent(
         // when the run was given --diagnostics.
         //
         // Warning, not Information: no catalog row stated this action, so the record is also
-        // queued for a person to review. The line names the persona, stage and branch, which
-        // are catalog keys, and none of the record's own text.
+        // queued for a person to review. The line names the source and the branch only. The
+        // persona and stage are the record's own free text, and on a missed match they are by
+        // definition not catalog keys, so they stay out of the log; the review queue names them.
         if (planned.Source != ActionSource.CatalogRow)
         {
             log.LogWarning(
-                "Next action came from the generic row ({Source}): persona={Persona}, stage={LifecycleStage}, branch={Branch}.",
+                "Next action came from the generic row ({Source}), branch={Branch}; the review queue names the persona and stage.",
                 planned.Source,
-                prospectCase.Persona,
-                prospectCase.LifecycleStage,
                 planned.Branch);
         }
 

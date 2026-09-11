@@ -186,8 +186,8 @@ interleave them, and the `TaskId` on each line is what separates them.
 
 | Level | Meaning in this codebase | Example |
 |---|---|---|
-| `Information` | A normal lifecycle event, nothing went wrong. | "Message composed", "Next action came from the generic row", "Record processed in Nms", "Batch complete: N records, M failures" |
-| `Warning` | Something didn't go as hoped, but the system already has a handled path for it, a retry, a fallback, a degraded-but-valid outcome. | A compose attempt failed safety validation and is retrying; falling back to the template composer; an eval record has no `expected` to score against |
+| `Information` | A normal lifecycle event, nothing went wrong. | "Message composed", "Record processed in Nms", "Batch complete: N records, M failures" |
+| `Warning` | Something didn't go as hoped, but the system already has a handled path for it, a retry, a fallback, a degraded-but-valid outcome. | A compose attempt failed safety validation and is retrying; falling back to the template composer; the next action came from the generic row, so the record is on the review queue; an eval record has no `expected` to score against |
 | `Error` | Something is being lost or is genuinely unexpected, not a path the system was designed to recover from. | A record's processing threw and that record is dropped from `--output`; scoring threw and the record becomes unscoreable; the fallback composer also failed |
 
 If you only want to know "is anything actually broken," filtering to
