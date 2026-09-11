@@ -7,12 +7,12 @@ using Xunit;
 namespace Agent.Tests.Evaluation;
 
 // Playbook step 36: the scorecard is wired into CI so a regression in any per-check number
-// fails the build. These are measurements, not targets (D6, D9): a number that rises is
-// recorded here and in README.md together, never chased. The template composer runs on every
-// set with the set's documented reference time; latency is not measured in the suite.
-// D71: a line that did not parse is a row of the report too, so the overall pinned here is the
-// one the CLI prints. synthetic_12.jsonl's line 11 is the only such line on any set, and its
-// 12/13 is a drop taken on that decision, not a regression.
+// fails the build. These are measurements, not targets: the sets are evaluation data, never
+// fitted to, so a number that rises is recorded here and in README.md together, never chased.
+// The template composer runs on every set with the set's documented reference time; latency
+// is not measured in the suite. A line that did not parse is a row of the report too, so the
+// overall pinned here is the one the CLI prints. synthetic_12.jsonl's line 11 is the only
+// such line on any set, and its 12/13 is a deliberate drop, not a regression.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -24,8 +24,8 @@ public class BaselineNumbersTests
     [InlineData(
         "holdout_12.jsonl",
         "2025-12-09T00:00:00-06:00",
-        "Checks: Channel 12/12, Day 7/11, Hour 5/11, Action 7/12, OptOut 11/11, CTA 7/11, Payload 11/11, Lang 11/11, Safety 12/12, Personalization 8/8",
-        "Overall: 4/12 passed")]
+        "Checks: Channel 12/12, Day 11/11, Hour 11/11, Action 12/12, OptOut 11/11, CTA 11/11, Payload 11/11, Lang 11/11, Safety 12/12, Personalization 8/8",
+        "Overall: 12/12 passed")]
     [InlineData(
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",

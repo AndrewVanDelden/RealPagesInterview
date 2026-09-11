@@ -5,19 +5,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Agent.Safety;
 
-// Bounded compose-validate loop: one retry through the inner composer, then a hard
-// stop at the fallback composer. Never loops unboundedly (BACKLOG 4.2). D34: only a safety
-// rejection is retried, since only it has a reason to feed back into the prompt; an attempt
-// that returned no message goes straight to the fallback. The fallback's
-// output is validated too: "nothing unsafe leaves the agent" applies to every exit path,
-// not just the retried ones, so an unsafe fallback yields ComposeOutcome.Refused rather than
-// shipping unvalidated content.
-//
-// D48 changed what that refusal carries, not where the gate is. A refused draft used to
-// become a bare error string and the draft was destroyed here, so no human could ever see
-// what was rejected and the orchestrator read the record as a composition failure. It now
-// leaves as Refused, with the draft; the orchestrator's own step 5 gate validates it and is
-// the one place the violations are named.
+// Bounded compose-validate loop: one retry through the inner composer, then a hard stop at
+// the fallback composer (BACKLOG 4.2). Only a safety rejection is retried, since only it has a
+// reason to feed back into the prompt; an attempt that returned no message goes straight to the
+// fallback. The fallback's output is validated too: nothing unsafe leaves the agent on any exit
+// path. An unsafe fallback yields ComposeOutcome.Refused carrying the draft, not a bare error
+// string, so a person can see what was rejected in the review queue; the orchestrator's step 5
+// gate validates it and is the one place the violations are named.
 public sealed class ValidatingMessageComposer(
     IMessageComposer innerComposer,
     ISafetyValidator validator,
@@ -38,24 +32,21 @@ public sealed class ValidatingMessageComposer(
     {
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
-        // D28 addendum: a retry a discarded attempt spent is still a retry this record
-        // spent, whether or not that attempt built a message. D66 put NetworkRetries on the
-        // ComposeOutcome base type for all three cases, so a NoMessage attempt (a wrong
-        // cta_type, a malformed completion) can carry a real retry count too, and it is
-        // captured here the same way a validation-rejected Composed attempt's is below.
+        // A retry a discarded attempt spent is still a retry this record spent, whether or not
+        // that attempt built a message, so a NoMessage attempt's count (a wrong cta_type, a
+        // malformed completion) is captured the same way a rejected Composed attempt's is below.
         // Nullable, and not an int starting at zero: a record whose attempts made no network
         // call at all has no measurement, and a template-composed draft the loop refuses would
-        // otherwise report a measured zero retries for calls that never happened (D28, D62).
+        // otherwise report a measured zero retries for calls that never happened.
         int? discardedNetworkRetries = null;
 
-        // D62: this loop owns the per-record cost sum, for the reason D24's addendum gives for
-        // Attempts. A composer knows what its own call cost and nothing about the calls the
-        // attempts beside it made, so the total is a fact only the code that ran every attempt
-        // has. It counts the attempts this loop threw away, message or no message: an attempt
+        // This loop owns the per-record token cost sum, as it owns Attempts: a composer knows
+        // what its own call cost and nothing about the calls the attempts beside it made, so the
+        // total is a fact only the code that ran every attempt has. It counts the attempts this loop threw away, message or no message: an attempt
         // abandoned at its timeout produced nothing to ship and the vendor billed for it anyway.
         ModelCostNotes? discardedModelCost = null;
 
-        // D34: how many model attempts ran before the fallback, which is 1 when the first
+        // How many model attempts ran before the fallback, which is 1 when the first
         // attempt returned no message and MaxComposeAttempts when both were rejected on safety.
         int modelAttempts = 0;
 
@@ -70,7 +61,12 @@ public sealed class ValidatingMessageComposer(
 
                 if (validation.Violations.Count == 0)
                 {
-                    return WithAttempts(attemptComposed, attempt, discardedNetworkRetries, discardedModelCost);
+                    return WithAttempts(
+                        attemptComposed,
+                        attempt,
+                        discardedNetworkRetries,
+                        discardedModelCost,
+                        new DraftValidation(validator, attemptComposed.Message.Message, prospectCase.ConstraintsOrEmpty, validation));
                 }
 
                 log.LogWarning(
@@ -83,17 +79,13 @@ public sealed class ValidatingMessageComposer(
             }
             else
             {
-                // D34: no message at all (a transport failure, a timeout, a malformed or wrong
-                // completion) is not a content problem, so a second prompt has no mechanism to
-                // do better and would only add a second wait. This attempt goes straight to
-                // the fallback, which is deterministic and always available.
-                // The error text can carry raw model response content on the OpenAI path,
-                // so the log records the failure category and never the content.
-                // Read as NoMessage rather than as Failed and Refused separately: an inner
-                // composer that refuses its own draft is the same fact to this loop, no
-                // message to ship, and no composer in this program does it, so a branch of its
-                // own would be one no test could reach. What the attempt spent still rides onto
-                // the outcome (D66).
+                // No message at all (a transport failure, a timeout, a malformed or wrong
+                // completion) is not a content problem, so a second prompt has no mechanism to do
+                // better and would only add a second wait; the deterministic fallback answers.
+                // The log records the failure category, never the error text, which can carry raw
+                // model response content. Failed and Refused are read as one NoMessage: an inner
+                // composer refusing its own draft is the same fact here, and none in this program
+                // does, so its own branch would be untestable. What it spent still rides onward.
                 log.LogWarning("Compose attempt {Attempt} failed: the composer returned a failure result.", attempt);
                 var noMessage = (ComposeOutcome.NoMessage)attemptOutcome;
                 discardedNetworkRetries = AddRetries(discardedNetworkRetries, noMessage.NetworkRetries);
@@ -105,11 +97,11 @@ public sealed class ValidatingMessageComposer(
         log.LogWarning("No compose attempt produced a clean message; falling back to the safe fallback composer.");
         ComposeOutcome fallbackOutcome = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
 
-        // D66: the two exits below return no message, so there are no notes to stamp, and
-        // before D66 that is where the accumulation above was dropped. Both counts go on the
-        // outcome itself instead. D67 (a): each exit also adds the fallback outcome's own
-        // counts, the way WithAttempts adds the winner's, so all three exits sum both sources.
-        // The template fallback this program wires spends nothing, so today that adds null.
+        // The two exits below return no message, so there are no notes to stamp, and the spend
+        // accumulated above goes on the outcome itself or it is lost. Each exit also adds the
+        // fallback outcome's own counts, as WithAttempts adds the winner's, so all three exits sum
+        // both sources: a fallback that spends is billed on every exit, not only the one that
+        // ships. The template fallback this program wires spends nothing, so today that adds null.
         if (fallbackOutcome is not ComposeOutcome.Composed fallbackComposed)
         {
             // No draft anywhere: the fallback built no message either. Nothing to review, so
@@ -123,9 +115,16 @@ public sealed class ValidatingMessageComposer(
             };
         }
 
-        if (validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty).Violations.Count == 0)
+        SafetyValidationResult fallbackValidation = validator.Validate(fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty);
+
+        if (fallbackValidation.Violations.Count == 0)
         {
-            return WithAttempts(fallbackComposed, modelAttempts + 1, discardedNetworkRetries, discardedModelCost);
+            return WithAttempts(
+                fallbackComposed,
+                modelAttempts + 1,
+                discardedNetworkRetries,
+                discardedModelCost,
+                new DraftValidation(validator, fallbackComposed.Message.Message, prospectCase.ConstraintsOrEmpty, fallbackValidation));
         }
 
         log.LogError("Fallback composer output also failed safety validation; refusing and carrying the draft out for review.");
@@ -137,13 +136,16 @@ public sealed class ValidatingMessageComposer(
         };
     }
 
-    // D24: the composer that answered keeps its own name, and this loop supplies the count,
+    // The composer that answered keeps its own name, and this loop supplies the count,
     // because the number of calls it took is the loop's fact and not the composer's.
+    // The verdict that passed this message goes out with it, so the agent's final gate reads it
+    // instead of asking the same validator the same question about the same draft again.
     private static ComposeOutcome WithAttempts(
         ComposeOutcome.Composed composed,
         int attempts,
         int? discardedNetworkRetries,
-        ModelCostNotes? discardedModelCost)
+        ModelCostNotes? discardedModelCost,
+        DraftValidation validation)
     {
         (int? networkRetries, ModelCostNotes? modelCost) = CombinedSpend(discardedNetworkRetries, discardedModelCost, composed);
         return composed with
@@ -151,18 +153,17 @@ public sealed class ValidatingMessageComposer(
             Message = composed.Message with { Notes = composed.Message.Notes with { Attempts = attempts } },
             NetworkRetries = networkRetries,
             ModelCost = modelCost,
+            Validation = validation,
         };
     }
 
-    // Claude Code review of PR #28: the three exits below each combined what the loop discarded
-    // with one outcome's own spend the same way, written out three times. discardedNetworkRetries
-    // carries retries spent on attempts this loop rejected: added into the winning attempt's or
-    // the fallback's own count rather than lost with the attempt that made them.
-    // discardedModelCost is the same fact for D62's token counts, and it matters most where the
-    // winning outcome has no cost of its own: the template fallback answering after an abandoned
-    // model call would otherwise report a record that never called a model. One helper for all
-    // three exits, since ModelCost and NetworkRetries live on the shared ComposeOutcome base
-    // (D66), so the combining rule cannot read differently at any of them.
+    // One rule for combining what the loop discarded with one outcome's own spend, shared by all
+    // three exits (both counts live on the ComposeOutcome base) so it cannot read differently at
+    // any of them. discardedNetworkRetries is the retries spent on rejected attempts, added into
+    // the winner's or the fallback's own count rather than lost with the attempt that made them.
+    // discardedModelCost is the same for token counts, and matters most where the winning outcome
+    // has none of its own: the template fallback answering after an abandoned model call would
+    // otherwise report a record that never called a model.
     private static (int? NetworkRetries, ModelCostNotes? ModelCost) CombinedSpend(
         int? discardedNetworkRetries,
         ModelCostNotes? discardedModelCost,

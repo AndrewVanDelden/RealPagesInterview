@@ -29,7 +29,8 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
     // OpenAiCompletionClient.BuildResponseFormat - rather than relying on prose alone.
     // Property names and required-ness must stay in sync with ComposedMessagePayload,
     // which this schema describes the wire shape of. There is no cta_link: the link is
-    // code-owned (A21, S2), and a field the model is never offered is one it cannot invent.
+    // code-owned (A21), since code makes every reproducible decision and the model writes only
+    // prose, and a field the model is never offered is one it cannot invent.
     private const string ResponseJsonSchemaShape = """
         {
           "type": "object",
@@ -48,7 +49,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
     // Outputs' constrained decoding only enforces what the schema states - a bare
     // "type": "string" only guarantees *some* string comes back, not the right one - so
     // the model cannot generate anything else, instead of a wrong CTA being caught after
-    // the round trip by the string.Equals check below. D73: every record requires one, A9's
+    // the round trip by the string.Equals check below. Every record requires one, A9's
     // generic type when primary_cta is absent, so the enum is set on every call.
     private static string BuildResponseJsonSchema(string requiredCtaType)
     {
@@ -64,9 +65,13 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default)
     {
-        // D73: the call to action is a decision, so code resolves it the way the template does:
-        // the record's primary_cta through the catalog, and A9's generic row when it is absent.
-        CallToAction callToAction = CallToActionCatalog.Resolve(prospectCase.ConstraintsOrEmpty.PrimaryCta);
+        // The call to action is a decision, and code owns decisions, so code resolves it the way
+        // the template does: the record's primary_cta through the catalog, and when it is absent
+        // the stage's default or A9's generic row. The model never chooses the type.
+        CallToAction callToAction = CallToActionCatalog.Resolve(
+            prospectCase.ConstraintsOrEmpty.PrimaryCta,
+            prospectCase.Persona,
+            prospectCase.LifecycleStage);
         string requiredCtaType = callToAction.Type;
         string userPrompt = BuildUserPrompt(prospectCase, channel, requiredCtaType, priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
@@ -76,7 +81,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         {
             completion = await completionClient.CompleteAsync(SystemPrompt, userPrompt, responseJsonSchema, cancellationToken);
         }
-        // D62: distinct from the general catch below. The call completed and the vendor's own
+        // Distinct from the general catch below. The call completed and the vendor's own
         // usage block already travelled out on the exception, so the real counted call and its
         // tokens are what this record spent - not the zero an abandoned call reports.
         catch (NoCompletionChoiceException ex)
@@ -98,18 +103,18 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             string failure = ex.ToRedactedDiagnosticString();
             log.LogWarning("Completion request failed: {CompletionFailure}.", failure);
 
-            // D62's second state. The call was made and it is counted; nothing came back to
-            // measure, because every exception caught here is thrown before or instead of a
-            // completion, so the tokens are zero and CompletedCalls beside them is what says
-            // the zero is not a free call.
+            // ModelCostNotes' second state: the call was made and it is counted; nothing came
+            // back to measure, because every exception caught here is thrown before or instead
+            // of a completion, so the tokens are zero and CompletedCalls beside them is what
+            // says the zero is not a free call.
             return new ComposeOutcome.Failed($"Completion request failed: {failure}")
             {
                 ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0),
             };
         }
 
-        // D62's third state, for every exit below this line: the call completed, so the vendor's
-        // own counts are what it cost, whether or not what came back was usable.
+        // ModelCostNotes' third state, for every exit below this line: the call completed, so the
+        // vendor's own counts are what it cost, whether or not what came back was usable.
         var modelCost = new ModelCostNotes(
             Calls: 1,
             CompletedCalls: 1,
@@ -163,10 +168,10 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             };
         }
 
-        // S2 and A21: the link is a fact, so code builds it from the property slug and the
-        // catalog's path for this call to action. The options are prose in the record's own
-        // language, which is the model's half of the payload (A10). The type sent is the
-        // resolved one (D73), so the link is that row's own path.
+        // A21: the link is a fact, and code owns facts while the model writes prose, so code
+        // builds it from the property slug and the catalog's path for this call to action. The
+        // options are prose in the record's own language, which is the model's half of the
+        // payload (A10). The type sent is the one code resolved, so the link is that row's path.
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail
             ? PropertyLink.For(prospectCase.ContextOrEmpty.PropertyName, callToAction.LinkPath)
@@ -183,7 +188,8 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
                 ? modelOptions
                 : templates.SmsOptions(payload.CtaType);
 
-        // D72: a required disclosure is code's, as the link is (S2). A body with no opt-out by
+        // A required disclosure is a reproducible decision, so it is code's, as the link is,
+        // and no draft is refused only for leaving it out. A body with no opt-out by
         // OptOutInstructions, the one definition the gate and the scorer use, gets the record's
         // language set's sentence, the one the template writes; a body that has one is left
         // as the model wrote it.
@@ -197,7 +203,7 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
             message,
             CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true));
 
-        // D66: what the call spent rides on the outcome rather than on the notes, so the
+        // What the call spent rides on the outcome rather than on the notes, so the
         // compose-validate loop reads one property whichever case an attempt returned.
         return new ComposeOutcome.Composed(composed)
         {
@@ -206,12 +212,12 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         };
     }
 
-    // D1: an absent fact is told to the model as unknown, never as a blank string it
+    // An absent fact is told to the model as unknown, never as a blank string it
     // might read as a name. Presence.IsAbsent matches TemplateMessageComposer's rule so
     // both composers agree on what "absent" means for the same input.
     private static string Describe(string? value) => Presence.IsAbsent(value) ? "unknown" : value!;
 
-    // Playbook step 55 and D5: every field that changes what the message should say is in the
+    // Playbook step 55: every field that changes what the message should say is in the
     // data block, and every instruction is outside it (step 53). Both prompts are pinned by
     // golden tests (step 58), so a change to what the model is told is a reviewed diff.
     private static string BuildUserPrompt(
@@ -224,19 +230,21 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
         ProspectProfile profile = context.ProfileOrEmpty;
         CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
         string interest = DescribeInterest(profile);
-        // D72: the opt-out sentence is appended in code after the model writes, so the model is
+        // The opt-out sentence is appended in code after the model writes, so the model is
         // told not to write one rather than told it is required.
         string optOutDirective = constraints.RequiresOptOutInstructions() ? "the system appends them, so do not write any" : "not required";
         string channelName = channel.ToString().ToLowerInvariant();
 
-        // D26: no allowlist anywhere. The record's own tag is handed to the model as the
+        // No language allowlist anywhere: the input's language is a free tag and the model is
+        // not English-only. The record's own tag is handed to the model as the
         // language to write in, and A13's default, en, is what an absent tag means; the data
         // block still reports the record's field as unknown, because that is what it says.
         string languageInstruction =
             $"Write the message in the language '{(Presence.IsAbsent(context.Language) ? "en" : context.Language)}'.";
 
-        // A10 and S2: the half of the payload the model owns is the options, as prose. The
-        // link is not its to write, and the schema does not offer the field either.
+        // A10: code owns the facts and the model writes prose, so the half of the payload the
+        // model owns is the options. The link is not its to write, and the schema does not offer
+        // the field either.
         string channelInstruction = channel == CommunicationChannel.Email
             ? $"This is {channelName}: return a subject line and no reply options. Do not write a link; the system adds it."
             : $"This is {channelName}: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.";
@@ -273,8 +281,8 @@ public sealed class OpenAiMessageComposer(ICompletionClient completionClient, IL
     }
 
     // The rule Describe follows for text, applied to dates: one nobody stated is told to the
-    // model as unknown, never as a default it would read as a real date. That default is the
-    // shape the hold-out's year-0001 defect would take here (D1).
+    // model as unknown, never as a default it would read as a real date. That default would be
+    // year 0001, the date an unstated non-nullable DateOnly silently becomes.
     private static string DescribeDate(DateOnly? value) =>
         value is { } date ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "unknown";
 

@@ -1,12 +1,13 @@
 namespace Agent.Decisions;
 
 // Playbook step 38: inputs in, decision out. No I/O, no clock, no randomness; the reference
-// date is a parameter (D10) and the catalog is a value the caller can substitute.
+// date is a parameter, the run's --now, so a run is reproducible, and the catalog is a value
+// the caller can substitute.
 public sealed class NextActionPlanner(ActionCatalog? catalog = null)
 {
     // A7 marks this not configurable: the two samples put the boundary anywhere in (32, 68]
     // and 45 is a round number in that range, so a setting here would be one unknown value
-    // dressed up as a choice (D20, playbook step 41).
+    // dressed up as a choice (playbook step 41: a setting is earned by a second known value).
     public const int ShortHorizonThresholdDays = 45;
 
     private readonly ActionCatalog _catalog = catalog ?? ActionCatalog.Default;

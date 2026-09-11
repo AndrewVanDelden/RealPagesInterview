@@ -8,10 +8,10 @@ namespace Agent.Ingest;
 
 public sealed class JsonlRecordReader
 {
-    // D1: the three members a record must carry. Until step 68's redaction the error row
-    // named a missing one only because the deserializer's own message did; that message can
-    // no longer be reported, so the guarantee is stated here instead, from this program's
-    // own schema names rather than from anything the record wrote.
+    // The three members a record must carry; a line missing one is an error row naming it.
+    // The deserializer's own message would name it too, but that message quotes the record's
+    // text and is never reported (step 68), so the names come from this program's own schema
+    // rather than from anything the record wrote.
     //
     // Read from ProspectCase's own [JsonConstructor] rather than spelled out a second time
     // (A17): the constructor's parameters are what RespectRequiredConstructorParameters
@@ -23,14 +23,13 @@ public sealed class JsonlRecordReader
         .Select(parameter => AgentJsonOptions.Default.PropertyNamingPolicy!.ConvertName(parameter.Name!))
         .ToArray();
 
-    // One result per non-blank line, in file order. A line that does not parse is a
-    // failure row naming its 1-based line number; every other line still comes back
+    // One result per non-blank line, in file order, read only as the caller asks for the next
+    // one, so a batch holds the record it is on rather than the file. A line that does not
+    // parse is a failure row naming its 1-based line number; every other line still comes back
     // parsed (HB: failures are reported per record, never per batch).
-    // O(n) time and O(n) space in the number of input lines: every result stays resident
-    // until the caller takes the list.
-    public IReadOnlyList<Result<ProspectCase>> ReadAll(TextReader reader)
+    // O(n) time in the input lines over a full enumeration; O(one line) space.
+    public IEnumerable<Result<ProspectCase>> ReadEach(TextReader reader)
     {
-        var results = new List<Result<ProspectCase>>();
         int lineNumber = 0;
         string? line;
 
@@ -43,11 +42,13 @@ public sealed class JsonlRecordReader
                 continue;
             }
 
-            results.Add(ReadLine(line, lineNumber));
+            yield return ReadLine(line, lineNumber);
         }
-
-        return results;
     }
+
+    // The same results held as a list, for a caller that pairs them by position and so needs
+    // them all at once. O(n) time and O(n) space in the input lines.
+    public IReadOnlyList<Result<ProspectCase>> ReadAll(TextReader reader) => [.. ReadEach(reader)];
 
     private static Result<ProspectCase> ReadLine(string line, int lineNumber)
     {

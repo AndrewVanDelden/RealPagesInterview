@@ -3,20 +3,13 @@ using Agent.Domain;
 
 namespace Agent.Safety;
 
-// D42: what brand style is, computed from the message rather than claimed. Three rules,
-// each fitted to what the two sample bodies prove and each satisfied by the template
-// composer on sms and email in both language sets; BrandStyleRule carries what was proposed
-// and rejected, and why.
-//
-// D39 classifies this: it is a diagnostic and never suppresses. An off-voice message is
-// off-voice, not unlawful, so a message failing a rule here still goes out and the state is
-// recorded false. It is deliberately not in ValidatingMessageComposer's compose-validate
-// loop for that reason, and it is not an ISafetyValidator.
-//
-// No interface and no instance state (EA): there is one implementation, it is a pure
-// function of the message, and no test needs a substitute for it because a test can craft
-// the message that fails the rule it cares about. SafetyValidator earns its interface
-// because FixedSafetyValidator stands in for it; nothing stands in for this.
+// What brand style is, computed from the message rather than claimed: three rules, each fitted
+// to what the two sample bodies prove; BrandStyleRule carries what was rejected and why. A
+// diagnostic that never suppresses: an off-voice message is off-voice, not unlawful, so it still
+// goes out with the state recorded false, and this is neither in ValidatingMessageComposer's
+// loop nor an ISafetyValidator. No interface and no instance state (EA): one implementation, a
+// pure function of the message, and a test crafts the failing message instead of a substitute.
+// SafetyValidator earns its interface because FixedSafetyValidator stands in for it.
 public static class BrandStyleValidator
 {
     private const int MaxExclamationMarks = 1;

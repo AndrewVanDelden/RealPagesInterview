@@ -52,10 +52,11 @@ public class TimeZonesTests
         Assert.Equal(new DateOnly(2025, 12, 25), localDate);
     }
 
-    // D21 and A20: a wall time the zone reaches exactly once resolves to that instant with the
+    // A20: a wall time the zone reaches exactly once resolves to that instant with the
     // offset the zone had; a wall time inside a spring-forward gap resolves past the gap and
     // never carries an offset the zone did not have at that instant; a wall time the zone
-    // reaches twice resolves to the earlier of the two.
+    // reaches twice resolves to the earlier of the two. send_at is an instant, and an offset the
+    // zone never had is wrong in a way no reader downstream can detect.
     [Fact]
     public void ResolveSlot_WallTimeTheZoneReachesOnce_IsExactAndCarriesTheZoneOffset()
     {
@@ -67,10 +68,10 @@ public class TimeZonesTests
         Assert.Equal(new DateTimeOffset(slot, TimeSpan.FromHours(-5)), resolved.Instant);
     }
 
-    // PR #20 review (D21 addendum): the slot must resolve to the transition instant itself
-    // (09:30, the first valid instant), not to the wall time shifted by the gap's width
-    // (10:00) - the shift overshoots by however far into the gap the slot fell, which is
-    // farther from A5's requested hour than the transition instant is.
+    // The slot must resolve to the transition instant itself (09:30, the first valid instant),
+    // not to the wall time shifted by the gap's width (10:00) - the shift overshoots by however
+    // far into the gap the slot fell, which is farther from A5's requested hour than the
+    // transition instant is.
     [Fact]
     public void ResolveSlot_WallTimeInsideASpringForwardGap_ResolvesToTheTransitionInstant()
     {

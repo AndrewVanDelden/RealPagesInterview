@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [dev, main]
 
+# A new push to a pull request cancels the run for the head it replaced, since only the newest
+# head's checks decide the merge and the mutation job takes tens of minutes on a four-core runner.
+# A push to dev or main is never cancelled: each merge keeps its own complete run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: windows-latest
@@ -38,3 +45,29 @@ jobs:
         with:
           name: test-output
           path: test-output.txt
+
+  # Coverage proves every line ran; the mutation score proves a test notices when a line is
+  # changed. A separate job after the gated suite, so the fast coverage gate still reports on
+  # its own, and Stryker exits non-zero when the score falls under the break threshold pinned
+  # in both stryker configs. mutation.ps1 passes the SDK's own MSBuild, since Stryker's own
+  # discovery picks Visual Studio's, which cannot build net10.0 and is on this image too.
+  mutation:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Mutation score at or above the pinned threshold
+        shell: powershell
+        run: .\mutation.ps1
+
+      - name: Keep the mutation output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-output
+          path: mutation-output.txt

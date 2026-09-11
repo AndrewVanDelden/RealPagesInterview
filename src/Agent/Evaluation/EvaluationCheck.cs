@@ -15,13 +15,13 @@ public enum EvaluationCheck
     Safety,
     Personalization,
 
-    // D30: the judge's two questions. They are reported like every other check and counted
+    // The judge's two questions. They are reported like every other check and counted
     // in the per-check line, and they are deliberately not part of a record's pass or fail.
     ActionSemantic,
     BodySemantic,
 }
 
-// D30 and playbook step 31: the judge is one signal beside the deterministic checks and
+// Playbook step 31: the judge is one signal beside the deterministic checks and
 // never overturns one, so the checks that decide a record's verdict are named here rather
 // than being "all of them" at every call site.
 public static class EvaluationChecks

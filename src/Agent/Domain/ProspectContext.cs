@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Agent.Domain;
 
-// Every member is optional (D1): a decision that needs one and finds null applies the
+// Every member is optional: a decision that needs one and finds null applies the
 // assumption that names the default (A4, A6, A7, A12, A13) and the ingest notes name the field.
 public sealed record ProspectContext(
     string? PropertyName = null,
