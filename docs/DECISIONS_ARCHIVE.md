@@ -2646,3 +2646,52 @@ new test pins that no safety check reads the send time. The agent also found tha
 factory built two validator instances where the runner shares one; it now shares one by default.
 Under production wiring each composed record is validated once, down from twice; a refused draft
 is still validated four times, three in the loop and once at the gate.
+
+**Run and debug fact, D86 first change (2026-09-10).** The output side streams: a window of at
+most four runs ahead of an ordered fold writes each record's output, diagnostics and queue rows
+as soon as every earlier record has finished, and the array writer writes begin, one row, end,
+byte-identical to serializing the list. On the Release build, median of three runs, peak working
+set without `--eval-report` went from 41.8, 44.1, 70.1 and 187.4 MB to 40.8, 42.8, 62.0 and
+92.3 MB at 12, 120, 1,200 and 12,000 records, and wall time was unchanged within noise. The three
+documented sets match the baseline byte for byte once latency figures are masked, with exit
+codes 0, 0 and 2. D86's check, a working set flat past 120 records, is not met: the reader returns
+every parsed line as one list and the model-call budget reads every record before the composer is
+built. Four behavior changes come with it: a cancelled run leaves `--output` holding the rows
+folded so far with no closing bracket where it was empty; stderr failure lines are written as
+soon as every earlier record has finished, still in input order; the scorecard's batch latency
+now includes the row writes; and a slow record at the head of the window holds back later starts,
+unmeasured with a model in the path. The error writer is wrapped as synchronized, since the fold
+writes to it while records log to it.
+
+**D86 addendum (2026-09-10).** The decision's check cannot be met inside the scope it listed,
+because the input is held whole before the first record runs. The scope extends, under the
+decision already taken, to `JsonlRecordReader` (a lazy per-line read with the same line numbers
+and failure text), `ModelCallBudget` (the strictest budget found by a first streaming pass that
+keeps only the running minimum, taken only for the model composer with no override, so the
+template path reads the file once), `Evaluator` (one public per-record scoring method that the
+batch path also calls, replacing a one-row scorecard built per record) and the three lines of
+`docs/OPERATIONS.md` the first change made wrong. The check is unchanged: without
+`--eval-report`, peak working set at 12,000 records within 10 percent of 120.
+
+**Run and debug fact, D88 first half merged (2026-09-10).** Stryker.NET 4.16.0 is a local tool
+pinned in `.config/dotnet-tools.json`, confirmed against its NuGet index and the Stryker
+documentation, which states it requires the .NET 10 runtime or newer. It mutates one project
+under test per run, so there are two configurations, `stryker-config.json` for the library and
+`stryker-config.cli.json` for the command line, each with `thresholds.break` at 0, the documented
+default, until the pin after D87. `mutation.ps1` runs both and tees to `mutation-output.txt`.
+Stryker's own MSBuild discovery chose Visual Studio 2022's MSBuild 17.14, which resolved the
+.NET 9 SDK and failed to analyze every `net10.0` project, so the script passes the MSBuild of the
+SDK that `dotnet --version` resolves; a CI image with Visual Studio needs the same. Measured on
+`2772990`, two runs with the same scores: the library 78.23 percent (721 killed, 202 survived, 5
+timeouts, 238 compile errors, 113 ignored of 1279), the command line 87.44 percent (194 killed,
+24 survived, 4 uncovered, 1 timeout, 68 compile errors, 40 ignored of 331), 4.4 minutes on 16
+workers. The planner mutant `days < ShortHorizonThresholdDays` is killed by the boundary test at
+45 days. Two methods, `IngestNotes.Collect` and `OpenAiCompletionClient.CompleteAsync`, are
+unmeasured: a CS0165 compile error in each dropped every mutant there. 69 of the library's 202
+survivors are string mutants in the stop-word lists of `LanguageDetector`. The ten survivors the
+agent ranked first are each a boundary or branch no test pins: the scheduler's roll to the next
+day when the floor equals the send hour, `ActionCatalog.Create` refusing an unknown long-horizon
+type on the generic and the persona rows, the template's "at property" phrase and empty-interest
+sentence, the judge's body `NotMeasured` rule, the fact-coverage half-match boundary, a value
+flag passed last with no value, the deterministic-check set, an empty violations list in the
+prompt, and `--log-file` appending across runs. They are the input to the threshold pin.

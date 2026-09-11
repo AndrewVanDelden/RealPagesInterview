@@ -15,7 +15,7 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 3 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Deterministic core, reached 2026-09-10 after Phases 0, 1 and 2 passed again (D81).
 Check: the deterministic core passes the synthetic set with all fuzzy components stubbed, and the diagnostics explain every decision. Not yet run: D82 is open.
-Next step: merge both halves of D82 when they report, then run this check; D88 merges when its measurement finishes; then Phase 6 (D86, then D83) and Phase 8 (D87).
+Next step: merge both halves of D82 when they report, then run this check; then Phase 6 (D86, then D83) and Phase 8 (D87).
 Open decisions: D89, warnings as errors in the build, proposed 2026-09-10.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -136,4 +136,5 @@ a list the scorecard kept by reference, both a run and debug fact. D89 proposes 
 errors in the build. D81 merged: `synthetic_v2.jsonl`, 29 records and
 a malformed line, written blind, its labels disagreeing on purpose with A6 and A7, a run and
 debug fact; `holdout_12.jsonl` is training data from the same day. Phase 1 passed from a fresh clone and Phase 2 on the
-scorer proofs; D85 and D84 merged, a run and debug fact.
+scorer proofs; D85 and D84 merged, a run and debug fact. D86 streamed its output but missed its memory
+check, so an addendum extends it to the input; D88 merged its tool, both run and debug facts.
