@@ -2,7 +2,10 @@ using System.Globalization;
 using System.Text.Json;
 using Agent.Cli;
 using Agent.Cli.Tests.TestSupport;
+using Agent.Common;
 using Agent.Composition;
+using Agent.Decisions;
+using Agent.Domain;
 using Agent.Evaluation;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -2242,6 +2245,186 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             File.Delete(evalReportPath);
+        }
+    }
+
+    // The compiled catalog and send slots written in the rules file's format, with the prospect
+    // at new row's short-horizon cadence given the name passed in and every other row as compiled.
+    private static string CompiledRulesWithProspectNewShortCadence(string cadenceName) =>
+        JsonSerializer.Serialize(
+            new
+            {
+                ActionCatalog = new
+                {
+                    ActionCatalog.Default.GenericRow,
+                    Rows = ActionCatalog.Default.Rows.Select(row => new
+                    {
+                        row.Persona,
+                        row.LifecycleStage,
+                        ShortHorizonAction = row is { Persona: "prospect", LifecycleStage: "new" }
+                            ? new NextAction(ActionTypes.StartCadence, cadenceName)
+                            : StatedOrNull(row.ShortHorizonAction),
+                        LongHorizonAction = StatedOrNull(row.LongHorizonAction),
+                    }),
+                },
+                SendSlots = SendSlotTable.Default.Rows.Select(row => new
+                {
+                    row.Persona,
+                    row.LifecycleStage,
+                    row.Channel,
+                    row.DaysAfterFloorDay,
+                    LocalTime = row.LocalTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                }),
+            },
+            AgentJsonOptions.Default);
+
+    private static NextAction? StatedOrNull(Option<NextAction> action) => action.HasValue ? action.Value : null;
+
+    // A replay runs no agent, so a rules file would change nothing it reports. Refused rather
+    // than ignored, so a replay never reads as scored under rules it did not use.
+    [Fact]
+    public async Task RunAsync_RulesWithReplay_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string rulesPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        await File.WriteAllTextAsync(rulesPath, CompiledRulesWithProspectNewShortCadence("prospect_welcome_short_horizon"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--rules", rulesPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--rules needs a run that plans: it cannot be combined with --replay.", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(rulesPath);
+        }
+    }
+
+    // A rules path that will not open fails the way every other input path does: one line
+    // naming the flag, exit 1, and no output file.
+    [Fact]
+    public async Task RunAsync_RulesPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string rulesPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "rules.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--rules", rulesPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --rules '{rulesPath}'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // A refused rules file costs nothing: it is loaded before the composer is built, so the
+    // missing key the openai composer would report never shows, and before any output file
+    // opens. Every bad row is its own line, worded as the loader words it.
+    [Fact]
+    public async Task RunAsync_RulesFileWithTwoBadRows_NamesBothRowsAndWritesNoOutput()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string rulesPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(rulesPath, """
+            {
+              "action_catalog": {
+                "generic_row": {
+                  "short_horizon_action": { "type": "start_cadence", "name": "welcome" },
+                  "long_horizon_action": { "type": "follow_up_in_days", "value": 4 }
+                },
+                "rows": [
+                  { "persona": "prospect", "lifecycle_stage": "new", "short_horizon_action": { "type": "send_postcard", "name": "postcard" }, "long_horizon_action": null }
+                ]
+              },
+              "send_slots": [
+                { "persona": "prospect", "lifecycle_stage": "new", "channel": "sms", "days_after_floor_day": 1, "local_time": "25:00" }
+              ]
+            }
+            """);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--rules", rulesPath, "--composer", "openai"]);
+
+            string[] errorLines = errorWriter.ToString().Split(Environment.NewLine);
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not load --rules '{rulesPath}':", errorLines);
+            Assert.Contains("Catalog row 1 (prospect/new): short horizon action type 'send_postcard' is unknown.", errorLines);
+            Assert.Contains("Send slot row 1 (prospect/new/sms): local time is not a 24-hour HH:mm time.", errorLines);
+            Assert.DoesNotContain("OpenAI:ApiKey", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(rulesPath);
+        }
+    }
+
+    // A cadence renamed in the rules file reaches the output with no build: the record that
+    // row answers carries the new name, and nothing else in its row moves. The log says a file
+    // was loaded and how many rows it held, and never where it came from.
+    [Fact]
+    public async Task RunAsync_RulesFileRenamesOneCadence_ChangesOnlyThatRecordsActionName()
+    {
+        string inputPath = TempFilePath();
+        string compiledOutputPath = TempFilePath(".json");
+        string rulesOutputPath = TempFilePath(".json");
+        string rulesPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(rulesPath, CompiledRulesWithProspectNewShortCadence("prospect_welcome_renamed"));
+        var errorWriter = new StringWriter();
+
+        try
+        {
+            int compiledExitCode = await new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter())
+                .RunAsync(["--input", inputPath, "--output", compiledOutputPath, "--now", "2025-12-09T00:00:00-06:00"]);
+            int rulesExitCode = await new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter)
+                .RunAsync(["--input", inputPath, "--output", rulesOutputPath, "--now", "2025-12-09T00:00:00-06:00", "--rules", rulesPath]);
+
+            string compiledOutput = await File.ReadAllTextAsync(compiledOutputPath);
+            const string CompiledName = "\"name\": \"prospect_welcome_short_horizon\"";
+            Assert.Equal(CliExitCodes.Success, compiledExitCode);
+            Assert.Equal(CliExitCodes.Success, rulesExitCode);
+            Assert.Single(compiledOutput.Split(CompiledName)[1..]);
+            Assert.Equal(
+                compiledOutput.Replace(CompiledName, "\"name\": \"prospect_welcome_renamed\"", StringComparison.Ordinal),
+                await File.ReadAllTextAsync(rulesOutputPath));
+            Assert.Contains(
+                $"Rules file loaded: {ActionCatalog.Default.Rows.Count} catalog row(s) beside the generic row, {SendSlotTable.Default.Rows.Count} send slot row(s).",
+                errorWriter.ToString(),
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(Path.GetFileName(rulesPath), errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(compiledOutputPath);
+            File.Delete(rulesOutputPath);
+            File.Delete(rulesPath);
         }
     }
 }

@@ -71,6 +71,7 @@ public sealed class CliRunner(
         string? replayPath = GetOption(args, "--replay");
         string? reviewQueuePath = GetOption(args, "--review-queue");
         string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
+        string? rulesPath = GetOption(args, "--rules");
 
         // D30: the judge is off unless it is asked for. It is a presence flag, not an
         // option with a value: there is one judge, and its model is pinned rather than
@@ -100,7 +101,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -116,6 +117,15 @@ public sealed class CliRunner(
         if (reviewQueuePath is not null && replayPath is not null)
         {
             error.WriteLine("--review-queue needs a run that validates: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A replay scores a file that already exists and runs no planner or scheduler, so a
+        // rules file could change nothing it reports. Refused, so a replay never reads as
+        // scored under rules it did not use.
+        if (rulesPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--rules needs a run that plans: it cannot be combined with --replay.");
             return CliExitCodes.UsageError;
         }
 
@@ -206,6 +216,25 @@ public sealed class CliRunner(
 
         using StreamReader inputReader = inputOpen.Value;
 
+        // The rules file replaces the compiled catalog and send slots whole. It is read and
+        // checked before the composer is built and before any batch output opens, so a bad
+        // file costs no record, no model call and no partial output. A refusal prints the
+        // loader's own lines, one per bad row, and the success line gives row counts only.
+        Result<DecisionRules?> rulesLoad = LoadRules(rulesPath);
+        if (ReportIfFailed(rulesLoad, log))
+        {
+            return CliExitCodes.UsageError;
+        }
+
+        DecisionRules? rules = rulesLoad.Value;
+        if (rules is not null)
+        {
+            log.LogInformation(
+                "Rules file loaded: {CatalogRowCount} catalog row(s) beside the generic row, {SendSlotRowCount} send slot row(s).",
+                rules.Catalog.Rows.Count,
+                rules.SendSlots.Rows.Count);
+        }
+
         // A model call is bounded by the strictest latency budget the records state, so the
         // model composer is built after a first pass over the file finds it. Nothing that costs
         // time or money has happened yet: reading the file is local, and a bad composer name or
@@ -245,8 +274,8 @@ public sealed class CliRunner(
             new ChannelSelector(),
             composer,
             safetyValidator,
-            new SendScheduler(),
-            new NextActionPlanner(),
+            new SendScheduler(rules?.SendSlots),
+            new NextActionPlanner(rules?.Catalog),
             loggerFactory.CreateLogger<LeasingMessageAgent>());
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
@@ -712,6 +741,30 @@ public sealed class CliRunner(
     // output flags: both callers reach this only with a path the usage check required.
     private static Result<StreamReader> OpenInputReader(string flag, string path) =>
         TryOpen(flag, path, p => new StreamReader(p));
+
+    // No path is no rules file, and the compiled rules apply. A path that will not open fails
+    // the way --input does; a file the loader refuses fails with a line naming the flag and
+    // then the loader's failure, which already carries one line per bad row.
+    // O(n) time and space in the file's length, the loader's cost.
+    private static Result<DecisionRules?> LoadRules(string? path)
+    {
+        if (path is null)
+        {
+            return Result<DecisionRules?>.Success(null);
+        }
+
+        Result<StreamReader> opened = OpenInputReader("--rules", path);
+        if (!opened.IsSuccess)
+        {
+            return Result<DecisionRules?>.Failure(opened.Error);
+        }
+
+        using StreamReader reader = opened.Value;
+        Result<DecisionRules> loaded = RulesFileLoader.Load(reader);
+        return loaded.IsSuccess
+            ? Result<DecisionRules?>.Success(loaded.Value)
+            : Result<DecisionRules?>.Failure($"Could not load --rules '{path}':{Environment.NewLine}{loaded.Error}");
+    }
 
     private static string? GetOption(string[] cliArgs, string name)
     {
