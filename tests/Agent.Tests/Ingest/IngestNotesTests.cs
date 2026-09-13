@@ -4,8 +4,9 @@ using Xunit;
 
 namespace Agent.Tests.Ingest;
 
-// D1: every optional member a decision reads gets a default, and the record's diagnostics
-// name the field. Every member the record types do not declare is listed by its path.
+// Only task_id, consent and channel_preferences are required: every optional member a
+// decision reads gets a default, and the record's diagnostics name the field. Every member
+// the record types do not declare is listed by its path.
 public class IngestNotesTests
 {
     private const string FullLine =
@@ -60,7 +61,7 @@ public class IngestNotesTests
         Assert.Empty(notes.UnknownMembers);
     }
 
-    // Nested objects are optional too (D1): an input without a profile and assertions
+    // Nested objects are optional too: an input without a profile and assertions
     // without constraints default the members those objects would have carried.
     [Fact]
     public void Describe_InputWithoutProfileAndAssertionsWithoutConstraints_ListsTheirMembersAsDefaulted()

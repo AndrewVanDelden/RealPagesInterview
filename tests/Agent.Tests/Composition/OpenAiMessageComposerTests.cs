@@ -99,7 +99,7 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("Invalid JSON schema.", result.Error);
     }
 
-    // D1: an absent fact is told to the model as unknown, never as an empty value it could
+    // An absent fact is told to the model as unknown, never as an empty value it could
     // read as a name.
     [Fact]
     public async Task ComposeAsync_UserPrompt_AbsentNameAndProperty_SaysUnknown()
@@ -154,16 +154,17 @@ public class OpenAiMessageComposerTests
         Assert.True(ctaIndex >= 0 && ctaIndex < blockStartIndex, "CTA instruction must appear before <prospect_data>, not inside it");
     }
 
-    // D73: a record with no primary_cta requires A9's generic call to action, exactly as the
+    // A record with no primary_cta requires A9's generic call to action, exactly as the
     // template composer does, so the instruction and the schema say the same thing on every
-    // record and the model is never left to choose a type.
+    // record and the model is never left to choose a type: the type is a decision, and code
+    // owns every decision.
     [Fact]
     public async Task ComposeAsync_UserPrompt_NoPrimaryCtaConstraint_RequiresTheGenericCtaOutsideProspectDataBlock()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -174,7 +175,7 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("No specific call to action is required", prompt);
     }
 
-    // D72: the opt-out sentence is code's to write, so the model is told the system appends it.
+    // The opt-out sentence is code's to write, so the model is told the system appends it.
     [Fact]
     public async Task ComposeAsync_UserPrompt_OptOutRequired_TellsTheModelTheSystemAppendsIt()
     {
@@ -201,9 +202,9 @@ public class OpenAiMessageComposerTests
         Assert.Contains("Opt-out instructions: not required", fakeClient.LastUserPrompt);
     }
 
-    // D72: a required disclosure is a reproducible decision, so code owns it (S2). A body the
-    // model wrote without an opt-out gets the record's own language set's sentence, the one
-    // the template writes: after a space on sms, on its own line on email.
+    // A required disclosure is a reproducible decision, so code owns it and the model writes
+    // only prose. A body the model wrote without an opt-out gets the record's own language set's
+    // sentence, the one the template writes: after a space on sms, on its own line on email.
     [Theory]
     [InlineData("en", CommunicationChannel.Sms, "hi Reply STOP to opt out.")]
     [InlineData("en", CommunicationChannel.Email, "hi\nTo opt out of emails, reply STOP.")]
@@ -220,7 +221,7 @@ public class OpenAiMessageComposerTests
         Assert.Equal(expectedBody, ComposedOf(outcome).Message.Body);
     }
 
-    // D72: OptOutInstructions is the one definition of carrying an opt-out, so a body that
+    // OptOutInstructions is the one definition of carrying an opt-out, so a body that
     // already carries one by that definition is left as the model wrote it, never doubled.
     [Fact]
     public async Task ComposeAsync_OptOutRequiredAndTheModelWroteOne_LeavesTheBodyAsWritten()
@@ -234,7 +235,7 @@ public class OpenAiMessageComposerTests
         Assert.Equal("Hi Taylor. Reply STOP to opt out.", ComposedOf(outcome).Message.Body);
     }
 
-    // D72: nothing is appended that the record did not ask for.
+    // Nothing is appended that the record did not ask for.
     [Fact]
     public async Task ComposeAsync_OptOutNotRequired_AppendsNothing()
     {
@@ -347,7 +348,7 @@ public class OpenAiMessageComposerTests
 
     // A record with no primary_cta constraint at all is real, not hypothetical: two
     // records in the actual interview hold-out have none (see TalkingPoints.md Sprint 7).
-    // D73: it gets A9's generic type as a hard constraint, the one the template writes: the
+    // It gets A9's generic type as a hard constraint, the one the template writes: the
     // schema's enum names it, and a model that returns anything else fails, exactly as it
     // does against a stated primary_cta.
     [Fact]
@@ -356,7 +357,7 @@ public class OpenAiMessageComposerTests
         const string json = """{"subject":null,"body":"hi","cta_type":"anything_reasonable","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -364,6 +365,23 @@ public class OpenAiMessageComposerTests
         using JsonDocument schemaDocument = JsonDocument.Parse(fakeClient.LastResponseJsonSchema!);
         JsonElement ctaTypeEnum = schemaDocument.RootElement.GetProperty("properties").GetProperty("cta_type").GetProperty("enum");
         Assert.Equal("reply", Assert.Single(ctaTypeEnum.EnumerateArray()).GetString());
+    }
+
+    // The model path resolves the call to action the way the template does, stage default
+    // included: prospect/new with no primary_cta requires schedule_tour, not the generic reply.
+    [Fact]
+    public async Task ComposeAsync_NoPrimaryCtaAtAStageWithADefault_ConstrainsCtaTypeToThatDefault()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        using JsonDocument schemaDocument = JsonDocument.Parse(fakeClient.LastResponseJsonSchema!);
+        JsonElement ctaTypeEnum = schemaDocument.RootElement.GetProperty("properties").GetProperty("cta_type").GetProperty("enum");
+        Assert.Equal("schedule_tour", Assert.Single(ctaTypeEnum.EnumerateArray()).GetString());
     }
 
     // Step 68: the exception is named, not attached. Attaching it is what put the vendor's
@@ -402,7 +420,7 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("invalid start of a value", entry.Message);
     }
 
-    // Playbook step 55 and D5: every field that changes what the message should say reaches
+    // Playbook step 55: every field that changes what the message should say reaches
     // the model. A field the reader parses and never passes on is a personalization gap
     // waiting to be found.
     [Fact]
@@ -424,7 +442,7 @@ public class OpenAiMessageComposerTests
         Assert.Contains("channel: sms", prompt);
     }
 
-    // D1: an absent field is told to the model as unknown, the same rule the name and the
+    // An absent field is told to the model as unknown, the same rule the name and the
     // property follow, so a date nobody stated never reads as a date.
     [Fact]
     public async Task ComposeAsync_UserPrompt_AbsentDatesAndLanguage_SayUnknown()
@@ -442,7 +460,7 @@ public class OpenAiMessageComposerTests
         Assert.Contains("language: unknown", prompt);
     }
 
-    // D26: the model path has no allowlist. The record's language is an instruction, outside
+    // The model path has no language allowlist. The record's language is an instruction, outside
     // the data block, so a Spanish record is written in Spanish rather than translated by a
     // table this program would have to hold.
     [Fact]
@@ -461,9 +479,9 @@ public class OpenAiMessageComposerTests
         Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the language instruction must appear before <prospect_data>, not inside it");
     }
 
-    // S2 and A21: the link is a fact, not prose. Code builds it from the property slug and
-    // the catalog's path, and the model is told not to write one, so no email can carry a
-    // host the record never stated.
+    // A21: the link is a fact, not prose, and code owns every reproducible fact. Code builds it
+    // from the property slug and the catalog's path, and the model is told not to write one, so
+    // no email can carry a host the record never stated.
     [Fact]
     public async Task ComposeAsync_Email_CarriesTheCodeOwnedLinkAndNoModelInventedOne()
     {
@@ -479,14 +497,14 @@ public class OpenAiMessageComposerTests
         Assert.Null(result.Message.Cta.Options);
     }
 
-    // D73: with no primary_cta the type is A9's generic one, so the email's link is the generic
+    // With no primary_cta the type is A9's generic one, so the email's link is the generic
     // row's own path. The link follows the resolved call to action, which is the type sent.
     [Fact]
     public async Task ComposeAsync_AbsentPrimaryCtaOnEmail_CarriesTheGenericLink()
     {
         const string json = """{"subject":"Tour Oak Ridge","body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
@@ -497,14 +515,14 @@ public class OpenAiMessageComposerTests
 
     // TemplateMessageComposerTests pins the same input for the offline composer
     // (ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent); this pins it on the model path, where
-    // whitespace reaching Presence.IsAbsent requires the generic type (D73).
+    // whitespace reaching Presence.IsAbsent requires A9's generic type.
     [Fact]
     public async Task ComposeAsync_BlankPrimaryCta_IsTreatedAsAbsent()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"reply","cta_options":null,"cta_link":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "  ", lifecycleStage: "open");
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -658,9 +676,9 @@ public class OpenAiMessageComposerTests
         Assert.Equal(["Thu", "Fri"], result.Message.Cta!.Options);
     }
 
-    // D62, the third state: a call that completed carries that call's real input and output
-    // token counts, and the call is counted beside them so a reader can tell a measured zero
-    // from an unmeasured one.
+    // Cost state three of three (no call, abandoned, completed): a call that completed carries
+    // that call's real input and output token counts, and the call is counted beside them so a
+    // reader can tell a measured zero from an unmeasured one.
     [Fact]
     public async Task ComposeAsync_CallCompletes_NotesCarryTheCountedCallAndItsTokens()
     {
@@ -673,11 +691,11 @@ public class OpenAiMessageComposerTests
         Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), outcome.ModelCost);
     }
 
-    // D62, the second state: the client throws its TimeoutException before it can read
-    // result.Value, so there is no usage to read and the tokens are zero. The call is still
-    // counted, because the vendor billed roughly a third of the abandoned attempts of the
-    // 2026-09-08 run (DESIGN.md section 9) and a zero with no call beside it would read as
-    // free.
+    // Cost state two of three (no call, abandoned, completed): the client throws its
+    // TimeoutException before it can read result.Value, so there is no usage to read and the
+    // tokens are zero. The call is still counted, because the vendor billed roughly a third of
+    // the abandoned attempts of the 2026-09-08 run (DESIGN.md section 9) and a zero with no call
+    // beside it would read as free.
     [Fact]
     public async Task ComposeAsync_CallAbandonedAtItsTimeout_FailureCountsTheCallAndMeasuresNoTokens()
     {

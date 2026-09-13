@@ -5,12 +5,14 @@
 #   The decision log carries the phase state, and that section is replaced, not appended.
 #   The decision log stays under the playbook's word cap (step 92); the full paragraphs live
 #   in the decisions archive beside it.
-#   Every D-number and S-number cited anywhere in the repo resolves to a decision paragraph in
-#   the decisions archive, since a citation is plain text a reader resolves by searching for
-#   its bold heading (D68).
+#   Every D-number and S-number cited in the docs, the README or AGENTS.md resolves to a
+#   decision paragraph in the decisions archive, since a citation is plain text a reader
+#   resolves by searching for its bold heading (D68).
+#   No file under src or tests cites a D-number or S-number at all: a comment states the rule
+#   and its reason in place, so the code reads without the archive open (D87).
 #
 # Run it locally the same way CI does:  .\check-instruction-files.ps1
-# Exits 0 when all four hold, 1 with one line per failure when they do not.
+# Exits 0 when all five hold, 1 with one line per failure when they do not.
 [CmdletBinding()]
 param(
     [string] $AgentsPath = 'AGENTS.md',
@@ -95,7 +97,7 @@ else {
         $failures += "No decisions archive found at docs/DECISIONS_ARCHIVE.md or DECISIONS_ARCHIVE.md. Every decision paragraph lives there, so nothing a citation names could be resolved (D68)."
     }
     else {
-        $scanRoots = @('src', 'tests', 'docs', 'README.md', 'AGENTS.md') |
+        $scanRoots = @('docs', 'README.md', 'AGENTS.md') |
             Where-Object { Test-Path -LiteralPath ([System.IO.Path]::Combine($PSScriptRoot, $_)) }
         $tracked = & git -C $PSScriptRoot ls-files -- $scanRoots
         if ($LASTEXITCODE -ne 0) {
@@ -119,9 +121,23 @@ else {
     }
 }
 
+# Code and tests cite no decision number, strings and names included, so a reader of either
+# never needs the archive open to learn what a rule is or why it holds (D87).
+$codeFiles = @(& git -C $PSScriptRoot ls-files -- 'src' 'tests' |
+    ForEach-Object { [System.IO.Path]::Combine($PSScriptRoot, $_) } |
+    Where-Object { Test-Path -LiteralPath $_ })
+if ($LASTEXITCODE -ne 0) {
+    $failures += "git ls-files failed for src and tests, so no decision number there was checked. A check that did not run is not a check that passed."
+}
+elseif ($codeFiles.Count -gt 0) {
+    foreach ($hit in @(Select-String -LiteralPath $codeFiles -Pattern '\b[DS][0-9]+\b')) {
+        $failures += "$($hit.Path):$($hit.LineNumber) cites a decision number; state the rule and its reason instead (D87)."
+    }
+}
+
 if ($failures.Count -gt 0) {
     foreach ($failure in $failures) { Write-Host "instruction-files: $failure" }
     exit 1
 }
 
-Write-Host "instruction-files: $AgentsPath is $($agents.Count) lines of rules; the phase state is in $DecisionLogPath, which is $words words of $MaxDecisionLogWords; $($cited.Count) cited decision numbers all resolve to paragraphs among the $($defined.Count) in $archivePath."
+Write-Host "instruction-files: $AgentsPath is $($agents.Count) lines of rules; the phase state is in $DecisionLogPath, which is $words words of $MaxDecisionLogWords; $($cited.Count) cited decision numbers all resolve to paragraphs among the $($defined.Count) in $archivePath; no file under src or tests cites one."

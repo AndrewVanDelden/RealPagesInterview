@@ -3,10 +3,10 @@ using Agent.Common;
 
 namespace Agent.Composition;
 
-// D26: the languages the offline composer can serve, and nothing more. There is no
-// allowlist here and none anywhere else: a record may state any language, the model path
-// passes it through, and this table is only the list of languages this composer holds
-// prose for. A tag with no set is served in English and reported (A13's
+// The languages the offline composer can serve, and nothing more. There is no allowlist
+// here and none anywhere else: the input's language is a free tag, a record may state any
+// language, the model path passes it through, and this table is only the list of languages
+// this composer holds prose for. A tag with no set is served in English and reported (A13's
 // locale_not_applied), which is a limit of the template file rather than a rule about
 // which languages a prospect may use.
 internal static class MessageTemplateCatalog

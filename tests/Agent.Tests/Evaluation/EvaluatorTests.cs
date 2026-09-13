@@ -101,7 +101,8 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Passed, score.Channel);
     }
 
-    // send_at: to the day and to the hour, compared in the label's own offset (D4, D6).
+    // send_at: to the day and to the hour, compared in the label's own offset; minutes are not
+    // modeled.
 
     [Fact]
     public void Evaluate_SendAtSameInstantInAnotherOffset_DayAndHourPassed()
@@ -152,7 +153,7 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Failed, score.SendAtHour);
     }
 
-    // next_action.type: exact (D2, D15).
+    // next_action.type: exact. The semantic judge is a separate signal and never overturns it.
 
     [Fact]
     public void Evaluate_NextActionTypeMatches_Passed()
@@ -170,7 +171,8 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Failed, score.NextActionType);
     }
 
-    // Opt-out: the shared instruction list over subject plus body (D13 b).
+    // Opt-out: the shared instruction list over subject plus body, the one definition the
+    // validator uses too, so the agent can never emit what the scorer rejects.
 
     [Fact]
     public void Evaluate_OptOutRequiredAndPresent_Passed()
@@ -220,8 +222,8 @@ public class EvaluatorTests
         Assert.True(score.Passed);
     }
 
-    // Call-to-action type: exact against the label's cta.type (D13 d), never against the
-    // product's vocabulary table.
+    // Call-to-action type: exact against the label's cta.type, never against the
+    // product's vocabulary table, which would pass the product's own guess back to itself.
 
     [Fact]
     public void Evaluate_CtaTypeMatchesTheLabel_Passed()
@@ -354,7 +356,8 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.NotMeasured, score.CtaPayload);
     }
 
-    // Body language equals input.language (A13, D13 c).
+    // Body language equals input.language (A13), detected by a stop-word count over subject plus
+    // body.
 
     [Fact]
     public void Evaluate_EnglishBodyForEnglishRecord_BodyLanguagePassed()
@@ -453,7 +456,7 @@ public class EvaluatorTests
     }
 
     // Personalization: coverage of the first name and the property name over subject plus
-    // body (D13 a).
+    // body. City and amenities are not counted, because the labels' own bodies omit them.
 
     [Fact]
     public void Evaluate_NameAndPropertyPresent_ScoresOneAndPassed()
@@ -594,6 +597,42 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.NotMeasured, scorecard.LatencyP95);
     }
 
+    // A caller that scores each record as it finishes gets the row a whole batch gives it,
+    // because both go through the one scoring rule.
+    [Fact]
+    public void ScoreRecord_OneRun_ReturnsTheRowTheBatchGives()
+    {
+        ScoredRun run = Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody), latencyMs: 12);
+
+        Assert.Equal(Evaluator.Evaluate([run]).RecordScores[0], Evaluator.ScoreRecord(run));
+    }
+
+    [Fact]
+    public void ScoreRecord_ScoringThrows_ReturnsAnUnscoreableRow()
+    {
+        ProspectCase prospectCase = BaselineCase(new ExpectedOutcome(Message(CommunicationChannel.Sms, "expected"), null!));
+
+        RecordScore score = Evaluator.ScoreRecord(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody)));
+
+        Assert.Contains("NullReferenceException", score.ScoringError);
+        Assert.False(score.Passed);
+    }
+
+    // The strictest stated budget, taken one record at a time: a record that states none leaves
+    // the running value alone, and a looser one never raises it.
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData(null, 900, 900)]
+    [InlineData(700, null, 700)]
+    [InlineData(700, 900, 700)]
+    [InlineData(900, 700, 700)]
+    public void StricterLatencyBudget_RunningValueAndOneRecord_KeepsTheSmallerStatedBudget(int? strictestSoFar, int? statedByRecord, int? expected)
+    {
+        ScoredRun run = Run(BaselineCase(p95LatencyMs: statedByRecord), Message(CommunicationChannel.Sms, EnglishSmsBody));
+
+        Assert.Equal(expected, Evaluator.StricterLatencyBudget(strictestSoFar, run));
+    }
+
     // Unscoreable rows and per-record isolation (playbook step 34).
 
     [Fact]
@@ -625,12 +664,13 @@ public class EvaluatorTests
         Assert.False(score.Passed);
     }
 
-    // D46: Score handles the composed message and the record's own labeled content, so a
-    // scoring exception is exactly the boundary the redaction rule covers. The raw
-    // exception is never attached to the log entry: ILogger's default formatter appends
-    // Exception.ToString() in full regardless of the message template, so attaching it
-    // would bypass ToRedactedDiagnosticString entirely, the same leak playbook step 68
-    // closed for the composer and the readers.
+    // Score handles the composed message and the record's own labeled content, so a
+    // scoring exception is exactly the boundary the redaction rule covers: the log names the
+    // exception type, never text a vendor, model or record wrote. The raw exception is never
+    // attached to the log entry: ILogger's default formatter appends Exception.ToString() in
+    // full regardless of the message template, so attaching it would bypass
+    // ToRedactedDiagnosticString entirely, the same leak playbook step 68 closed for the composer
+    // and the readers.
     [Fact]
     public void Evaluate_ScoringThrows_LogsTheExceptionTypeWithoutAttachingTheRawException()
     {

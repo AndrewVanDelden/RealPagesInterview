@@ -4,7 +4,7 @@ using Agent.Common;
 
 namespace Agent.Orchestration;
 
-// D3: why a record carries no message. None means a message was sent. Written to the
+// Why a record carries no message. None means a message was sent. Written to the
 // diagnostics file in snake_case, the same spelling next_action.reason uses.
 [JsonConverter(typeof(SnakeCaseLowerEnumConverter<SuppressionReason>))]
 public enum SuppressionReason

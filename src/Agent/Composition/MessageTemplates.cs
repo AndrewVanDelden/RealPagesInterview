@@ -2,7 +2,7 @@ using System.Collections.Frozen;
 
 namespace Agent.Composition;
 
-// One language's worth of the offline composer's prose (A13, D26). Every string a human
+// One language's worth of the offline composer's prose (A13). Every string a human
 // reads lives in a set like this one, so adding a language is one file plus one row in
 // MessageTemplateCatalog, and the sentence order stays in TemplateMessageComposer where
 // both languages share it. The call-to-action vocabulary itself stays language-neutral in

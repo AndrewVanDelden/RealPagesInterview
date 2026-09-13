@@ -3,7 +3,7 @@ using Agent.Safety;
 
 namespace Agent.Orchestration;
 
-// The draft the safety gate rejected, and every check that rejected it (D43). It rides on
+// The draft the safety gate rejected, and every check that rejected it. It rides on
 // AgentRunResult rather than on AgentDiagnostics because it is not diagnostics: the
 // diagnostics file is a per-record dump of how every decision was reached and is read when
 // debugging a run, and this is a work list a person acts on, written to its own output.

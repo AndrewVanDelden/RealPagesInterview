@@ -44,9 +44,9 @@ public class ChannelSelectorTests
         Assert.False(selected.HasValue);
     }
 
-    // D57: the consent gate asked the same question this selector answers, and its third case
-    // was the one this class did not already prove. Consent on every channel is not a channel:
-    // a record that states no preference has nothing to send on, so the answer is none.
+    // Contactable and which channel are one question: no selected channel is the answer to both,
+    // so the case a separate consent gate once proved lives here. Consent on every channel is not
+    // a channel: a record that states no preference has nothing to send on, so the answer is none.
     [Fact]
     public void Select_EmptyChannelPreferencesDespiteFullConsent_ReturnsNone()
     {

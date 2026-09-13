@@ -25,7 +25,7 @@ public class AgentOutputTests
         Assert.Equal("start_cadence", roundTripped.NextAction.Type);
     }
 
-    // D3: suppression on the wire is a next_message object with channel none and null
+    // Suppression on the wire is a next_message object with channel none and null
     // fields, matching the oracle's shape; next_action omits the members it does not use.
     [Fact]
     public void Serializes_SuppressedOutput_AsNoneObjectWithNullFieldsAndNoOpWithReason()

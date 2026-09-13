@@ -3,7 +3,7 @@ using Agent.Domain;
 
 namespace Agent.Decisions;
 
-// One row of the catalog (D2, D17), keyed on the record's persona and lifecycle stage.
+// One row of the action catalog, keyed on the record's persona and lifecycle stage.
 // Each horizon branch is an Option because the two samples show one branch per row and A19
 // forbids inventing the other: None means "no evidence for this branch", and the generic
 // row answers it. That is a different fact from "no row for this persona and stage", and

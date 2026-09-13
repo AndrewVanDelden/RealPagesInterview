@@ -6,22 +6,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Agent.Evaluation;
 
-// D30, D15 and playbook step 31: the semantic judge DESIGN.md section 6 promised, built the
-// way the measured judge failures say to build one.
-//
-// Reference-based: every grade is against the label the customer wrote, never against the
-// judge's own taste. Reference-free quality scoring is where position, verbosity and
-// self-preference bias have been measured, and a set with labels does not need it.
-// One signal beside the deterministic checks: its two verdicts are their own checks and are
-// excluded from a record's pass or fail (EvaluationChecks.Deterministic), so a judge can
-// never overturn an exact match or turn a passing record into a failing one.
-// Off by default: it runs only when the CLI is given --judge, so every offline run, the
-// Phase 4 check included, reports both checks as not measured.
-// Known limitation, recorded rather than papered over: with one vendor key the judge and the
-// composer are the same model family, which is the self-preference setting. On the offline
-// path the text being graded is not model-written at all, and on the model path the label is
-// the reference, which is the mitigation the literature gives; the judge model is pinned
-// separately from the composer's so the two are at least not the same model.
+// The semantic judge of DESIGN.md section 6. Reference-based: every grade is against the label
+// the customer wrote, never the judge's taste, since reference-free scoring is where position,
+// verbosity and self-preference bias were measured. One signal beside the deterministic checks
+// (playbook step 31): its verdicts are excluded from a record's pass or fail
+// (EvaluationChecks.Deterministic), so it never overturns an exact match. Off unless the CLI is
+// given --judge, so offline runs report both as not measured. Known limitation: one vendor key
+// makes judge and composer one model family (self-preference); offline text is not model-written,
+// the label as reference mitigates the model path, and the judge model is pinned apart.
 public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<SemanticJudge>? logger = null)
 {
     private readonly ILogger<SemanticJudge> log = logger.OrNullLogger();

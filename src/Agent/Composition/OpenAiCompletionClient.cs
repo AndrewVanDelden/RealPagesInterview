@@ -6,21 +6,14 @@ using OpenAI.Chat;
 
 namespace Agent.Composition;
 
-// D27: the real client goes through the official OpenAI package, pinned in
-// Directory.Packages.props, rather than a hand-rolled call against the HTTP endpoint. Every
-// type and parameter below was confirmed against that restored assembly, not against
-// documentation (playbook step 50): ChatClient(model, ApiKeyCredential, OpenAIClientOptions),
-// ChatClient.CompleteChatAsync(IEnumerable<ChatMessage>, ChatCompletionOptions,
-// CancellationToken), ChatCompletionOptions.Temperature and .ResponseFormat,
-// ChatResponseFormat.CreateJsonSchemaFormat(name, BinaryData, description, jsonSchemaIsStrict),
-// OpenAIClientOptions.Transport, .NetworkTimeout and .RetryPolicy,
-// HttpClientPipelineTransport(HttpClient) and ClientRetryPolicy(maxRetries).
-//
-// D28 bounds the call: one retry with the SDK's exponential backoff on the transient
-// statuses it knows (408, 429, 500, 502, 503, 504), a per-call timeout the caller states, and
-// a low temperature that is never called determinism (step 52). D33 narrows the retry to
-// those statuses alone: a timeout, or any attempt that ends in an exception, is not retried
-// (CountingRetryPolicy.ShouldRetryAsync).
+// The real client goes through the official OpenAI package, pinned in Directory.Packages.props,
+// rather than a hand-rolled HTTP call: the SDK owns the request shapes, the retry policy and the
+// structured-output plumbing, and ICompletionClient is already the portability seam. Every type
+// and parameter below was confirmed against that restored assembly, not against documentation
+// (playbook step 50). The call is bounded: one retry with the SDK's backoff, only on the
+// transient statuses 408, 429, 500, 502, 503 and 504, never on a timeout or other exception
+// (CountingRetryPolicy.ShouldRetryAsync); a per-call timeout the caller states; and a low
+// temperature that is never called determinism (step 52).
 public sealed class OpenAiCompletionClient : ICompletionClient
 {
     // One retry, not the SDK's default of three: a record states a latency budget, and a
@@ -41,15 +34,14 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     private readonly CountingRetryPolicy retryPolicy;
     private readonly TimeSpan callBudget;
 
-    // D35: callBudget is the timeout of each attempt, whole, not a share of it. A timeout is
-    // never retried (D33), so the attempt that times out is the only attempt its call makes,
-    // and D28's division by 1 + MaxRetries only halved it: D32 measured one completion at about
-    // 1.5 to 4.5 s. The cost, stated rather than hidden: after a transient status the retry is
-    // given the whole budget again, so such a call can take up to twice the budget plus the
-    // SDK's backoff between the two attempts. Nor does this bound the compose-validate loop
-    // above: after a failed call it composes once more before falling back, so a record can
-    // spend twice that again before the template composer answers, which the p95 check then
-    // measures and reports.
+    // callBudget is the timeout of each attempt, whole, not a share of it. A timeout is never
+    // retried, so the attempt that times out is the only one its call makes, and dividing the
+    // budget across attempts would only halve it: one completion was measured at about 1.5 to
+    // 4.5 s. The cost, stated rather than hidden: after a transient status the retry gets the
+    // whole budget again, so such a call can take up to twice the budget plus the SDK's backoff.
+    // Nor does this bound the compose-validate loop above: after a safety rejection it composes
+    // once more before falling back, so a record can spend twice that again before the template
+    // composer answers, which the p95 check measures and reports.
     public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
     {
         retryPolicy = new CountingRetryPolicy(MaxRetries);
@@ -78,8 +70,8 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ResponseFormat = BuildResponseFormat(responseJsonSchema),
         };
 
-        // D37: this call's own attempt count, which concurrent calls on this client cannot add
-        // to (CountingRetryPolicy.BeginCall).
+        // This call's own attempt count, which concurrent calls on this client cannot add to
+        // (CountingRetryPolicy.BeginCall).
         StrongBox<int> callAttempts = retryPolicy.BeginCall();
 
         ClientResult<ChatCompletion> result;
@@ -92,7 +84,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // D33: a timed-out attempt is never retried, so the pipeline rethrows that one
+            // A timed-out attempt is never retried, so the pipeline rethrows that one
             // attempt's TaskCanceledException rather than an AggregateException of every
             // attempt's; a 429 retried before it adds no exception of its own. Named here so
             // the composer above catches a timeout by its own type instead of the SDK's, and
@@ -111,24 +103,19 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         }
         catch (ArgumentOutOfRangeException ex)
         {
-            // A 200 whose body carries no choice at all. ClientResult deserializes on the
-            // first read of Value, not on the await, so the SDK reaches for a choice that is
-            // not there and throws from inside itself, after the call has already returned.
-            // Named here as the same failure an empty message body is, because the composer
-            // catches that one into a Result and the compose-validate loop turns it into a
-            // fallback; an unhandled exception escapes all of that and costs the record its
-            // output row. This is the guarantee the hand-rolled client gave with
-            // "Choices?.FirstOrDefault()?.Message?.Content ?? throw" before D27 replaced it.
-            //
-            // D62: unlike a timeout, result.Value is already read by this point (it is what
-            // threw), so result.Value.Usage is real and readable - the vendor can still bill
-            // a response with no choice. Read here and carried on the exception, because it
-            // has nowhere else to travel once this throws.
+            // A 200 whose body carries no choice at all. ClientResult deserializes on the first
+            // read of Value, not on the await, so the SDK throws from inside itself after the call
+            // has returned. Named here as the same failure an empty message body is, which the
+            // composer turns into a failed outcome and the compose-validate loop into a fallback;
+            // an unhandled exception would cost the record its output row. Unlike a timeout,
+            // result.Value has been read (it is what threw), so its Usage is real, and the vendor
+            // can bill a response with no choice: the tokens ride on the exception, because they
+            // have nowhere else to travel once this throws.
             ChatTokenUsage? noChoiceUsage = result.Value.Usage;
             throw new NoCompletionChoiceException(noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0, ex);
         }
 
-        // D62: the measured cost of the call, read off the vendor's own usage block. Confirmed
+        // The measured cost of the call, read off the vendor's own usage block. Confirmed
         // against the restored assembly on 2026-09-09, not from documentation, which does not
         // list it (playbook step 50, SCS): ChatCompletion.Usage is an OpenAI.Chat.ChatTokenUsage
         // with int InputTokenCount, int OutputTokenCount and int TotalTokenCount, and it is null

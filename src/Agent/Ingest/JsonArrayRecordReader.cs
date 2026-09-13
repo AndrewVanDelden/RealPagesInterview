@@ -5,7 +5,8 @@ namespace Agent.Ingest;
 
 // Reads back what JsonArrayRecordWriter wrote: one indented JSON array of records. The file
 // is one document, so the result is one Result for the whole file, unlike the JSONL reader's
-// one Result per line (replay, D14).
+// one Result per line. Replay pairs these rows with the parsed input records by position,
+// since the output file carries no task id.
 public sealed class JsonArrayRecordReader<T>
 {
     // O(n) in the file size.

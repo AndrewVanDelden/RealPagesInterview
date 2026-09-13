@@ -62,18 +62,26 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 `--eval-report` scores each record against its own `expected` label: `OK`, `FAIL` or `n/a` (not
 measured, never a pass) per check, a per-check tally, the batch p95 against the records' 2000 ms
 budget, and the overall count. `--replay` re-scores an output file without running the agent
-(D14); `--judge` adds two model-graded checks and needs the key (D30). `sample.jsonl` is the only
-evidence any rule is fitted to; the other two sets are run and reported, never fitted to (D9).
+(D14); `--judge` adds two model-graded checks and needs the key (D30). `sample.jsonl` and, since D81,
+`holdout_12.jsonl` are the evidence rules are fitted to; `synthetic_12.jsonl` is a regression set,
+and `synthetic_v2.jsonl`, written blind to the code, carries the honest number (D81).
 
 | Set, template composer | Overall | Checks below full | Source |
 |---|---|---|---|
-| `sample.jsonl` | 2 of 2 | none | [docs/DESIGN.md](docs/DESIGN.md) section 9, Sprint 9 |
-| `holdout_12.jsonl` | 4 of 12 | day 7 of 11, hour 5 of 11, action 7 of 12, call-to-action type 7 of 11 | [docs/DESIGN.md](docs/DESIGN.md) section 9, Sprint 9 |
+| `sample.jsonl` | 2 of 2 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
+| `holdout_12.jsonl`, fitted since D81 | 12 of 12 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
 | `synthetic_12.jsonl` | 12 of 13 | none; line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
+| `synthetic_v2.jsonl`, the honest number | 13 of 30 | channel 25 of 29, day 24 of 26, hour 19 of 26, action 17 of 29, call-to-action type 23 of 24, call-to-action payload 24 of 25; line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
 
-The hold-out misses are the oracle's per-stage send days and hours (A5) and vocabulary the two
-samples never showed (A8, A9). All three sets record zero safety violations and an empty review
-queue; the batch p95 read 19 to 22 ms, wall clock that moves between runs (DESIGN.md section 9).
+The hold-out is fitted, so 12 of 12 shows the rules reproduce their own evidence and says
+nothing about generalizing. The frozen set is the number that does. Of its sixteen failing
+records, eight are stages no rule covers, answered by the generic row; three are its author's
+judgment against a stated assumption (consent and preference, A1 and A3; an unknown zone, A6);
+two are the voice hour and a past move date; and three are one send slot where two rules fit
+the hold-out and the frozen set disagrees with the one chosen, which is recorded and not refitted
+(DESIGN.md section 3). Every set records zero safety violations. The review queue is empty on
+the samples and the hold-out and holds 3 rows on `synthetic_12.jsonl` and 11 on
+`synthetic_v2.jsonl`, one per record the generic row answered (D83).
 `BaselineNumbersTests` pins every tally, so a drop fails the build.
 
 The model path, `--composer openai --model-call-budget-ms 30000` (D70) on `synthetic_12.jsonl`,

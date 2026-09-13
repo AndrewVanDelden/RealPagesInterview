@@ -17,7 +17,11 @@ public class JsonArrayRecordReaderTests
             new NextAction("follow_up_in_days", null, 3));
         var suppressed = new AgentOutput(new NextMessage(CommunicationChannel.None), new NextAction("no_op", Reason: "no_contact_consent"));
         var buffer = new StringWriter();
-        await new JsonArrayRecordWriter<AgentOutput>().WriteAllAsync(buffer, [sent, suppressed]);
+        var writer = new JsonArrayRecordWriter<AgentOutput>(buffer);
+        await writer.BeginAsync();
+        await writer.WriteRowAsync(sent);
+        await writer.WriteRowAsync(suppressed);
+        await writer.EndAsync();
 
         Result<IReadOnlyList<AgentOutput>> result = Reader.ReadAll(new StringReader(buffer.ToString()));
 

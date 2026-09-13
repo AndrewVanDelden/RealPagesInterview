@@ -2,7 +2,7 @@ using Agent.Common;
 
 namespace Agent.Evaluation;
 
-// D13 c: the strongest checkable proxy for "body language equals input.language" without
+// The strongest checkable proxy for "body language equals input.language" without
 // a model or a dependency: a stop-word count per language over the languages the sets
 // contain. The two lists are disjoint function words; content words are left out so a
 // property name or an amenity never votes.

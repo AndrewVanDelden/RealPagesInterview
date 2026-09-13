@@ -13,19 +13,19 @@ namespace Agent.Tests.Orchestration;
 
 public class LeasingMessageAgentTests
 {
-    // D10: the reference time is a value the caller passes, never a clock the agent reads.
+    // The reference time is a value the caller passes, never a clock the agent reads.
     private static readonly DateTimeOffset ReferenceTime = DateTimeOffset.Parse("2025-12-09T00:00:00-06:00");
 
-    // D38: the validator answers per check, so a fake stands one up the same way the real
-    // one does. Only the fair-housing check failed here.
+    // The validator answers per check, never with one boolean, so a fake stands one up the same
+    // way the real one does. Only the fair-housing check failed here.
     private static SafetyValidationResult FairHousingFailure() =>
         new(SafetyCheckResult.NotApplicable(SafetyCheck.OptOutInstructions),
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
             SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
 
-    // The defect D38 names: fair_housing_check_passed was violations.Count == 0, so this
-    // record recorded a fair-housing failure that never happened.
+    // The defect per-check results fixed: fair_housing_check_passed was violations.Count == 0, so
+    // this record recorded a fair-housing failure that never happened.
     private static SafetyValidationResult OptOutFailureOnly() =>
         new(SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]),
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
@@ -34,7 +34,7 @@ public class LeasingMessageAgentTests
 
     // SampleProspectCases.Minimal asserts no state, so a test that wants a verdict in the map
     // has to say which state the record asserts. The constraints come along unchanged: the
-    // opt-out gate of D40 reads them.
+    // opt-out check, which a record may switch off, reads them.
     private static ProspectCase Asserting(params string[] requiredStates)
     {
         ProspectCase minimal = SampleProspectCases.Minimal();
@@ -55,9 +55,9 @@ public class LeasingMessageAgentTests
         Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage.SendAt);
         Assert.Equal("start_cadence", result.Output.NextAction.Type);
 
-        // D42: sample 1 asserts all three states this program has a check for, and each is
-        // answered by its own source rather than claimed. brand_style_applied is the check of
-        // D42's second part, not the literal true it replaced.
+        // Sample 1 asserts all three states this program has a check for, and each is
+        // answered by its own source rather than claimed. brand_style_applied is computed from the
+        // message by the brand-style validator, not the literal true it replaced.
         Assert.Equal(
             new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal)
             {
@@ -71,11 +71,12 @@ public class LeasingMessageAgentTests
         Assert.Equal(SuppressionReason.None, result.Diagnostics.SuppressionReason);
         Assert.Equal(new ActionPlanNotes(HorizonBranch.Short, 32, ActionSource.CatalogRow), result.Diagnostics.ActionPlan);
 
-        // D22: the send is explained by the same run. Sample 1's last interaction is before
+        // The send is explained by the same run. Sample 1's last interaction is before
         // the reference time, so the reference time is the floor (A4), and its zone reaches
-        // 09:00 once on that day, so the slot is exact (A20).
+        // 09:00 once on that day, so the slot is exact (A20). No slot row answers a prospect at
+        // new on sms, so the channel's hour set the time.
         Assert.Equal(
-            new ScheduleNotes(ScheduleFloor.ReferenceTime, TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, SlotResolution.Exact),
+            new ScheduleNotes(ScheduleFloor.ReferenceTime, TimeZoneInfo.FindSystemTimeZoneById("America/Chicago").Id, SlotResolution.Exact, SendSlotSource.ChannelDefault),
             result.Diagnostics.Schedule);
     }
 
@@ -93,7 +94,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(3, result.Output.NextAction.Value);
     }
 
-    // A2 and D2: consent first. Not contactable is a no_op with its reason and a
+    // A2: consent first. Not contactable is a no_op with its reason and a
     // next_message object with channel none; nothing else runs.
     [Fact]
     public async Task RunAsync_NoConsentedChannel_EmitsNoneMessageAndNoOpWithReason()
@@ -113,7 +114,7 @@ public class LeasingMessageAgentTests
         Assert.Equal("no_contact_consent", result.Output.NextAction.Reason);
 
         // consent_verified is earned by the record reaching step 1, the consent-driven channel
-        // selection that owns the state, whichever way that step answered (D57).
+        // selection that owns the state, whichever way that step answered.
         // Neither the safety validator nor the brand-style validator ran, because there is
         // no message: not evaluated is the honest answer and it is not a pass (A15).
         Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["consent_verified"]);
@@ -161,13 +162,24 @@ public class LeasingMessageAgentTests
             new SendScheduler(),
             new NextActionPlanner(),
             capturingLogger);
-        ProspectCase unmatched = SampleProspectCases.Minimal() with { Persona = "resident", LifecycleStage = "renewal" };
+        const string PersonaMarker = "persona-marker-7f3a";
+        const string StageMarker = "stage-marker-7f3a";
+        ProspectCase unmatched = SampleProspectCases.Minimal() with { Persona = PersonaMarker, LifecycleStage = StageMarker };
 
         await agent.RunAsync(unmatched, ReferenceTime);
 
         // The enum renders as its C# name, the way channel=Sms already does on the composed
-        // line; the diagnostics file is where the snake_case spelling lives (D3).
-        Assert.Contains(capturingLogger.Entries, entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        // line; the diagnostics file is where the snake_case spelling lives.
+        // Warning, because the action is one no catalog row states and a person has to review it;
+        // exactly one line, naming the source and the branch. The persona and stage are the
+        // record's own free text, so they stay out of the log and go to the review queue instead.
+        CapturingLogger<LeasingMessageAgent>.LogEntry fallback = Assert.Single(
+            capturingLogger.Entries,
+            entry => entry.Message.Contains($"generic row ({ActionSource.GenericRowNoMatch})", StringComparison.Ordinal));
+        Assert.Equal(LogLevel.Warning, fallback.Level);
+        Assert.Contains($"branch={HorizonBranch.Short}", fallback.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(PersonaMarker, fallback.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(StageMarker, fallback.Message, StringComparison.Ordinal);
     }
 
     // The other side of the same branch: a record whose row states the action it needs is not
@@ -211,7 +223,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
     }
 
-    // D1 end to end: a record carrying only the three required members runs to a message
+    // End to end, only three members are required: a record carrying just those runs to a message
     // (A12 greeting without a name, A6 UTC, A7 long horizon), never to an exception.
     [Fact]
     public async Task RunAsync_OnlyRequiredMembers_ComposesInUtcWithTheLongHorizonAction()
@@ -229,7 +241,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(TimeSpan.Zero, result.Output.NextMessage.SendAt!.Value.Offset);
         Assert.Equal("follow_up_in_days", result.Output.NextAction.Type);
 
-        // D1: this record carries no assertions at all, so it asserts no state and the map is
+        // This record carries no assertions at all, so it asserts no state and the map is
         // the complete answer to a list with no items.
         Assert.Empty(result.Diagnostics.RequiredStates);
     }
@@ -249,7 +261,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(RequiredStateVerdict.NotEarned, result.Diagnostics.RequiredStates["fair_housing_check_passed"]);
 
         // The draft existed and was checked before the safety gate discarded it, so its brand
-        // verdict is a real answer, not "not evaluated". D43's review queue is where the draft
+        // verdict is a real answer, not "not evaluated". The review queue is where the draft
         // itself goes.
         Assert.Equal(RequiredStateVerdict.Earned, result.Diagnostics.RequiredStates["brand_style_applied"]);
         Assert.Equal(1, result.Diagnostics.SafetyViolationCount);
@@ -262,7 +274,7 @@ public class LeasingMessageAgentTests
         Assert.Null(result.Diagnostics.Composition);
     }
 
-    // D38: fair_housing_check_passed now comes from the fair-housing check's own verdict,
+    // fair_housing_check_passed comes from the fair-housing check's own verdict,
     // never from "no violations at all". A record that only omitted its opt-out line is
     // still suppressed, and no longer records a fair-housing failure that never happened.
     [Fact]
@@ -279,7 +291,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
     }
 
-    // D16: the CLI's batch loop is the one owner of the TaskId scope. The agent opening a
+    // The CLI's batch loop is the one owner of the TaskId scope. The agent opening a
     // second one rendered every line as "TaskId=x TaskId=x" (the retrospective's logging
     // defect 1); a library caller that wants correlation opens its own scope, as the CLI does.
     [Fact]
@@ -387,7 +399,7 @@ public class LeasingMessageAgentTests
         Assert.Contains(capturingLogger.Entries, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("Suppressing message: final safety validation found", StringComparison.Ordinal));
     }
 
-    // D24 and the Phase 4 check: the record says which implementation wrote its message.
+    // The Phase 4 check: the record says which implementation wrote its message.
     // The real agent is wired with the template composer, so an offline run names it on
     // every record that has a message.
     [Fact]
@@ -401,7 +413,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(new CompositionNotes(ComposerNames.Template, Attempts: 1, LocaleApplied: true), result.Diagnostics.Composition);
     }
 
-    // D1 on the suppression path, the other side of RunAsync_OnlyRequiredMembers_...: a record
+    // The suppression path, the other side of RunAsync_OnlyRequiredMembers_...: a record
     // carrying only the three required members states no assertions object at all, and one
     // whose consent object opts in to nothing is not contactable. It asserts no state, so the
     // map is empty rather than absent, and reading the states of a record with no assertions
@@ -418,10 +430,10 @@ public class LeasingMessageAgentTests
         Assert.Empty(result.Diagnostics.RequiredStates);
     }
 
-    // D42 and docs/CODE_REVIEW.md, against the record that actually asserts it: hold-out 6
+    // docs/CODE_REVIEW.md, against the record that actually asserts it: hold-out 6
     // names renewal_offer_loaded and carries a renewal_offer_id a rule could obviously be
     // fitted to. No rule is written for it, because the hold-out is an evaluation set and
-    // nothing is fitted to it (D9, A19). The name is recorded, by name, as one this program
+    // nothing is fitted to it (A19). The name is recorded, by name, as one this program
     // has no check for, and the two states that do have checks are answered beside it.
     [Fact]
     public async Task RunAsync_RecordAssertingAStateWithNoCheck_RecordsItByNameAsNotEarned()
@@ -442,9 +454,10 @@ public class LeasingMessageAgentTests
             result.Diagnostics.RequiredStates);
     }
 
-    // D39 and D42: brand style is a diagnostic and never suppresses. The composed message
-    // breaks the exclamation rule and nothing else, so it is still sent, the state is recorded
-    // not earned, and the row names the rule that failed rather than saying only "false".
+    // Brand style is a diagnostic and never suppresses: an off-voice message is off-voice, not
+    // unlawful. The composed message breaks the exclamation rule and nothing else, so it is still
+    // sent, the state is recorded not earned, and the row names the rule that failed rather than
+    // saying only "false".
     [Fact]
     public async Task RunAsync_MessageBreaksABrandRule_StillSendsAndRecordsWhichRuleFailed()
     {
@@ -521,11 +534,11 @@ public class LeasingMessageAgentTests
         Assert.Null(result.Diagnostics.Composition);
     }
 
-    // D48 through the same wiring the CLI builds: the record's own city_interest is written
+    // Through the same wiring the CLI builds: the record's own city_interest is written
     // into the body by the template composer, so every attempt and the fallback are refused.
     // The refusal carries the draft out instead of destroying it, and step 5's own validation
-    // is what names the violations, so this record reports a safety violation rather than the
-    // composition failure it used to report.
+    // is what names the violations, so this record reports a safety violation and its draft
+    // reaches the review queue, where a refusal with no draft reported a composition failure.
     [Fact]
     public async Task RunAsync_ComposeLoopRefusesEveryDraft_SuppressesAsASafetyViolationAndKeepsTheDraft()
     {
@@ -612,12 +625,12 @@ public class LeasingMessageAgentTests
             entry => entry.Level == LogLevel.Warning && entry.Message.Contains("refused", StringComparison.OrdinalIgnoreCase));
     }
 
-    // D66, on the record it is about: D48's steering record, whose own city_interest is
-    // written into the body by the template fallback. The model attempt was abandoned at its
-    // timeout and D34 sent it straight to the fallback, which reproduced the steering language,
-    // and the loop refused its draft, so the record ships nothing and has no composition notes.
-    // The call the vendor billed for is still a call this record made, and it now leaves the
-    // agent on the row itself instead of vanishing with the notes.
+    // The same steering record, for what it spent: its own city_interest is written into the
+    // body by the template fallback. The model attempt was abandoned at its timeout, which no
+    // second prompt can fix, so it went straight to the fallback, which reproduced the steering
+    // language, and the loop refused its draft, so the record ships nothing and has no
+    // composition notes. The call the vendor billed for is still a call this record made, and it
+    // leaves the agent on the row itself instead of vanishing with the notes.
     [Fact]
     public async Task RunAsync_ComposeLoopRefusesEveryDraft_StillReportsWhatTheRunSpent()
     {
@@ -640,7 +653,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0), result.Diagnostics.ModelCost);
     }
 
-    // D66's other suppression with a cost: no draft anywhere, so the record is a composition
+    // The other suppression with a cost: no draft anywhere, so the record is a composition
     // failure and not a refusal. The suppressed row is built by a different code path from the
     // one above and has to answer for the same spend.
     [Fact]

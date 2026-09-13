@@ -14,8 +14,28 @@ public class SafetyValidatorTests
     private static NextMessage Message(string? body, string? subject = null, CommunicationChannel channel = CommunicationChannel.Sms) =>
         new(channel, null, subject, body, null);
 
-    // D1: an absent constraint is not required, so the two gated checks report
-    // NotApplicable rather than a pass (D38). The two unconditional checks still run.
+    // The agent's final gate reuses the compose-validate loop's verdict, which was reached
+    // before the send time was set, so no check may read the send time. One body every check
+    // passes and one that fails all four, so a check that did read it would show in either.
+    [Theory]
+    [InlineData("Hi Taylor! Book a tour today. Reply STOP to opt out.", 0)]
+    [InlineData("Families only. SSN 123-45-6789, card 4111 1111 1111 1111.", 4)]
+    public void Validate_SendTimeSetOrNot_EveryCheckAnswersTheSame(string body, int expectedFailedChecks)
+    {
+        NextMessage unscheduled = Message(body);
+        NextMessage scheduled = unscheduled with { SendAt = DateTimeOffset.Parse("2025-12-09T10:00:00-06:00") };
+
+        SafetyValidationResult unscheduledResult = Validator.Validate(unscheduled, Constraints());
+        SafetyValidationResult scheduledResult = Validator.Validate(scheduled, Constraints());
+
+        Assert.Equal(expectedFailedChecks, unscheduledResult.Checks.Count(check => check.Verdict == SafetyCheckVerdict.Failed));
+        Assert.Equal(
+            unscheduledResult.Checks.Select(check => (check.Check, check.Verdict, string.Join("\n", check.Details))),
+            scheduledResult.Checks.Select(check => (check.Check, check.Verdict, string.Join("\n", check.Details))));
+    }
+
+    // An absent constraint is not required, so the two gated checks report
+    // NotApplicable, which is not a pass. The two unconditional checks still run.
     [Fact]
     public void Validate_NoConstraintsStated_GatedChecksAreNotApplicableAndUnconditionalOnesRun()
     {
@@ -30,8 +50,8 @@ public class SafetyValidatorTests
         Assert.Contains("families only", violation);
     }
 
-    // D38's named defect: FairHousingCheckPassed was violations.Count == 0, so a message
-    // that only omitted its opt-out line recorded a fair-housing failure that never
+    // The defect per-check results fixed: FairHousingCheckPassed was violations.Count == 0, so a
+    // message that only omitted its opt-out line recorded a fair-housing failure that never
     // happened. Each check now answers for itself.
     [Fact]
     public void Validate_OnlyTheOptOutLineIsMissing_FairHousingStillPasses()
@@ -43,8 +63,8 @@ public class SafetyValidatorTests
         Assert.Single(result.Violations);
     }
 
-    // Body is nullable because the oracle's suppressed shape carries a null body
-    // (retrospective D3). A null body validates as empty text: no opt-out, no PII.
+    // Body is nullable because the oracle's suppressed shape carries a null body.
+    // A null body validates as empty text: no opt-out, no PII.
     [Fact]
     public void Validate_NullBody_ValidatesAsEmptyText()
     {
@@ -109,9 +129,9 @@ public class SafetyValidatorTests
         Assert.Single(result.Violations);
     }
 
-    // D40, and the deliberate inversion of the recorded behavior this test used to assert.
-    // no_pii_leak: false says the record does not need the heuristic, not that it consents
-    // to a Social Security number leaving in a message.
+    // The deliberate inversion of the recorded behavior this test used to assert: the Social
+    // Security check is unconditional. no_pii_leak: false says the record does not need the
+    // heuristic, not that it consents to a Social Security number leaving in a message.
     [Fact]
     public void Validate_PiiCheckNotRequired_SocialSecurityNumberIsStillAViolation()
     {
@@ -123,7 +143,7 @@ public class SafetyValidatorTests
         Assert.Single(result.Violations);
     }
 
-    // D40: the long-digit run stays gated, because it is a proxy that also matches a
+    // The long-digit run stays gated, because it is a proxy that also matches a
     // confirmation number or a tour reference, and a record with a legitimate long
     // identifier needs a way to say so.
     [Fact]
@@ -137,8 +157,8 @@ public class SafetyValidatorTests
         Assert.Empty(result.Violations);
     }
 
-    // D38's second named defect: FindWholeWord was FirstOrDefault, so a message matching
-    // six protected-class terms emitted exactly one violation and safety_violations_max
+    // The second defect per-check results fixed: FindWholeWord was FirstOrDefault, so a message
+    // matching six protected-class terms emitted exactly one violation and safety_violations_max
     // was scored against that count.
     [Fact]
     public void Validate_MessageMatchingSixTerms_ReportsEveryDistinctTerm()
@@ -205,7 +225,7 @@ public class SafetyValidatorTests
         Assert.Equal(SafetyCheckVerdict.Failed, result.VerdictOf(SafetyCheck.FairHousing));
     }
 
-    // The review queue of D43 is read by a person who has to decide what to do about the
+    // The review queue is read by a person who has to decide what to do about the
     // draft, so each line arrives attached to the check that produced it rather than as a
     // flat string the reader has to classify. Same lines, same order, one field more.
     [Fact]

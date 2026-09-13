@@ -5,7 +5,7 @@ namespace Agent.Tests.Domain;
 
 public class CaseConstraintsExtensionsTests
 {
-    // D1: an absent constraint is not required, the same "== true" rule SafetyValidator,
+    // An absent constraint is not required, the same "== true" rule SafetyValidator,
     // OpenAiMessageComposer, and Evaluator all apply independently today.
     [Fact]
     public void RequiresOptOutInstructions_Absent_ReturnsFalse()

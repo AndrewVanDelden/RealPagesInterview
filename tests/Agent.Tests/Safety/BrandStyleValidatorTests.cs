@@ -7,10 +7,10 @@ using Xunit;
 
 namespace Agent.Tests.Safety;
 
-// D42's three brand rules, against the evidence D42 names: the two sample bodies measured as
-// they are labeled, and the template composer's own output on both channels in both language
-// sets. The three "fails one rule only" tests below are the other half of that evidence: a
-// check whose rules cannot fail is the hardcoded true it replaces.
+// The three brand rules, against the evidence they were fitted to: the two sample bodies
+// measured as they are labeled, and the template composer's own output on both channels in
+// both language sets. The three "fails one rule only" tests below are the other half of that
+// evidence: a check whose rules cannot fail is the hardcoded true it replaces.
 public class BrandStyleValidatorTests
 {
     private static NextMessage LabeledMessage(int sampleIndex)
@@ -43,9 +43,9 @@ public class BrandStyleValidatorTests
         Assert.True(result.Applied);
     }
 
-    // D42: the rules are fitted to what the samples prove and they must also hold for the
+    // The rules are fitted to what the samples prove and they must also hold for the
     // offline composer on every channel and language the sets contain, or the check would
-    // fail the program's own output (A13, D26).
+    // fail the program's own output (A13: the template sets are English and Spanish).
     [Theory]
     [InlineData(CommunicationChannel.Sms, "en")]
     [InlineData(CommunicationChannel.Email, "en")]
@@ -148,8 +148,8 @@ public class BrandStyleValidatorTests
         Assert.Equal([BrandStyleRule.OptOutOnLastLine], result.FailedRules);
     }
 
-    // NextMessage.Body is nullable because the suppressed shape on the wire is a null body
-    // (D3). Reading it must not throw; a message with no body carries no closing line.
+    // NextMessage.Body is nullable because the suppressed shape on the wire is a null body.
+    // Reading it must not throw; a message with no body carries no closing line.
     [Fact]
     public void Validate_NullBody_FailsThePositionRuleWithoutThrowing()
     {

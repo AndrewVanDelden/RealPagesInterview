@@ -4,7 +4,7 @@ using Agent.Decisions;
 
 namespace Agent.Orchestration;
 
-// D3 and D18: how next_action was reached, for the diagnostics file. One object that is
+// How next_action was reached, for the diagnostics file. One object that is
 // present or absent, rather than three members that could disagree: a record with no
 // consented channel never reached the planner, so it has no branch, no horizon, and no row.
 // HorizonDays is null when the record states no move date, which is unstated, not zero.

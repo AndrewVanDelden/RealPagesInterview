@@ -23,7 +23,7 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json
 dotnet run --project src/Agent.Cli -- --input synthetic_12.jsonl --output out-synthetic.json --now 2026-03-07T12:00:00Z --eval-report eval-synthetic.txt
 ```
 
-4. Open the scorecard: one row per record, `OK`, `FAIL` or `n/a` (not measured) per check, then `Checks:` (passed over measured, per check) and `Overall:`. The hold-out reads `Overall: 4/12 passed`; `eval-synthetic.txt` reads `Overall: 12/13 passed`.
+4. Open the scorecard: one row per record, `OK`, `FAIL` or `n/a` (not measured) per check, then `Checks:` (passed over measured, per check) and `Overall:`. The hold-out reads `Overall: 12/12 passed`, on rules fitted to it since D81, so it proves the rules reproduce their evidence and nothing more; `eval-synthetic.txt` reads `Overall: 12/13 passed`.
 ```bash
 cat eval.txt
 ```

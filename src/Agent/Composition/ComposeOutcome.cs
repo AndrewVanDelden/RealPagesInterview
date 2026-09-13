@@ -1,20 +1,15 @@
 using Agent.Domain;
+using Agent.Safety;
 
 namespace Agent.Composition;
 
-// What the composition seam returns (D48). Result<ComposedMessage> could say "a message" or
-// "an error string" and nothing else, so a draft the compose-validate loop refused on safety
-// was destroyed at the seam: no caller could queue it, and the record reached the
-// orchestrator as a composition failure, which is a different fact and produced a different
-// suppression reason and a fair-housing state of not evaluated.
-//
-// Three cases, because a refusal and a failure are different facts. A refusal has a draft a
-// person can read and decide about; a failure has none. Refused carries the draft and not the
-// violations: the orchestrator re-derives those with its own validator, which is the step 5
-// gate it already had, so one fact never has two sources.
-//
-// This type replaces Result<ComposedMessage> on this seam only. Result<T> stays everywhere
-// else it is used, because nowhere else has a third state.
+// What the composition seam returns. Three cases, because a refusal and a failure are
+// different facts: a refusal has a draft a person can read and decide about, a failure has
+// none. A Result could carry only a message or an error string, which destroys a refused draft
+// at the seam, so it could not be queued for review and the record would read as a composition
+// failure. Refused carries the draft and not the violations: the orchestrator re-derives those
+// with its own step 5 validator, so one fact never has two sources. Result<T> stays everywhere
+// else, because nowhere else has a third state.
 public abstract record ComposeOutcome
 {
     // Private, so the three cases below are the whole hierarchy and a caller that has handled
@@ -23,20 +18,23 @@ public abstract record ComposeOutcome
     {
     }
 
-    // What this record's run spent, on the base type so all three cases answer for it (D66).
-    // ModelCost is the token counts of D62 and NetworkRetries the transport retries of D28.
-    // They are here rather than on CompositionNotes because the notes are an account of a
-    // message that is being returned, and two of the three cases return none: a refused draft
-    // and a composition failure both leave with no notes at all, which is where the counts
-    // used to be dropped even though the vendor had already billed for the calls behind them.
-    // Null on both is the absence of a measurement and never a measured zero, unchanged from
-    // D62 and D28.
+    // What this record's run spent, on the base type so all three cases answer for it:
+    // ModelCost is the vendor's token counts and NetworkRetries the transport retries inside
+    // the calls. They are not on CompositionNotes because the notes describe a returned message,
+    // and a refused draft and a composition failure return none, yet the vendor billed for the
+    // calls behind them. Null on either is the absence of a measurement, never a measured zero:
+    // a record that made no model call reports null, not a zero nobody measured.
     public ModelCostNotes? ModelCost { get; init; }
 
     public int? NetworkRetries { get; init; }
 
-    // A message to send.
-    public sealed record Composed(ComposedMessage Message) : ComposeOutcome;
+    // A message to send. Validation is the verdict the compose-validate loop reached on this
+    // message, and only the loop sets it: every other composer leaves it null, and the agent's
+    // final gate validates any message that arrives without a verdict it can use.
+    public sealed record Composed(ComposedMessage Message) : ComposeOutcome
+    {
+        public DraftValidation? Validation { get; internal init; }
+    }
 
     // The two outcomes that carry no message to send, and a reason instead. One case for a
     // caller that needs the reason and not which of the two produced it: the compose-validate

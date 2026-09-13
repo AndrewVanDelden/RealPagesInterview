@@ -5,7 +5,7 @@ using Agent.Domain;
 namespace Agent.Tests.TestSupport;
 
 // Scripted results, one per call, the last one repeating. Tests state the messages they
-// care about, so the composition notes D24 added are filled in here: this fake names itself,
+// care about, so the composition notes are filled in here: this fake names itself,
 // which is what lets a test tell an inner-composer answer apart from the fallback's.
 internal sealed class SequenceMessageComposer(params Result<NextMessage>[] results) : IMessageComposer
 {
@@ -20,7 +20,7 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
     // retries should have).
     public IReadOnlyList<int?> NetworkRetries { get; init; } = [];
 
-    // One measured model cost per call, index-clamped the same way (D62). Empty means no call
+    // One measured model cost per call, index-clamped the same way. Empty means no call
     // this fake made went near a model, which is the null a composer with no network call of
     // its own reports. It rides on the composed notes and on the failure alike, because an
     // abandoned call is a cost with no message behind it.
@@ -41,7 +41,7 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
         // The scripted results stay Result<NextMessage>: a test scripts the messages it cares
         // about, and a composer that could not build one is the seam's Failed case. No
         // composer in this program refuses its own draft, so this fake does not either.
-        // D66: the two counts ride on the outcome, so this fake states them once for either
+        // The two spend counts ride on the outcome, so this fake states them once for either
         // case rather than putting them on notes only a composed message has.
         return Task.FromResult<ComposeOutcome>(result.IsSuccess
             ? new ComposeOutcome.Composed(new ComposedMessage(result.Value, CompositionNotes.ForComposer(Name, localeApplied: true)))

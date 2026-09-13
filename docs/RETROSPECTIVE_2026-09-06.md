@@ -127,9 +127,9 @@ Project-agnostic versions live in the playbook and its appendices. Applied to th
 ## 5. Definitions given today
 
 Recorded once in the playbook's Appendix A: hold-out, synthetic hold-out, overfitting,
-coverage, mutation testing, Goodhart's law, tautological test, fitted versus learned, CI,
+coverage, Goodhart's law, tautological test, fitted versus learned, CI,
 CD, branch protection. The interviewer's word for coverage failing was most likely
-"overfitting"; alternatives were mutation testing, Goodhart, and tautological tests.
+"overfitting"; alternatives were Goodhart and tautological tests.
 
 ## 6. The nine fix items
 

@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, met by the retrospective of 2026-09-06 (D77).
-Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-10: its section 10.
-Next step: none. Step 104 closed with no change to `~/.agent-rules` (D79); the project is complete at `v1.0.0`.
-Open decisions: D81 to D88, proposed 2026-09-10, the plan to raise every architecture dimension to 9. Taking D81 sends the project back to Phase 2 (step 9, a frozen set) per step 102.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16, since D92 changes the model client.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Not yet run.
+Next step: merge D92's branch into the Sprint 16 branch, run the check, then the sprint PR against `dev`.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -119,10 +119,24 @@ duplicate of `docs/NARRATION.md` (D80). The same day the narration was checked a
 one record through the code and a re-run of all three sets at the tag, a run and debug fact: eight
 statements that did not match were fixed in place.
 
-**D81 to D88, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
+**D81 to D87, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
 fact, read 7 of 10 and traced the eight hold-out misses to their fields. The plan: the hold-out
 becomes training data and a new frozen set carries the honest number (D81); the rules it shows,
 compiled by default and loadable from a file (D82); a generic-row answer queued for review (D83);
 one validation per composed record (D84); a scorecard that cannot carry stale tallies (D85);
 bounded memory in the batch with a benchmark (D86); comments that state the rule and cite no
-number (D87); a mutation score beside coverage (D88). None taken.
+number (D87). None taken.
+
+**D81 to D87 and D89 taken, Sprint 15 (2026-09-10 to 2026-09-11).** The owner took every
+recommendation, and the project returned to Phase 0, its decisions merged in phase order from
+parallel worktrees, an exception held at the merge. `synthetic_v2.jsonl`, 29 records and a
+malformed line written blind, carries the honest number, 13 of 30; the hold-out is training data
+at 12 of 12 (D81). Rules load from `--rules` (D82), a generic-row answer is queued (D83), one
+validation per record (D84), the scorecard rebuilds its tallies (D85), and input and output
+stream under a capped heap (D86). No comment cites a number (D87). Warnings are errors (D89),
+and PR #33's review findings were fixed, all run and debug facts.
+
+**D91 and D92, Sprint 15 closed, Sprint 16 opened (2026-09-11).** Sprint 15 closes with the tag
+`v1.1.0` on `6e05adb`, and the narration's provenance moves there after a re-run matched every
+value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
+tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.

@@ -3,7 +3,7 @@ using Agent.Domain;
 
 namespace Agent.Cli.Tests.TestSupport;
 
-// D37: makes a batch's records overlap and finish out of input order, so a test can tell a
+// Makes a batch's records overlap and finish out of input order, so a test can tell a
 // concurrent batch loop from a sequential one, and an input-order fold from a completion-order
 // one. Every compose waits until every record in taskIdsInInputOrder has started composing,
 // which a sequential loop never reaches (the wait gives up after BarrierLimit and that record

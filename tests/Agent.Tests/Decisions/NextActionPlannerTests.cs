@@ -5,10 +5,11 @@ using Xunit;
 
 namespace Agent.Tests.Decisions;
 
-// A7: horizon is move_date_target minus the reference date (D10), counted in the record's
-// timezone by the caller. At most 45 days is short, else long; an absent date is long; a
-// past date is short. D2 and D18: the branch then picks the action out of the catalog keyed
-// on persona and lifecycle stage, and the planner returns the why beside the what.
+// A7: horizon is move_date_target minus the reference date (a value the caller passes, never a
+// clock), counted in the record's timezone by the caller. At most 45 days is short, else
+// long; an absent date is long; a past date is short. The branch then picks the action out
+// of the catalog keyed on persona and lifecycle stage, and the planner returns the why beside
+// the what.
 public class NextActionPlannerTests
 {
     private static readonly NextActionPlanner Planner = new();
@@ -57,7 +58,7 @@ public class NextActionPlannerTests
         PlannedAction planned = Planner.Plan("prospect", "new", ReferenceDate.AddDays(NextActionPlanner.ShortHorizonThresholdDays + 1), ReferenceDate);
 
         Assert.Equal(HorizonBranch.Long, planned.Branch);
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"), planned.Action);
     }
 
     // No date, no cadence to start (A7). The horizon is not zero, it is unstated, so the
@@ -69,7 +70,8 @@ public class NextActionPlannerTests
 
         Assert.Equal(HorizonBranch.Long, planned.Branch);
         Assert.Null(planned.HorizonDays);
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"), planned.Action);
+        Assert.Equal(ActionSource.CatalogRow, planned.Source);
     }
 
     [Fact]
@@ -83,7 +85,8 @@ public class NextActionPlannerTests
     }
 
     // A8: a persona the samples never named takes the generic row, and the planner says so
-    // rather than reaching for the nearest row that happens to exist (D2).
+    // rather than reaching for the nearest row that happens to exist: the lookup is the exact
+    // key, then the generic row, and nothing else.
     [Fact]
     public void Plan_PersonaWithNoRow_UsesTheGenericRowAndRecordsIt()
     {
@@ -93,14 +96,14 @@ public class NextActionPlannerTests
         Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
     }
 
-    // prospect/new was only ever seen on a short horizon, so its long branch has no evidence
+    // prospect/open was only ever seen on a long horizon, so its short branch has no evidence
     // and comes from the generic row instead.
     [Fact]
     public void Plan_BranchTheRowDoesNotState_UsesTheGenericRowAndRecordsIt()
     {
-        PlannedAction planned = Planner.Plan("prospect", "new", new DateOnly(2026, 2, 15), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "open", new DateOnly(2026, 1, 10), ReferenceDate);
 
-        Assert.Equal(ActionTypes.FollowUpInDays, planned.Action.Type);
+        Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
         Assert.Equal(ActionSource.GenericRowNoBranch, planned.Source);
     }
 

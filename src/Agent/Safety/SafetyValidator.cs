@@ -3,24 +3,14 @@ using Agent.Domain;
 
 namespace Agent.Safety;
 
-// Four keyword and pattern proxies, not a comprehensive fair-housing or PII compliance
-// system: step 63 says a proxy says so in the code, so this comment is the place it says
-// it. What the proxies do not catch, with the D41 probe run of 37 inputs as the evidence
-// rather than an opinion: semantic paraphrase (the scope-out already recorded in
-// docs/CODE_REVIEW.md), letter spacing and interior punctuation (matching across arbitrary
-// separators would make short terms like "color" fire on unrelated letter sequences), and
-// Cyrillic homoglyphs (the text under validation is written by this system's own composer,
-// not by an adversary who controls the bytes: A18).
-//
-// Each check answers for itself (D38), all four are hard gates (D39), and D40 decides
-// which of them a record may switch off: SocialSecurityNumber and FairHousing are
-// unconditional, OptOutInstructions is gated on include_opt_out_instructions, and
-// LongDigitRun is gated on no_pii_leak because it is the one proxy that also matches a
-// legitimate long identifier. NoSensitiveDiscrimination is never read: fair housing law
-// has no legitimate per-case opt-out.
-//
-// The opt-out check is OptOutInstructions, the one definition the evaluator measures
-// against too (D13 b).
+// Four keyword and pattern proxies, not a complete fair-housing or PII compliance system
+// (playbook step 63). A 37-input probe showed what they miss: semantic paraphrase
+// (docs/CODE_REVIEW.md); letter spacing and interior punctuation, since matching across
+// separators would make "color" fire on unrelated letters; Cyrillic homoglyphs, since this
+// system's own composer writes the text, not an adversary who controls the bytes (A18).
+// Each check answers for itself and all four are hard gates, each a legal exposure: fair
+// housing law, the opt-out that makes a message lawful to send, and an identifier leaked into a
+// channel the recipient does not control. Opt-out is OptOutInstructions, the scorer's too.
 public sealed partial class SafetyValidator : ISafetyValidator
 {
     private const string SocialSecurityNumberDetail =
@@ -32,8 +22,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // O(n) in the combined subject and body length: each check is a bounded number of
     // single passes over that text. The introducer-span strip is computed once, here, and
     // shared by SocialSecurityNumberCheck and LongDigitRunCheck rather than each repeating
-    // the same pass over the same text: SocialSecurityNumberCheck is unconditional (D40),
-    // so the strip is never wasted work.
+    // the same pass over the same text: SocialSecurityNumberCheck always runs, so the strip
+    // is never wasted work.
     public SafetyValidationResult Validate(NextMessage message, CaseConstraints constraints)
     {
         string text = message.Subject is { Length: > 0 }
@@ -48,6 +38,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
             FairHousingCheck(text));
     }
 
+    // Gated on include_opt_out_instructions: transactional exemptions are real, and only the
+    // record knows whether this message is one.
     // O(n) in the text length.
     private static SafetyCheckResult OptOutInstructionsCheck(string text, CaseConstraints constraints)
     {
@@ -61,23 +53,21 @@ public sealed partial class SafetyValidator : ISafetyValidator
             : SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]);
     }
 
-    // D40: unconditional. No leasing message legitimately carries a Social Security
-    // number, so there is no case the flag would be protecting, and a record that says
-    // no_pii_leak: false is saying it does not need the heuristic, not that it consents to
-    // a leak. This check owns any nine-digit span: the pattern needs a word boundary after
-    // exactly nine digits, and LongDigitRunPattern needs at least thirteen, so the two can
-    // never claim the same text and one leak is never counted twice.
-    //
-    // D45: the confirmation-and-reference span that exempts a long identifier exempts one
-    // here too. A bare nine-digit confirmation number is the same false positive as the
-    // fourteen-digit one, and leaving the span on one identifier check and not the other
-    // would be the inconsistency rather than the fix.
+    // Unconditional: no leasing message legitimately carries a Social Security number, so a
+    // record's no_pii_leak: false says it does not need the heuristic, not that it consents to
+    // a leak. This check owns any nine-digit span (a word boundary after exactly nine digits;
+    // LongDigitRunPattern needs thirteen), so one leak is never counted twice. The
+    // confirmation-and-reference span exempts here too: a bare nine-digit confirmation number is
+    // the same false positive as a fourteen-digit one, and exempting it on only one identifier
+    // check would be the inconsistency rather than the fix.
     // O(n) in the text length: one pattern pass over the already-stripped text.
     private static SafetyCheckResult SocialSecurityNumberCheck(string identifierScannable) =>
         SocialSecurityNumberPattern().IsMatch(identifierScannable)
             ? SafetyCheckResult.Failed(SafetyCheck.SocialSecurityNumber, [SocialSecurityNumberDetail])
             : SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber);
 
+    // Gated on no_pii_leak: this proxy also matches a legitimate long identifier (a
+    // confirmation number, a tour reference), so a record carrying one needs a way to say so.
     // O(n) in the text length: one pattern pass over the already-stripped text.
     private static SafetyCheckResult LongDigitRunCheck(string identifierScannable, CaseConstraints constraints)
     {
@@ -91,9 +81,9 @@ public sealed partial class SafetyValidator : ISafetyValidator
             : SafetyCheckResult.Passed(SafetyCheck.LongDigitRun);
     }
 
-    // Every distinct matched term, not the first one: FindWholeWord was FirstOrDefault, so
-    // a message matching six protected-class terms emitted exactly one violation and
-    // safety_violations_max was scored against that count (D38).
+    // Unconditional, and NoSensitiveDiscrimination is never read: fair housing law has no
+    // legitimate per-case opt-out. Every distinct matched term is reported, not the first, so
+    // six protected-class terms are six violations when safety_violations_max is scored.
     // O(n) in the text length: normalize, remove the exempt spans, then one pass of the
     // term alternation, which is one compiled regex rather than one per term.
     private static SafetyCheckResult FairHousingCheck(string text)
@@ -120,33 +110,14 @@ public sealed partial class SafetyValidator : ISafetyValidator
         @"|race|racial|religion|religious|disability|disabled|handicap|gender|color|ethnicity" +
         @"|christian|muslim|jewish|catholic)\b";
 
-    // The allow-list is a span list, never a term list (D41): a matched span is removed
-    // from the copy being scanned, so "disability" and "color" stay live terms that still
-    // fire elsewhere in the same message. Each row with the case that proves it:
-    //
-    //   do/does not discriminate,     the Equal Housing Opportunity disclosure, the
-    //   to the sentence end
-    //                                  sentence a compliant leasing message is expected to
-    //                                  carry. It matched six terms and was suppressed,
-    //                                  which is the proxy blocking the compliant message
-    //                                  and passing nothing in its place. Matched as a
-    //                                  phrase to the end of its sentence, not verbatim, so
-    //                                  ordinary variations of it pass too, and a steering
-    //                                  sentence after it is still read.
-    //   disability accommodations      "We offer disability accommodations on request."
-    //   wheelchair accessible          "Every home is wheelchair accessible." No term on
-    //                                  the current list matches this span, so this row
-    //                                  removes nothing today; SafetyValidatorAllowListTests
-    //                                  pins that.
-    //   color scheme                   "The color scheme is warm neutrals."
-    //   <n>k race                      "Join our 5K race on Saturday."
-    //   gender neutral                 "The clubhouse has gender-neutral restrooms."
-    //   race simulator                 "The game room has a race simulator."
-    // The disclosure span stops before a sentence terminator or, within the sentence,
-    // before a comma that introduces a new clause with a contrastive conjunction ("but",
-    // "yet", "however", "although", "though"): the boilerplate disclosure itself is a
-    // comma-separated list of protected classes, so a bare comma cannot be the stop
-    // condition, but a clause tacked onto the disclosure this way is never part of it.
+    // Spans, never terms: a matched span is removed from the scanned copy, so "disability" and
+    // "color" still fire elsewhere in the same message. The disclosure ("do/does not discriminate"
+    // to the sentence end) is the Equal Housing Opportunity sentence a compliant message carries; its
+    // six terms would suppress it. It stops at a sentence end or a comma before but, yet, however,
+    // although or though (the disclosure is a comma list, but a clause tacked on is not part of it).
+    // Each other span is a legitimate use of a term: disability accommodations, wheelchair accessible
+    // (matches no current term; SafetyValidatorAllowListTests pins that), color scheme, a 5K race,
+    // gender-neutral restrooms, a race simulator.
     [GeneratedRegex(
         @"(?:do|does) not discriminate(?:(?!,\s*(?:but|yet|however|although|though)\b)[^.!?])*"
         + @"|disability accommodations"
@@ -161,15 +132,12 @@ public sealed partial class SafetyValidator : ISafetyValidator
     [GeneratedRegex(ProtectedClassAndSteeringTermPattern, RegexOptions.IgnoreCase)]
     private static partial Regex ProtectedClassAndSteeringTerms();
 
-    // D41: hyphens, spaces, or bare. The pattern was hyphens only, so "123 45 6789" and
-    // "123456789" both missed.
-    //
-    // D45: the grouping is consistent, written as three alternatives rather than one shape
-    // with two optional separators. The optional form, \b\d{3}[- ]?\d{2}[- ]?\d{4}\b, read a
-    // ZIP+4 as a Social Security number by taking the first separator as absent and the
-    // second as present, so "75201-1234" matched and a property address was suppressed by a
-    // gate no record can switch off (D40). A five-and-four pair is not one of the three
-    // shapes below, so it stops matching by construction rather than by an exemption.
+    // Hyphens throughout, spaces throughout, or nine bare digits, so "123 45 6789" and
+    // "123456789" are caught as well as the hyphenated form. Three alternatives rather than one
+    // shape with two optional separators: \b\d{3}[- ]?\d{2}[- ]?\d{4}\b read ZIP+4 "75201-1234"
+    // as a Social Security number (first separator absent, second present), suppressing a
+    // property address through a gate no record can switch off. A five-and-four pair fits none of
+    // the three shapes, so it stops matching by construction rather than by an exemption.
     [GeneratedRegex(@"\b(?:\d{3}-\d{2}-\d{4}|\d{3} \d{2} \d{4}|\d{9})\b")]
     private static partial Regex SocialSecurityNumberPattern();
 
@@ -178,8 +146,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
     [GeneratedRegex(@"\b\d(?:[- ]?\d){12,18}\b")]
     private static partial Regex LongDigitRunPattern();
 
-    // D41 case 26: a fourteen-digit confirmation number matched the long-digit run. Fixed
-    // by an exempt span, not by loosening the pattern. The introducer reaches at most 20
+    // A fourteen-digit confirmation number is not a leak, so an introduced identifier is an
+    // exempt span rather than a loosened pattern. The introducer reaches at most 20
     // characters and never across a sentence terminator, so a number in the next sentence
     // is not exempted by a confirmation mentioned in this one.
     //

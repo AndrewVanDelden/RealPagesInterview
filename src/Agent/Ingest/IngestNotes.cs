@@ -3,9 +3,10 @@ using Agent.Domain;
 
 namespace Agent.Ingest;
 
-// D1: what the reader defaulted and what it did not recognize, per record. DefaultedFields
-// names every decision input that was absent (or, for the timezone, unrecognized);
-// UnknownMembers names every member the record types do not declare, by its path.
+// What the reader defaulted and what it did not recognize, per record, so no default is
+// silent. DefaultedFields names every decision input that was absent (or, for the timezone,
+// unrecognized); UnknownMembers names every member the record types do not declare, by its
+// path.
 public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnlyList<string> UnknownMembers)
 {
     // O(m) in the number of members on the record; no member is visited twice.

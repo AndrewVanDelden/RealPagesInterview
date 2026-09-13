@@ -3,9 +3,9 @@ using Xunit;
 
 namespace Agent.Tests.Composition;
 
-// D62: the record the compose-validate loop sums and the two per-batch surfaces render. Null
-// is "no model path ran", the same rule CompositionNotes.NetworkRetries already states, so
-// adding null to anything must not invent a measurement.
+// The token record the compose-validate loop sums and the two per-batch surfaces render. Cost
+// is measured tokens, never money computed in code. Null is "no model path ran", the same rule
+// the network retry count states, so adding null to anything must not invent a measurement.
 public class ModelCostNotesTests
 {
     [Fact]
@@ -45,7 +45,7 @@ public class ModelCostNotesTests
     }
 
     // One rendering, shared by the Batch complete log line and the scorecard, so the two
-    // per-batch surfaces of D61 and D62 can never word the same number differently.
+    // per-batch surfaces of latency and cost can never word the same number differently.
     [Fact]
     public void Describe_NoMeasurement_SaysThereWasNoModelCall()
     {
