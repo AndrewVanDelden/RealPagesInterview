@@ -11,6 +11,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -27,6 +29,15 @@ jobs:
       - name: Instruction files stay rules, state stays in the decision log
         shell: powershell
         run: .\check-instruction-files.ps1
+
+      # The same floor the pre-commit hook applies locally, on the range this run is about: no em
+      # dash on an added line. A pull request compares against its base; a push to dev or main
+      # compares against the first parent, which is the branch before the merge.
+      - name: No em dash in the change
+        shell: powershell
+        run: |
+          $range = if ($env:GITHUB_BASE_REF) { "origin/$($env:GITHUB_BASE_REF)...HEAD" } else { "HEAD^1..HEAD" }
+          .\agent\hooks\pre-commit.ps1 -Range $range
 
       - name: Test with the coverage gate
         shell: powershell

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Git calls this shim. The checks live in agent/hooks/pre-commit.ps1 so every tool shares them.
+# Git for Windows runs hooks under sh; the path is converted for powershell.exe.
+root="$(git rev-parse --show-toplevel)"
+if command -v cygpath >/dev/null 2>&1; then root="$(cygpath -w "$root")"; fi
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/agent/hooks/pre-commit.ps1"
