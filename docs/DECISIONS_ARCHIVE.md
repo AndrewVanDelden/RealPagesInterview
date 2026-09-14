@@ -3471,3 +3471,27 @@ theory moved to email, the one channel where that rule still decides something. 
 passed 115 and 810 tests at 100 percent line, branch and method coverage, and `BaselineNumbersTests`
 held every pinned tally, since the template composer is unchanged. No model run was made, so whether
 the three hold-out bodies now pass the judge is not measured.
+
+**Run and debug fact, D108 and D109 re-read against send dates (2026-09-14).** Template runs of all
+four sets at `43d0d4e`, every sms tour invitation and every generic answer extracted with its label.
+D108 as written is wrong on one claim: it read the weekdays from the reference dates, but a message
+is judged on the day it is sent. The three fitted tour sms (`sample.jsonl` and `holdout_12.jsonl`
+`prospect_welcome_day0`, `prospect_spanish_locale`) all send Tuesday 2025-12-09, where the fixed
+pair, the day two and three days out, and the first two weekdays after tomorrow all give Thu and Fri,
+so the fitted evidence cannot separate the three. Of `synthetic_12.jsonl`'s six, five send Saturday
+2026-03-07, where both computed rules give Mon and Tue, and `synthetic_08_unknown_timezone` sends
+Sunday; five of the six pass only because this project wrote their labels under the fixed pair. The eleven
+`synthetic_v2.jsonl` tour sms send Sunday 2026-10-25, not Saturday: the reference time is Saturday
+17:00 in Chicago and the scheduler moves the send to 09:00 the next day. Both send-date rules give
+Tue and Wed there, and the label's Mon and Tue fits neither; only a rule counted from the reference
+date fits both the hold-out and the blind labels, and a reference date is the batch clock, not a
+recipient's day. `v2_spanish_locale`'s label spells Mon and Tue in English, so it fails the
+per-language weekday fold whatever days are sent. D109 covers 14 records, not the 6 flips D107 named:
+every record whose plan source is `generic_row_no_match` or `generic_row_no_branch`, whose sms options
+are the generic pair, or whose unrecognized email call to action links to `/reply`. Eleven are on
+`synthetic_v2.jsonl` and fail, among them `v2_prospect_lost` (a closed lead still sent a tour
+invitation, labeled `no_op` `lead_closed`) and `v2_unusual_persona_stage` (labeled `no_op`
+`persona_stage_mismatch`); three are on `synthetic_12.jsonl`. Seven of the nine catalog rows state
+only the no-move-date branch and prospect/open has no short branch, so a dated record at those
+stages also falls to the generic row. The
+decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

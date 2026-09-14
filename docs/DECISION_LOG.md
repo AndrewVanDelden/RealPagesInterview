@@ -146,10 +146,10 @@ left eighteen findings: three declined against D101, A19 and no stated rule, fou
 first, among them a judge fault that crashed the batch and a linear property scan; 919 tests at 100
 percent, run and debug facts. PR #36 merged into `dev` as `b3f9036`, closing the sprint (D106).
 
-**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 checks that failed under the stricter
-scorer are read record by record and not fitted: 19 are product gaps, 5 the label author's choices,
-and no label or tally moves (D107). Two gaps are the owner's to decide: tour reply days fixed as Thu
-and Fri whatever the send date (D108), and a record nothing covers answered as a prospect (D109). The
-three hold-out bodies the judge failed: the move timeline goes on email only (D110), tour availability
-only to an invitation the record names (D111), and code writes a renewal offer's terms while the lease
-end date leaves the prompt (D112). No model run has measured them.
+**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 checks the stricter scorer failed are
+read record by record, not fitted: 19 are product gaps, 5 the label author's choices, and no label or
+tally moves (D107). Two gaps are the owner's to decide: tour reply days fixed as Thu and Fri (D108),
+and a record nothing covers answered as a prospect (D109). The three hold-out bodies the judge failed:
+the move timeline goes on email only (D110), tour availability only to an invitation the record names
+(D111), and code writes a renewal offer's terms while the lease end date leaves the prompt (D112). No
+model run measured them; a run and debug fact corrects D108's and D109's evidence.
