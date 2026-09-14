@@ -15,8 +15,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
 Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 859 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner's full runs of `holdout_12.jsonl` and `synthetic_v2.jsonl` measure D108 to D112 against the runs of 2026-09-13.
-Open decisions: none.
+Next step: the owner takes or declines D113 and D114, which the full runs after D112 raised.
+Open decisions: D113, D114.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -84,20 +84,14 @@ The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed t
 review findings.
 
 **D74 to D76, Sprint 12, Phase 8 documentation (2026-09-10).** The README meets step 90 and
-every command in it ran; DESIGN.md has step 91's interface table, a decision number on every
-rule, nine open questions, and Phase 7's changes to seven assumptions plus A22 and A23. Step 95
-found no secret and no personal path; the repository stays public with the assignment's text and
-data, the owner's choice (D74). Step 92's two fixes are made; D75 takes none of the step 96
-changes. Four agents ran these steps at once, a Phase First departure on record. Step 93 reviewed
-this sprint's diff, unreviewed by any PR (D76), and found nothing; a second reviewer is owed.
+DESIGN.md step 91; step 95 found no secret, and the repository stays public, the owner's choice
+(D74). D75 takes none of the step 96 changes. Four agents ran these steps at once, a Phase First
+departure on record. Step 93 reviewed the sprint's unreviewed diff and found nothing (D76).
 
-**D77 and D78, Sprint 13, the release (2026-09-10).** The owner marked step 93 complete with
-its second reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`; step 97's narrative is
-`docs/RELEASE_v1.0.0.md`, which names the nine files step 94 has the owner read by hand.
-`docs/NARRATION.md` opens with a 150-word script, one minute spoken, answering all seven
-questions. The Phase 8 check passed from a worktree at the tag, a run and debug fact. D77 asks
-whether the retrospective of 2026-09-06 already meets Phase 9; D78 asks where the narrative is
-published, since `dev` shares no history with `main`. Both are open.
+**D77 and D78, Sprint 13, the release (2026-09-10).** The tag `v1.0.0` is on `ccf3c5c` with its
+narrative in `docs/RELEASE_v1.0.0.md`, and `docs/NARRATION.md` opens with a one-minute script; the
+Phase 8 check passed at the tag, a run and debug fact. D77 asks whether the retrospective of
+2026-09-06 meets Phase 9 and D78 where the narrative is published; Sprint 14 took both.
 
 **D79, Sprint 14, Phase 9 (2026-09-10).** D77 and D78 were taken as (a): Phase 9 rests on the
 retrospective of 2026-09-06, and the release is published on GitHub from
@@ -153,3 +147,10 @@ and the scorer reads a label's weekday as a date.
 D109 is taken: a record that is not a prospect gets no prospect cadence or tour option, and an unknown
 call to action no link. The move timeline goes on email only (D110), tour availability only to a
 named invitation (D111), and code writes renewal terms (D112). Run and debug facts hold the evidence.
+
+**D113 and D114, the full runs after D112, Sprint 17 (2026-09-14).** One model run of each file, a
+run and debug fact. The hold-out keeps every deterministic check, and bodies read 7 of 11 from 8: the
+welcome email with no named call to action now passes, and two bodies that passed now fail. The blind
+set's bodies read 2 of 24 from 0. p95 latency failed both. The judge sees no send date, so it cannot
+tell a date is the label's weekday (D113), and the model dropped or translated the code's reply options
+(D114). Both are proposed.

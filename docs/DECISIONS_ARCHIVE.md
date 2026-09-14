@@ -3570,5 +3570,55 @@ now carries no link, so the presence rule fails). It was re-pinned at action 13 
 25, overall still 1 of 30, with the reason in the test, and its committed scorecard refreshed. The
 residents `v2_resident_move_in` and `v2_resident_notice_given` now offer "a question" alone, and no
 unrecognized email links to `/reply`. `sample.jsonl`, `holdout_12.jsonl` and `synthetic_12.jsonl`
-are unchanged. The
+are unchanged.
+
+**Run and debug fact, the full runs after D112 (2026-09-14).** At `580689d`, `--composer openai
+--model-call-budget-ms 30000 --judge` with every output flag, one run per file, one after the other.
+`holdout_12.jsonl` with `--property-data`: exit 0; every deterministic check full; Overall 12 of 12;
+ActionSem 12 of 12; BodySem 7 of 11, from 8 of 11 at the run after D105; review queue empty; p95
+5187 ms against 2000 ms, FAIL, every record slower than that run, attempts 1 on every record, cause not
+measured. Body verdicts that moved: `prospect_consent_block_sms_fallback_email` FAIL to OK, its body no
+longer stating this week's availability (D111); `prospect_no_show_reengage` OK to FAIL, its body
+dropping the numbered options it wrote the run before (D114); `prospect_spanish_locale` OK to FAIL, the
+judge reading its dates as not the label's jueves and viernes, and its body translating the code's
+dates into Spanish while `cta.options` carries the code's text (D113, D114). Still failing:
+`prospect_welcome_day0`, whose body no longer states the move timeline (D110), failed now because the
+judge says Dec 11 and 12 are not Thursday and Friday, which they are (D113); and
+`resident_renewal_90day_notice`, whose body now states the 10-day price hold and the text-reminder
+offer exactly and no lease end date (D112), failed now for the email opt-out sentence code appends,
+which its label words as "Opt-out any time". `synthetic_v2.jsonl`: exit 2 on its malformed line;
+Overall 1 of 30; Action 13 of 29; Payload 7 of 25; ActionSem 14 of 29, from 13; BodySem 2 of 24, from
+0, with `v2_prospect_new_long_email` and `v2_missing_last_interaction` now passing; review queue 11
+rows, as before; p95 3259 ms against 2000 ms, FAIL, from 2016. Every blind-set tour sms fails BodySem
+on its dated options against the labels' weekdays, several reasons calling October 2026 dates not
+"this week" in a run whose reference time is 2026-10-24 (D113). The earlier blind-set run predates D104
+and D105, so its body changes are not attributable to D108 to D112 alone. Each figure is one call per
+record, so run-to-run variance is not measured. Results are in `holdout_12_run_2026-09-14_d112` and
+`synthetic_v2_run_2026-09-14_d112` on the owner's desktop.
+
+**D113. The judge sees each message's send date (proposed 2026-09-14).** Question: after D108 an sms
+tour invitation's options are dates while the labels name weekdays, and the judge's prompt carries each
+side's action, subject and body but no send date, so it cannot tell that Dec 11, 2025 is the label's
+Thursday. In the full run after D112 it failed `prospect_welcome_day0` and `prospect_spanish_locale` on
+that ground and every blind-set tour sms with it. Options: (a) the judge's reference and candidate
+blocks each carry the message's `send_at`, and the rubric says a weekday on one side and a date on the
+other name the same day when the date is the first with that weekday after the send date; (b) the
+judge also receives the deterministic payload verdict; (c) leave the judge and read those BodySem
+failures by hand. Recommendation: (a): the fact the judge lacks is already in the output, and the
+payload check resolves weekdays by the same rule (D108), so both graders read a date one way. (b) lets
+one grader's verdict steer the other. Scopes: `SemanticJudge` and its golden prompt. Evidence: that
+run's judge reasons. Assumptions: none. Open.
+
+**D114. Code writes the sms reply options sentence (proposed 2026-09-14).** Question: in the full run
+after D112 the model left the numbered options out of `prospect_no_show_reengage` ("reschedule for today
+or tomorrow?", where the run after D105 wrote "reply with 1 for today or 2 for tomorrow"), and in
+`prospect_spanish_locale` wrote the code's options "Dec 11, 2025, 10:00 AM" as "11 de diciembre de
+2025, 10:00 AM" in the body while `cta.options` carried the code's text, so the body and the payload
+disagree and the owner's one-format rule is broken. Whether D108's semicolon between the options in the
+prompt caused the first is not measured. Options: (a) the model is told the system appends the numbered
+options, as it is told for the opt-out, and code appends the language set's options sentence, the one
+the template writes, before the opt-out on every sms with options; (b) tell the model to copy the
+options verbatim; (c) leave it. Recommendation: (a), D105's rule: text the model rewrote or dropped
+becomes text code writes; (b) is a prose instruction of the kind the model just ignored. Scopes:
+`OpenAiMessageComposer`, its goldens and A10. Evidence: the two bodies. Assumptions: A10, A18. Open. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.
