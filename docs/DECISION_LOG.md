@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16, since D92 changes the model client.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Not yet run.
-Next step: merge D92's branch into the Sprint 16 branch, run the check, then the sprint PR against `dev`.
-Open decisions: none.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D97, which change the model prompt, the links and the scorer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed on `sprint-16` before D94, by the owner's account of 2026-09-13; after D97, `.\test.ps1` passes 108 and 694 tests at 100 percent, running `sample.jsonl`, `holdout_12.jsonl` and `synthetic_12.jsonl` offline. `synthetic_v2.jsonl` was not re-run.
+Next step: the Sprint 16 PR against `dev`, then one full hold-out run with every flag, and the per-record results written from it.
+Open decisions: D98.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -140,3 +140,11 @@ and PR #33's review findings were fixed, all run and debug facts.
 `v1.1.0` on `6e05adb`, and the narration's provenance moves there after a re-run matched every
 value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
 tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.
+
+**D94 to D98, Sprint 16 continued (2026-09-13).** The owner's hold-out run of 2026-09-11 scored
+every decision 12 of 12, the judge failed all 11 message bodies, and the payload check passed four
+wrong resident links. The payload check now compares an email's link with the label's (D94); the
+judge's reason reaches the report and the diagnostics row, and its tokens get their own line (D95);
+the prompt carries ten stage facts as typed members, the link, the language set's reply options and
+a rule against invented facts (D96); and a resident's link is built from the record, unit included
+(D97). D98, a no-choice call's retry count, is open.

@@ -17,7 +17,8 @@ public sealed class Scorecard
         IReadOnlyList<RecordScore> recordScores,
         int? latencyBudgetMs,
         double? batchLatencyMs = null,
-        ModelCostNotes? batchModelCost = null)
+        ModelCostNotes? batchModelCost = null,
+        ModelCostNotes? judgeModelCost = null)
     {
         // Copied once, O(n): the caller's list may be one it keeps editing, and rows that
         // changed after the tallies were counted would disagree with them.
@@ -25,6 +26,7 @@ public sealed class Scorecard
         LatencyBudgetMs = latencyBudgetMs;
         BatchLatencyMs = batchLatencyMs;
         BatchModelCost = batchModelCost;
+        JudgeModelCost = judgeModelCost;
         latencyP95Ms = ComputeLatencyP95Ms(RecordScores);
         tallies = ComputeTallies(RecordScores);
     }
@@ -44,6 +46,10 @@ public sealed class Scorecard
     // batch wrote, so a reader who adds that column up gets this number; null when no record on
     // the run went near a model.
     public ModelCostNotes? BatchModelCost { get; }
+
+    // What the semantic judge's calls cost, kept apart from BatchModelCost because grading is the
+    // evaluation's spend and not the product's; null when the judge made no call or did not run.
+    public ModelCostNotes? JudgeModelCost { get; }
 
     public int TotalCount => RecordScores.Count;
 
@@ -67,7 +73,7 @@ public sealed class Scorecard
     // NotMeasured), so they cannot move either number, but the constructor is the one place
     // either number is computed, so the new scorecard pays for both.
     public Scorecard AppendUnprocessed(IReadOnlyList<RecordScore> unprocessedRows) =>
-        new([.. RecordScores, .. unprocessedRows], LatencyBudgetMs, BatchLatencyMs, BatchModelCost);
+        new([.. RecordScores, .. unprocessedRows], LatencyBudgetMs, BatchLatencyMs, BatchModelCost, JudgeModelCost);
 
     public int PassedCountOf(EvaluationCheck check) => tallies[check].Passed;
 

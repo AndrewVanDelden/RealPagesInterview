@@ -319,15 +319,15 @@ public sealed class CliRunner(
         // Each file gets a record's rows as the record is folded, so memory holds the window of
         // runs waiting on an earlier record, never the batch's rows. With --eval-report each
         // record is scored as it is folded and keeps one small score row, because the p95, the
-        // tallies and the report cover the whole batch; with --judge the scored runs stay too.
+        // tallies and the report cover the whole batch; with --judge each record's grade arrives
+        // with its run, so no run is held for grading afterwards.
         Evaluator? evaluator = evalReportPath is null ? null : new Evaluator(loggerFactory.CreateLogger<Evaluator>());
         var fold = new RecordFold(
             error,
             new JsonArrayRecordWriter<AgentOutput>(outputStream),
             diagnosticsStream is null ? null : new JsonArrayRecordWriter<TaskDiagnostics>(diagnosticsStream),
             reviewQueueStream is null ? null : new JsonArrayRecordWriter<ReviewQueueEntry>(reviewQueueStream),
-            evaluator,
-            keepRunsForJudge: judge is not null);
+            evaluator);
 
         // Per batch: one wall-clock elapsed around the record loop, reported on the two artifacts
         // that are already per batch, the log line and the scorecard, and never as a row in the
@@ -340,7 +340,7 @@ public sealed class CliRunner(
         cancellationToken.ThrowIfCancellationRequested();
         await fold.BeginAsync(cancellationToken);
         (int recordsRead, List<string> parseFailures) = await RunWindowedAsync(
-            agent, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
+            agent, judge, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
 
         batchStopwatch.Stop();
         double batchLatencyMs = batchStopwatch.Elapsed.TotalMilliseconds;
@@ -361,12 +361,8 @@ public sealed class CliRunner(
             // report describes exactly what was persisted to --output. Every input the batch
             // could not process is a row too: the lines that did not parse, then the records
             // that threw, each in input order.
-            Scorecard scorecard = await JudgeAndAppendAsync(
-                fold.ScoreBatch(batchLatencyMs),
-                fold.JudgedRuns,
-                judge,
-                [.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows],
-                cancellationToken);
+            Scorecard scorecard = fold.ScoreBatch(batchLatencyMs)
+                .AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows]);
             if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
@@ -388,6 +384,7 @@ public sealed class CliRunner(
     // O(n) time in the input lines; O(MaxConcurrentRecords + f) space, f the lines that did not parse.
     private async Task<(int RecordsRead, List<string> ParseFailures)> RunWindowedAsync(
         LeasingMessageAgent agent,
+        SemanticJudge? judge,
         IEnumerable<Result<ProspectCase>> reads,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -421,7 +418,7 @@ public sealed class CliRunner(
 
                 cancellationToken.ThrowIfCancellationRequested();
                 ProspectCase prospectCase = read.Value;
-                window.Enqueue(Task.Run(() => RunRecordAsync(agent, prospectCase, referenceTime, log, inFlightCancellation.Token)));
+                window.Enqueue(Task.Run(() => RunRecordAsync(agent, judge, prospectCase, referenceTime, log, inFlightCancellation.Token)));
             }
 
             await FoldEveryRunAsync(window, fold, cancellationToken);
@@ -486,6 +483,7 @@ public sealed class CliRunner(
     // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
     private static async Task<RecordRun> RunRecordAsync(
         LeasingMessageAgent agent,
+        SemanticJudge? judge,
         ProspectCase prospectCase,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -534,7 +532,16 @@ public sealed class CliRunner(
         double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
 
         log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
-        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs);
+
+        // With --judge the record is graded here, inside its own run and log scope and after its
+        // latency is measured, so the grade's call is in neither the latency nor another record's
+        // lines. The verdict rides the result to the fold, the one writer of the diagnostics row
+        // and the score row it lands on. The batch's elapsed includes these calls.
+        JudgeVerdict? judgement = judge is null
+            ? null
+            : await judge.GradeAsync(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs), cancellationToken);
+
+        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, judgement);
     }
 
     // Re-scores an existing output file against --input without running the agent. The output
@@ -592,7 +599,10 @@ public sealed class CliRunner(
         // No batch latency and no batch cost: no record loop ran here, so nothing was timed and
         // nothing was spent, and the scorecard says so rather than printing zeros.
         Scorecard scored = new Evaluator(loggerFactory.CreateLogger<Evaluator>()).Evaluate(aligned.Value);
-        Scorecard scorecard = await JudgeAndAppendAsync(scored, aligned.Value, judge, [.. parseFailures.Select(RecordScore.DidNotParse)], cancellationToken);
+        // A replay has no record runs to grade inside, so the judge grades the scored rows here,
+        // pairing each with its run by position, before the unparsed lines are appended past them.
+        Scorecard judged = judge is null ? scored : await judge.JudgeAsync(scored, aligned.Value, cancellationToken);
+        Scorecard scorecard = judged.AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse)]);
         if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
@@ -794,30 +804,6 @@ public sealed class CliRunner(
                 "--judge needs OpenAI:ApiKey. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, JudgeModel);
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
-    }
-
-    // The judge's two verdicts on top of a scorecard when the run asked for them, then one row
-    // per input the batch could not process. Both paths finish scoring this way. The judge is one
-    // signal beside the deterministic checks and never replaces one, and the unprocessed rows go
-    // last because the judge pairs scorecard rows with runs by position.
-    // O(n) in the scored runs, one judge call each when the judge is on, plus the rebuilt
-    // scorecard's O(n) tallies and O(n log n) p95. AppendUnprocessed reruns both even when
-    // unprocessedRows is empty (the normal, clean-run case), which is redundant: fold.ScoreBatch
-    // already computed the same tallies and p95 for that record set. A skip-when-empty guard was
-    // tried and reverted: appending an empty list recomputes byte-identical values, so the guard
-    // changes no output this method's only test surface (RunAsync's output) can observe, and no
-    // test could pin it without an internal-visibility seam this codebase does not otherwise use.
-    // Left unconditional rather than add one for a redundant computation that is cheap at this
-    // batch's scale.
-    private static async Task<Scorecard> JudgeAndAppendAsync(
-        Scorecard scorecard,
-        IReadOnlyList<ScoredRun> runs,
-        SemanticJudge? judge,
-        IReadOnlyList<RecordScore> unprocessedRows,
-        CancellationToken cancellationToken)
-    {
-        Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
-        return judged.AppendUnprocessed(unprocessedRows);
     }
 
     private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)

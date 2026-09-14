@@ -10,7 +10,13 @@ public sealed record ProspectContext(
     DateTimeOffset? LastInteraction = null,
     [property: JsonPropertyName("timezone")] string? TimeZoneId = null,
     string? Language = null,
-    ProspectProfile? Profile = null) : HasUnknownMembers
+    ProspectProfile? Profile = null,
+    string? Unit = null,
+    DateOnly? MoveInDate = null,
+    DateOnly? LeaseEndDate = null,
+    string? RenewalOfferId = null,
+    DateTimeOffset? MissedTourTime = null,
+    string? CancellationReason = null) : HasUnknownMembers
 {
     public ProspectProfile ProfileOrEmpty => Profile ?? new ProspectProfile();
 }

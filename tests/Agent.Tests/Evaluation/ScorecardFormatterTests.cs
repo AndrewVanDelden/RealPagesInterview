@@ -170,4 +170,41 @@ public class ScorecardFormatterTests
 
         Assert.Contains("Batch model cost: 3 call(s), 2 completed, 22 input + 14 output token(s)", report);
     }
+
+    // The judge's spend is its own line beside the product's, so neither total hides the other.
+    [Fact]
+    public void Format_JudgeCallsWereMade_PrintsTheJudgeModelCostLine()
+    {
+        var scorecard = new Scorecard(
+            [PassingScore("t1")],
+            2000,
+            judgeModelCost: new ModelCostNotes(Calls: 2, CompletedCalls: 2, InputTokens: 80, OutputTokens: 18));
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("Judge model cost: 2 call(s), 2 completed, 80 input + 18 output token(s)", report);
+    }
+
+    // A run the judge never graded has no judge to report on, so neither judge line appears.
+    [Fact]
+    public void Format_NoJudge_PrintsNeitherJudgeLine()
+    {
+        string report = ScorecardFormatter.Format(new Scorecard([PassingScore("t1")], 2000));
+
+        Assert.DoesNotContain("Judge model cost", report);
+        Assert.DoesNotContain("Judge reasons", report);
+    }
+
+    // Each reason is one line under its task id, with the reason's own line breaks folded to
+    // spaces so one line of the report is one record.
+    [Fact]
+    public void Format_ScoresCarryJudgeReasons_PrintsOneLinePerReason()
+    {
+        var scorecard = new Scorecard([PassingScore("t1") with { JudgeReason = "Same offer.\nSame next step." }, PassingScore("t2")], 2000);
+
+        string report = ScorecardFormatter.Format(scorecard);
+
+        Assert.Contains("Judge reasons:" + Environment.NewLine + "t1: Same offer. Same next step." + Environment.NewLine, report);
+        Assert.DoesNotContain("t2:", report);
+    }
 }

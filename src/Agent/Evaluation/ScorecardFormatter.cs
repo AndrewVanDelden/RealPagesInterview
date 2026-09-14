@@ -52,7 +52,30 @@ public static class ScorecardFormatter
         // dated dollar figure lives in DESIGN.md section 9 and README.
         builder.AppendLine($"Batch latency: {Milliseconds(scorecard.BatchLatencyMs)}");
         builder.AppendLine($"Batch model cost: {ModelCostNotes.Describe(scorecard.BatchModelCost)}");
+
+        // The judge's spend on its own line beside the product's, and only when the judge made a
+        // call: grading is the evaluation's cost, and one total would hide which spend is which.
+        if (scorecard.JudgeModelCost is { } judgeModelCost)
+        {
+            builder.AppendLine($"Judge model cost: {ModelCostNotes.Describe(judgeModelCost)}");
+        }
+
         builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
+
+        // Every reason the judge gave, one line per record under its task id, so a failed grade
+        // says why. A reason's own line breaks fold to spaces, keeping one line to one record.
+        // O(n) in the records.
+        RecordScore[] reasoned = [.. scorecard.RecordScores.Where(score => score.JudgeReason is not null)];
+
+        if (reasoned.Length > 0)
+        {
+            builder.AppendLine("Judge reasons:");
+
+            foreach (RecordScore score in reasoned)
+            {
+                builder.AppendLine($"{score.TaskId}: {score.JudgeReason!.ReplaceLineEndings(" ")}");
+            }
+        }
 
         return builder.ToString();
     }

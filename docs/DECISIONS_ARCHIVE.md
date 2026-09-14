@@ -3026,3 +3026,91 @@ agent: `NoCompletionChoiceException` carries tokens but no retry count, and the 
 for it never sets `NetworkRetries`, so a no-choice call that followed a transient retry reports
 null retries and the run undercounts retries, not tokens. Untested and unchanged; outside D91's
 scope for Sprint 16, it needs its own decision.
+
+**D94. The call-to-action payload check compares the link (taken 2026-09-13).** Question: the
+payload check passes any email whose link is present, whatever it points to. The owner's hold-out
+run of 2026-09-11 (`--composer openai --judge`, branch `sprint-16` at `8e397d8`) scored Payload
+11/11 while all four resident emails linked to `https://oakridge.example/reply` and their labels
+named `/welcome`, `/loyalty`, `/renewal/A-204` and `/renewal/A-204/details`. Options: (a) when the
+label states a link, an email passes only when its link equals the label's, and a label with no
+link keeps the presence rule; (b) compare the path and ignore the host; (c) keep presence and
+report a differing link as a diagnostic. Recommendation: (a). A check that cannot fail a wrong link
+measures nothing about the link, and the host is as much a fact as the path. The sms options are
+not compared: the labels spell them as prose a scorer would have to normalize, which is a separate
+question. Scopes: `Evaluator.ScoreCtaPayload` and its tests. On `synthetic_v2.jsonl`, whose
+labels were written blind and name paths such as `/portal` and `/renew` that no row builds, the
+payload tally can fall; that set is not pinned, it was not re-run this sprint, and
+`docs/scorecards/synthetic_v2_template.txt` predates the change. Evidence: that run. Assumptions: A10. Taken on the owner's instruction of
+2026-09-13.
+
+**D95. The judge's reason and its cost are kept (taken 2026-09-13).** Question: `SemanticJudge`
+reads a `reason` with every grade and nothing uses it, and its token cost is in no total: the
+scorecard it builds carries the batch cost computed before judging. A reader of `BodySem 0/11`
+cannot see why a body failed or what the grading cost. Options: (a) the judge grades each record
+inside that record's run, after its latency is measured; the verdict, the reason and the cost ride
+the record's result to the fold, which writes them on the diagnostics row as `judge` and on the
+score row, and the scorecard prints each reason and a `Judge model cost:` line beside `Batch model
+cost:`; a replay grades through the same per-record call after scoring; (b) keep grading after the
+batch and write judge rows to a second file; (c) the reason in the report only, and the judge's
+tokens added into `Batch model cost:`. Recommendation: (a). Diagnostics rows are written as each
+record folds, so a grade made after the batch cannot reach them, and grading per record also drops
+the list of every run the fold held for the judge. The judge's tokens get their own line because
+they are the evaluation's spend and not the product's, and one total would hide which is which.
+With `--judge`, `Batch latency:` includes the judge's calls. Scopes: `SemanticJudge`,
+`RecordScore`, `Scorecard`, `ScorecardFormatter`, `TaskDiagnostics`, `RecordRun`, `RecordFold`,
+`CliRunner` and OPERATIONS.md. Evidence: `SemanticJudge.cs` at `8e397d8`, where
+`JudgePayload.Reason` is read by nothing and `JudgeAsync` passes `scorecard.BatchModelCost`
+through. Assumptions: none. Taken on the owner's instruction of 2026-09-13.
+
+**D96. The model prompt carries the message's facts, its link and a rule against invented facts
+(taken 2026-09-13).** Question: the judge failed all 11 bodies of the run of 2026-09-11. The
+prompt's data block holds nine fields, so a record's unit, move-in date, lease end date, renewal
+offer, missed tour time, cancellation reason, budget, tenure, loyalty status and features to set up
+never reach the model; they are unknown members. The model stated facts no input gave it ("a
+variety of amenities to enhance your living experience" for a record that names no amenity), wrote
+the resident welcome as a pitch where the label asks the resident to register for packages and
+check amenity hours, offered reply options of its own where the language set holds the labeled
+ones, and never put the link in the body, where every labeled email has it. Options: (a) declare
+those ten fields as typed optional members and list each in the data block when the record states
+it; give the email's code-built link to the model as an instruction to write it in the body, and
+append the language set's link line when a draft leaves it out; on sms, name the language set's
+reply options for the call to action; and tell the model to state no fact that the data or the
+instructions do not give it, in at most three sentences before the link and with no sign-off;
+(b) pass every unknown member to the model by name; (c) tighten the system prompt only.
+Recommendation: (a). Typed members are an allowlist, so an arbitrary member a record carries, which
+could hold an identifier, never reaches the model, and a field the code reads has a type; (b)
+forwards whatever a record carries; (c) leaves the facts out, and a model told not to invent a fact
+it was never given cannot write the labeled message. The link stays code-built and the options stay
+the language set's, so neither is the model's invention. Scopes: `ProspectContext`,
+`ProspectProfile`, `OpenAiMessageComposer` and its goldens. A label fact that no input field
+states, such as "Studios start near $1,650" or current pricing reserved for 10 days, stays
+unwritable, so a body whose label depends on one can still fail the judge. A value of the wrong
+type in one of the ten members now makes its line an error row, as a wrong type in any typed member
+already does; the three pinned sets parse unchanged (`BaselineNumbersTests`). Evidence: that run, and
+the input members of `holdout_12.jsonl`, training data since D81. Assumptions: A12, A18. Taken on
+the owner's instruction of 2026-09-13.
+
+**D97. A resident's link is built from the record (taken 2026-09-13).** Question: the
+call-to-action table has paths for the tour and the generic reply only, so `get_started`,
+`enroll_loyalty` and `review_renewal` pass through with the generic `reply` path, and
+`review_renewal_details` keeps it because its labeled link carries the unit and no path could build
+it. Options: (a) rows for `get_started` (`welcome`), `enroll_loyalty` (`loyalty`) and
+`review_renewal` (`renewal/{unit}`); the resident renewal-details stage's path becomes
+`renewal/{unit}/details`; the unit is a typed optional input member; its link segment is the unit
+with every dash character written as a hyphen and every character other than a letter, a digit or
+a hyphen removed, so `A‑204` with a non-breaking hyphen is `A-204`; and a path that needs a unit on
+a record with none gets no link; (b) the same, with the generic path when the unit is absent; (c)
+leave resident links generic. Recommendation: (a). Option (b) links a resident to a page no
+evidence shows, which A21 already refuses for an absent property name. Scopes:
+`CallToActionCatalog`, `PropertyLink`, both composers, A21 and the new A26. Evidence: the four
+resident email labels of `holdout_12.jsonl`. Assumptions: A21, A26. Taken on the owner's
+instruction of 2026-09-13.
+
+**D98 (open). A no-completion-choice call keeps its retry count (proposed 2026-09-13).** Question:
+the finding of 2026-09-11 above: `NoCompletionChoiceException` carries tokens and no retry count,
+so a no-choice call that followed a transient retry reports null retries. Options: (a) the
+exception carries the retries the client made, and the model composer's catch sets
+`NetworkRetries` from it, as every other completed-call exit does; (b) document the undercount in
+DESIGN.md. Recommendation: (a), the rule D66 set for spend applied to retries. Scopes: the
+completion client, the exception, the model composer and their tests. Evidence: that finding.
+Assumptions: none. Not taken.

@@ -326,6 +326,32 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Passed, score.CtaPayload);
     }
 
+    // The link is a fact like any other, so an email whose link is not the label's fails even
+    // though it carries one. Presence alone passed four resident emails that all pointed at the
+    // generic reply page while their labels named four different pages.
+    [Fact]
+    public void Evaluate_EmailLinkDiffersFromTheLabelsLink_CtaPayloadFailed()
+    {
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(EmailMessage("expected", link: new Uri("https://oakridge.example/renewal/A-204"))));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody, link: new Uri("https://oakridge.example/reply"))));
+
+        Assert.Equal(CheckResult.Failed, score.CtaPayload);
+    }
+
+    // A label that states no link has nothing to compare against, so presence is what the check
+    // can measure.
+    [Fact]
+    public void Evaluate_LabelEmailStatesNoLink_ALinkThatIsPresentPasses()
+    {
+        var labelWithoutLink = new NextMessage(CommunicationChannel.Email, BaselineSendAt, "Tour Oak Ridge", "expected", new Cta("schedule_tour"));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithoutLink));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody, link: new Uri("https://oakridge.example/anything"))));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
     [Fact]
     public void Evaluate_EmailWithoutLink_CtaPayloadFailed()
     {

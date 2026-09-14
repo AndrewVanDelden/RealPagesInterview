@@ -908,7 +908,7 @@ public class CliRunnerTests
         string outputPath = TempFilePath();
         string diagnosticsPath = TempFilePath(".json");
         string line = RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")
-            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"source\":\"web\"")
             .Replace("\"persona\":\"prospect\",", string.Empty);
         await File.WriteAllTextAsync(inputPath, line);
         var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
@@ -920,7 +920,7 @@ public class CliRunnerTests
             Assert.Equal(CliExitCodes.Success, exitCode);
             using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
             JsonElement notes = diagnostics.RootElement[0].GetProperty("ingest_notes");
-            Assert.Equal("input.unit", notes.GetProperty("unknown_members")[0].GetString());
+            Assert.Equal("input.source", notes.GetProperty("unknown_members")[0].GetString());
             Assert.Equal("persona", notes.GetProperty("defaulted_fields")[0].GetString());
         }
         finally
@@ -1940,6 +1940,84 @@ public class CliRunnerTests
             string report = await File.ReadAllTextAsync(reportPath);
             Assert.Contains("ActionSem 1/1", report);
             Assert.Contains("BodySem 1/1", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
+    // The judge grades each record inside its run, so its verdict, its reason and what its call
+    // cost reach the diagnostics row as the row is written, and the report prints the reason and
+    // the judge's own token line. Batch model cost stays the product's spend: the template
+    // composer made no call, so that line reads none while the judge's reads its call.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithDiagnostics_TheRowAndTheReportCarryTheReasonAndTheJudgesCost()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        string diagnosticsPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var fakeJudgeClient = new FixedJudgeCompletionClient(
+            """{"action_matches":true,"body_matches":false,"reason":"the candidate never names the week"}""", inputTokens: 5, outputTokens: 3);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: new SemanticJudge(fakeJudgeClient));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--diagnostics", diagnosticsPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement judge = diagnostics.RootElement[0].GetProperty("judge");
+            Assert.Equal("passed", judge.GetProperty("action_semantic").GetString());
+            Assert.Equal("failed", judge.GetProperty("body_semantic").GetString());
+            Assert.Equal("the candidate never names the week", judge.GetProperty("reason").GetString());
+            Assert.Equal(1, judge.GetProperty("model_cost").GetProperty("completed_calls").GetInt32());
+            Assert.Equal(5, judge.GetProperty("model_cost").GetProperty("input_tokens").GetInt32());
+            Assert.Equal(3, judge.GetProperty("model_cost").GetProperty("output_tokens").GetInt32());
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("BodySem 0/1", report);
+            Assert.Contains("Batch model cost: none", report);
+            Assert.Contains("Judge model cost: 1 call(s), 1 completed, 5 input + 3 output token(s)", report);
+            Assert.Contains("t1: the candidate never names the week", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
+    // A replay has no record runs to grade inside, so it grades the scored rows after the fact
+    // through the same per-record call and prints the same reason and cost lines.
+    [Fact]
+    public async Task RunAsync_ReplayWithJudge_GradesEveryReplayedRow()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var writingRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var fakeJudgeClient = new FixedJudgeCompletionClient("""{"action_matches":true,"body_matches":true,"reason":"same offer"}""", inputTokens: 5, outputTokens: 3);
+        var replayRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: new SemanticJudge(fakeJudgeClient));
+
+        try
+        {
+            Assert.Equal(CliExitCodes.Success, await writingRunner.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            int exitCode = await replayRunner.RunAsync(["--input", inputPath, "--replay", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(1, fakeJudgeClient.CallCount);
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("BodySem 1/1", report);
+            Assert.Contains("Judge model cost: 1 call(s), 1 completed, 5 input + 3 output token(s)", report);
+            Assert.Contains("t1: same offer", report);
         }
         finally
         {

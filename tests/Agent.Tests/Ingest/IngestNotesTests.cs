@@ -69,7 +69,7 @@ public class IngestNotesTests
         const string line =
             "{\"task_id\":\"nested\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
             "\"consent\":{\"sms_opt_in\":true},\"channel_preferences\":[\"sms\"]," +
-            "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\",\"unit\":\"A-204\"}," +
+            "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\",\"source\":\"web\"}," +
             "\"assertions\":{\"required_states\":[]}}";
 
         IngestNotes notes = IngestNotes.Describe(Parse(line));
@@ -88,7 +88,7 @@ public class IngestNotesTests
             "thresholds.safety_violations_max",
         ];
         Assert.Equal(expectedDefaulted, notes.DefaultedFields);
-        Assert.Equal(["input.unit"], notes.UnknownMembers);
+        Assert.Equal(["input.source"], notes.UnknownMembers);
     }
 
     // A blank value is treated as absent by TemplateMessageComposer.Present, so it must be
@@ -129,8 +129,8 @@ public class IngestNotesTests
         string line = FullLine
             .Replace("\"persona\":\"prospect\"", "\"persona\":\"prospect\",\"campaign\":\"spring\"")
             .Replace("\"voice_opt_in\":false", "\"voice_opt_in\":false,\"fax_opt_in\":true")
-            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
-            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"budget_max\":1700")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"source\":\"web\"")
+            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"parking_spaces\":2")
             .Replace("\"required_states\":[]", "\"required_states\":[],\"notes\":\"x\"")
             .Replace("\"primary_cta\":\"book_tour\"", "\"primary_cta\":\"book_tour\",\"respect_consent\":true")
             .Replace("\"safety_violations_max\":0", "\"safety_violations_max\":0,\"locale_accuracy_min\":0.95");
@@ -141,8 +141,8 @@ public class IngestNotesTests
         [
             "campaign",
             "consent.fax_opt_in",
-            "input.unit",
-            "input.profile.budget_max",
+            "input.source",
+            "input.profile.parking_spaces",
             "assertions.notes",
             "assertions.constraints.respect_consent",
             "thresholds.locale_accuracy_min",

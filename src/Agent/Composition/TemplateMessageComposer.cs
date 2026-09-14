@@ -41,7 +41,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
         // and an email always carries a link when the record states a property to build one
         // from. Only the content comes from the catalog and the language set.
         bool isEmail = channel == CommunicationChannel.Email;
-        Uri? link = isEmail ? PropertyLink.For(propertyName, callToAction.LinkPath) : null;
+        Uri? link = isEmail ? PropertyLink.For(propertyName, callToAction.LinkPath, context.Unit) : null;
         IReadOnlyList<string> optionTexts = templates.SmsOptions(callToAction.Type);
 
         string body = isEmail

@@ -117,7 +117,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             ? CheckResult.NotMeasured
             : Verdict(actual.Cta?.Type == expectedCtaType);
 
-        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual);
+        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual, expectedMessage?.Cta?.Link);
 
         // Tokenized once and shared: BodyLanguage and Personalization both check words
         // drawn from the same message text.
@@ -192,11 +192,15 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     }
 
     // A10: sms carries reply options, email carries a link; any other channel has no
-    // payload rule in the evidence.
-    private static CheckResult ScoreCtaPayload(NextMessage message) => message.Channel switch
+    // payload rule in the evidence. An email's link is compared with the label's when the label
+    // states one, since a link that points at the wrong page is a wrong fact however present it
+    // is; a label with no link leaves presence as the one thing to measure. The whole absolute URI
+    // is compared, host included, after Uri has lowercased the scheme and the host.
+    private static CheckResult ScoreCtaPayload(NextMessage message, Uri? expectedLink) => message.Channel switch
     {
         CommunicationChannel.Sms => Verdict(message.Cta?.Options is { Count: > 0 }),
-        CommunicationChannel.Email => Verdict(message.Cta?.Link is not null),
+        CommunicationChannel.Email => Verdict(
+            message.Cta?.Link is { } link && (expectedLink is null || string.Equals(link.AbsoluteUri, expectedLink.AbsoluteUri, StringComparison.Ordinal))),
         _ => CheckResult.NotMeasured,
     };
 

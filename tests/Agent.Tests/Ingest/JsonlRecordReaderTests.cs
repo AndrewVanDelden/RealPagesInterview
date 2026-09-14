@@ -234,8 +234,8 @@ public class JsonlRecordReaderTests
     {
         string lineWithExtras = MinimalValidLine
             .Replace("\"persona\":\"prospect\"", "\"persona\":\"prospect\",\"campaign\":\"spring\"")
-            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
-            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"budget_max\":1700")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"source\":\"web\"")
+            .Replace("\"first_name\":\"Taylor\"", "\"first_name\":\"Taylor\",\"parking_spaces\":2")
             .Replace("\"primary_cta\":\"book_tour\"", "\"primary_cta\":\"book_tour\",\"respect_consent\":true")
             .Replace("\"safety_violations_max\":0", "\"safety_violations_max\":0,\"locale_accuracy_min\":0.95");
         using TextReader reader = new StringReader(lineWithExtras + Environment.NewLine);
@@ -243,8 +243,8 @@ public class JsonlRecordReaderTests
         ProspectCase parsedCase = Assert.Single(Reader.ReadAll(reader)).Value;
 
         Assert.Equal("spring", parsedCase.UnknownMembers!["campaign"].GetString());
-        Assert.Equal("A-204", parsedCase.Input!.UnknownMembers!["unit"].GetString());
-        Assert.Equal(1700, parsedCase.Input.Profile!.UnknownMembers!["budget_max"].GetInt32());
+        Assert.Equal("web", parsedCase.Input!.UnknownMembers!["source"].GetString());
+        Assert.Equal(2, parsedCase.Input.Profile!.UnknownMembers!["parking_spaces"].GetInt32());
         Assert.True(parsedCase.Assertions!.Constraints!.UnknownMembers!["respect_consent"].GetBoolean());
         Assert.Equal(0.95, parsedCase.Thresholds!.UnknownMembers!["locale_accuracy_min"].GetDouble());
     }

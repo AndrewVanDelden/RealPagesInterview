@@ -19,8 +19,14 @@ public sealed record RecordScore(
     double? LatencyMs,
     string? ScoringError = null,
     CheckResult ActionSemantic = CheckResult.NotMeasured,
-    CheckResult BodySemantic = CheckResult.NotMeasured)
+    CheckResult BodySemantic = CheckResult.NotMeasured,
+    string? JudgeReason = null)
 {
+    // The judge's grades and its reason on this row: the one rule a live run's fold and a
+    // replay's JudgeAsync both apply, so the two paths cannot put a verdict on a row differently.
+    public RecordScore WithJudgement(JudgeVerdict verdict) =>
+        this with { ActionSemantic = verdict.ActionSemantic, BodySemantic = verdict.BodySemantic, JudgeReason = verdict.Reason };
+
     // A record passes when it was scored and no deterministic check failed; a check that
     // was not measured neither passes nor fails it. The judge's two checks are deliberately
     // not here (playbook step 31): a model's opinion is one signal beside the
