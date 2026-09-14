@@ -3,11 +3,12 @@ using Agent.Common;
 
 namespace Agent.Composition;
 
-// One call to action: the type that goes on the wire and the path an email link ends in
-// (A9, A21). The sms reply options are not here: they are prose, so they live in the
-// language sets with the rest of the words a person reads, and one list in one place is the
-// point of a table.
-internal sealed record CallToAction(string Type, string LinkPath);
+// One call to action: the type that goes on the wire, the path an email link ends in (A9, A21),
+// and the purpose the model is told the message serves, a decision code owns like the type and
+// null for a call to action no label shows. The sms reply options are not here: they are prose,
+// so they live in the language sets with the rest of the words a person reads, and one list in
+// one place is the point of a table.
+internal sealed record CallToAction(string Type, string LinkPath, string? Purpose = null);
 
 // Playbook step 42: the call-to-action vocabulary in one table. Nothing else in the
 // program spells a call-to-action type or a link path. The payload shape stays the channel's
@@ -20,7 +21,7 @@ internal static class CallToActionCatalog
     public static readonly CallToAction Generic = new("reply", "reply");
 
     // Sample 2's link, https://oakridge.example/tour, gives the tour its path.
-    private static readonly CallToAction ScheduleTour = new("schedule_tour", "tour");
+    private static readonly CallToAction ScheduleTour = new("schedule_tour", "tour", "invite the prospect to book a tour");
 
     // The rows a record's primary_cta names: a wire type that differs from it, a link path the
     // generic row does not have, or both. The two sms rows show no link in their labels, so they
@@ -30,11 +31,20 @@ internal static class CallToActionCatalog
         new Dictionary<string, CallToAction>(StringComparer.Ordinal)
         {
             ["book_tour"] = ScheduleTour,
-            ["reschedule_tour"] = new("reschedule", Generic.LinkPath),     // prospect_no_show_reengage
-            ["reply_intent"] = new("intent_capture", Generic.LinkPath),    // resident_renewal_undecided_followup
-            ["get_started"] = new("get_started", "welcome"),               // resident_welcome_day0
-            ["enroll_loyalty"] = new("enroll_loyalty", "loyalty"),         // resident_loyalty_engage
-            ["review_renewal"] = new("review_renewal", $"renewal/{PropertyLink.UnitSegment}"), // resident_renewal_90day_notice
+            // prospect_no_show_reengage
+            ["reschedule_tour"] = new("reschedule", Generic.LinkPath, "offer to reschedule the tour the prospect missed"),
+
+            // resident_renewal_undecided_followup
+            ["reply_intent"] = new("intent_capture", Generic.LinkPath, "ask directly whether the resident wants to renew their unit"),
+
+            // resident_welcome_day0
+            ["get_started"] = new("get_started", "welcome", "ask the resident to complete each feature in features_enablement before move-in"),
+
+            // resident_loyalty_engage
+            ["enroll_loyalty"] = new("enroll_loyalty", "loyalty", "invite the resident to enroll in the loyalty program"),
+
+            // resident_renewal_90day_notice
+            ["review_renewal"] = new("review_renewal", $"renewal/{PropertyLink.UnitSegment}", "ask the resident to review their renewal offer"),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     // A record with no primary_cta at these personas and stages gets the stage's own call to
@@ -46,7 +56,10 @@ internal static class CallToActionCatalog
         new Dictionary<(string Persona, string LifecycleStage), CallToAction>
         {
             [("prospect", "new")] = ScheduleTour,
-            [("resident", "renewal_details_requested")] = new("review_renewal_details", $"renewal/{PropertyLink.UnitSegment}/details"),
+            [("resident", "renewal_details_requested")] = new(
+                "review_renewal_details",
+                $"renewal/{PropertyLink.UnitSegment}/details",
+                "give the resident their renewal details and ask whether they are ready to continue"),
         }.ToFrozenDictionary();
 
     // O(1): at most one hash lookup. A stated primary_cta wins: the table's row, or the value

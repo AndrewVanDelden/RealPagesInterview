@@ -105,7 +105,7 @@ public class ScorecardTests
             Channel: CheckResult.Passed,
             SendAtDay: CheckResult.Failed,
             SendAtHour: CheckResult.NotMeasured,
-            NextActionType: CheckResult.Passed,
+            NextActionMatch: CheckResult.Passed,
             OptOut: CheckResult.Failed,
             CtaType: CheckResult.NotMeasured,
             CtaPayload: CheckResult.Passed,
@@ -118,7 +118,7 @@ public class ScorecardTests
         Assert.Equal(CheckResult.Passed, score.ResultOf(EvaluationCheck.Channel));
         Assert.Equal(CheckResult.Failed, score.ResultOf(EvaluationCheck.SendAtDay));
         Assert.Equal(CheckResult.NotMeasured, score.ResultOf(EvaluationCheck.SendAtHour));
-        Assert.Equal(CheckResult.Passed, score.ResultOf(EvaluationCheck.NextActionType));
+        Assert.Equal(CheckResult.Passed, score.ResultOf(EvaluationCheck.NextActionMatch));
         Assert.Equal(CheckResult.Failed, score.ResultOf(EvaluationCheck.OptOut));
         Assert.Equal(CheckResult.NotMeasured, score.ResultOf(EvaluationCheck.CtaType));
         Assert.Equal(CheckResult.Passed, score.ResultOf(EvaluationCheck.CtaPayload));

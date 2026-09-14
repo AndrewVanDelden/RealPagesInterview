@@ -156,12 +156,12 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
             "body_matches: does the candidate message make the same offer, ask for the same next step, " +
             "and state the same facts as the reference message?\n" +
             "<reference>\n" +
-            $"next_action: {expected.NextAction.Type}\n" +
+            $"next_action: {JsonSerializer.Serialize(expected.NextAction, AgentJsonOptions.Default)}\n" +
             $"subject: {Describe(expected.NextMessage?.Subject)}\n" +
             $"body: {Describe(referenceBody)}\n" +
             "</reference>\n" +
             "<candidate>\n" +
-            $"next_action: {output.NextAction.Type}\n" +
+            $"next_action: {JsonSerializer.Serialize(output.NextAction, AgentJsonOptions.Default)}\n" +
             $"subject: {Describe(output.NextMessage?.Subject)}\n" +
             $"body: {Describe(candidateBody)}\n" +
             "</candidate>";

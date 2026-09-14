@@ -87,7 +87,8 @@ public static class RulesFileLoader
                     entry.Persona ?? string.Empty,
                     entry.LifecycleStage ?? string.Empty,
                     Stated(entry.ShortHorizonAction),
-                    Stated(entry.LongHorizonAction))));
+                    Stated(entry.LongHorizonAction),
+                    Stated(entry.NoMoveDateAction))));
             }
             else
             {

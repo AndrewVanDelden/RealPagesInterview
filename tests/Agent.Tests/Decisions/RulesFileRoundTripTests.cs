@@ -62,6 +62,7 @@ public class RulesFileRoundTripTests
                         row.LifecycleStage,
                         ShortHorizonAction = StatedOrNull(row.ShortHorizonAction),
                         LongHorizonAction = StatedOrNull(row.LongHorizonAction),
+                        NoMoveDateAction = StatedOrNull(row.NoMoveDateAction),
                     }),
                 },
                 SendSlots = SendSlotTable.Default.Rows.Select(row => new

@@ -14,7 +14,7 @@ public static class ScorecardFormatter
         (EvaluationCheck.Channel, "Channel"),
         (EvaluationCheck.SendAtDay, "Day"),
         (EvaluationCheck.SendAtHour, "Hour"),
-        (EvaluationCheck.NextActionType, "Action"),
+        (EvaluationCheck.NextActionMatch, "Action"),
         (EvaluationCheck.OptOut, "OptOut"),
         (EvaluationCheck.CtaType, "CTA"),
         (EvaluationCheck.CtaPayload, "Payload"),

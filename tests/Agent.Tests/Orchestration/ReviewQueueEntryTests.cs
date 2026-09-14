@@ -51,7 +51,7 @@ public class ReviewQueueEntryTests
     [Fact]
     public void For_GenericRowNoMatch_NamesThePersonaStageAndAction()
     {
-        ReviewQueueEntry entry = ReviewQueueEntry.For(Unseen, Run(new ActionPlanNotes(HorizonBranch.Long, null, ActionSource.GenericRowNoMatch))).Value;
+        ReviewQueueEntry entry = ReviewQueueEntry.For(Unseen, Run(new ActionPlanNotes(HorizonBranch.NoMoveDate, null, ActionSource.GenericRowNoMatch))).Value;
 
         Assert.Equal(Unseen.TaskId, entry.TaskId);
         Assert.Equal([ReviewReason.GenericRowNoMatch], entry.Reasons);
@@ -120,7 +120,7 @@ public class ReviewQueueEntryTests
     {
         ProspectCase open = SampleProspectCases.Minimal(lifecycleStage: "open");
         ReviewQueueEntry noBranch = ReviewQueueEntry.For(open, Run(new ActionPlanNotes(HorizonBranch.Short, 12, ActionSource.GenericRowNoBranch))).Value;
-        ReviewQueueEntry noMatch = ReviewQueueEntry.For(Unseen, Run(new ActionPlanNotes(HorizonBranch.Long, null, ActionSource.GenericRowNoMatch))).Value;
+        ReviewQueueEntry noMatch = ReviewQueueEntry.For(Unseen, Run(new ActionPlanNotes(HorizonBranch.NoMoveDate, null, ActionSource.GenericRowNoMatch))).Value;
 
         using JsonDocument noBranchRow = JsonDocument.Parse(JsonSerializer.Serialize(noBranch, AgentJsonOptions.Default));
         using JsonDocument noMatchRow = JsonDocument.Parse(JsonSerializer.Serialize(noMatch, AgentJsonOptions.Default));

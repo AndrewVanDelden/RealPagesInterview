@@ -93,7 +93,8 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             throw new TimeoutException($"OpenAI call exceeded its budget of {callBudget}.", ex);
         }
 
-        // A call that returned was sent at least once, so this is never negative.
+        // A call that returned was sent at least once, so this is never negative. Read before the
+        // content, so a response with no choice carries the retries that came before it.
         int retries = callAttempts.Value - 1;
 
         string content;
@@ -113,7 +114,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             // can bill a response with no choice: the tokens ride on the exception, because they
             // have nowhere else to travel once this throws.
             ChatTokenUsage? noChoiceUsage = result.Value.Usage;
-            throw new NoCompletionChoiceException(noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0, ex);
+            throw new NoCompletionChoiceException(noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0, retries, ex);
         }
 
         // The measured cost of the call, read off the vendor's own usage block. Confirmed

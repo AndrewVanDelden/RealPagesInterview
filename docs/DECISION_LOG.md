@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D97, which change the model prompt, the links and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed on `sprint-16` before D94, by the owner's account of 2026-09-13; after D97, `.\test.ps1` passes 108 and 694 tests at 100 percent, running `sample.jsonl`, `holdout_12.jsonl` and `synthetic_12.jsonl` offline. `synthetic_v2.jsonl` was not re-run.
-Next step: the Sprint 16 PR against `dev`, then one full hold-out run with every flag, and the per-record results written from it.
-Open decisions: D98.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D103, which change the prompt, the links, the planner, the property facts and the scorer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-13: `.\test.ps1` passes 112 and 774 tests at 100 percent, running all four sets offline on the template composer, and each set's template run exits 0 or 2 as documented.
+Next step: merge PR #36 into `dev` after the owner's narration of one record, with the full runs of `holdout_12.jsonl` and `synthetic_v2.jsonl` reported beside it.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -141,10 +141,11 @@ and PR #33's review findings were fixed, all run and debug facts.
 value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
 tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.
 
-**D94 to D98, Sprint 16 continued (2026-09-13).** The owner's hold-out run of 2026-09-11 scored
-every decision 12 of 12, the judge failed all 11 message bodies, and the payload check passed four
-wrong resident links. The payload check now compares an email's link with the label's (D94); the
-judge's reason reaches the report and the diagnostics row, and its tokens get their own line (D95);
-the prompt carries ten stage facts as typed members, the link, the language set's reply options and
-a rule against invented facts (D96); and a resident's link is built from the record, unit included
-(D97). D98, a no-choice call's retry count, is open.
+**D94 to D103, Sprint 16 continued (2026-09-13).** The hold-out run of 2026-09-11 scored every
+decision 12 of 12 and failed every message body on the judge. The payload check compares the
+label's link and options (D94, D100) and the action check every stated member (D99); the judge's
+reason and tokens are kept (D95); the prompt carries the stage's facts, the link, the reply options
+and each call to action's purpose (D96, D103); resident links are built from the record (D97); a
+no-choice call keeps its retries (D98); property facts come from `--property-data` (D101); and no
+move date is its own horizon branch (D102). The stricter checks re-pinned both synthetic sets, a run
+and debug fact.

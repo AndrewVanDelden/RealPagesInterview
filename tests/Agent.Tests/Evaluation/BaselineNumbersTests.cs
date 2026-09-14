@@ -11,8 +11,11 @@ namespace Agent.Tests.Evaluation;
 // fitted to, so a number that rises is recorded here and in README.md together, never chased.
 // The template composer runs on every set with the set's documented reference time; latency
 // is not measured in the suite. A line that did not parse is a row of the report too, so the
-// overall pinned here is the one the CLI prints. synthetic_12.jsonl's line 11 is the only
-// such line on any set, and its 12/13 is a deliberate drop, not a regression.
+// overall pinned here is the one the CLI prints. synthetic_12.jsonl's line 11 and
+// synthetic_v2.jsonl's line 15 are malformed on purpose. The action check compares every member a
+// label states and the payload check compares the label's link and options, so the two synthetic
+// sets read lower than they did under type-only and presence-only checks: those are the honest
+// numbers of stricter checks, re-pinned deliberately, not regressions.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -29,8 +32,13 @@ public class BaselineNumbersTests
     [InlineData(
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",
-        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 12/12, OptOut 10/10, CTA 10/10, Payload 10/10, Lang 10/10, Safety 12/12, Personalization 9/9",
-        "Overall: 12/13 passed")]
+        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 11/12, OptOut 10/10, CTA 10/10, Payload 8/10, Lang 10/10, Safety 12/12, Personalization 9/9",
+        "Overall: 9/13 passed")]
+    [InlineData(
+        "synthetic_v2.jsonl",
+        "2026-10-24T22:00:00Z",
+        "Checks: Channel 25/29, Day 24/26, Hour 19/26, Action 12/29, OptOut 26/26, CTA 23/24, Payload 8/25, Lang 23/23, Safety 29/29, Personalization 26/26",
+        "Overall: 1/30 passed")]
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {
         IReadOnlyList<ProspectCase> cases = RealAgentFactory.ReadCases(fileName);

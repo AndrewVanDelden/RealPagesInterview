@@ -16,8 +16,8 @@ public class ActionCatalogTests
     private static readonly NextAction FollowUp = new(ActionTypes.FollowUpInDays, Value: 3);
     private static readonly GenericActionRow Generic = new(Cadence, FollowUp);
 
-    private static ActionCatalogRow Row(string persona, string stage, Option<NextAction> shortHorizon, Option<NextAction> longHorizon) =>
-        new(persona, stage, shortHorizon, longHorizon);
+    private static ActionCatalogRow Row(string persona, string stage, Option<NextAction> shortHorizon, Option<NextAction> longHorizon, Option<NextAction>? noMoveDate = null) =>
+        new(persona, stage, shortHorizon, longHorizon, noMoveDate ?? Option<NextAction>.None());
 
     private static ActionCatalog CatalogOf(params ActionCatalogRow[] rows) =>
         ActionCatalog.Create(Generic, rows).Value;
@@ -237,6 +237,7 @@ public class ActionCatalogTests
     [Theory]
     [InlineData("prospect", "open", HorizonBranch.Short)]
     [InlineData("resident", "renewal_window", HorizonBranch.Short)]
+    [InlineData("resident", "renewal_window", HorizonBranch.Long)]
     public void Default_UnobservedBranchOfAKnownRow_ComesFromTheGenericRow(string persona, string stage, HorizonBranch branch)
     {
         ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, branch);
@@ -244,23 +245,97 @@ public class ActionCatalogTests
         Assert.Equal(ActionSource.GenericRowNoBranch, match.Source);
     }
 
-    // The hold-out's rows. None of these records states a move date, so each takes the long
-    // branch, and the long branch is the only one its row states.
+    // No move date is its own branch, and a row that does not state it falls to the generic row,
+    // which answers it with its long action: no record showed the generic row a third value.
+    [Fact]
+    public void Resolve_NoMoveDateBranchTheRowDoesNotState_GenericRowAnswersWithItsLongAction()
+    {
+        ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
+
+        ActionCatalogMatch match = catalog.Resolve("prospect", "new", HorizonBranch.NoMoveDate);
+
+        Assert.Equal(FollowUp, match.Action);
+        Assert.Equal(ActionSource.GenericRowNoBranch, match.Source);
+    }
+
+    [Fact]
+    public void Create_RowWithNonPositiveValuesOnTheNoMoveDateBranch_NamesThem()
+    {
+        Result<ActionCatalog> result = ActionCatalog.Create(
+            Generic,
+            [
+                Row("resident", "renewal_window", Option<NextAction>.None(), Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.ScheduleSmsReminder, InDays: 0))),
+                Row("resident", "welcome", Option<NextAction>.None(), Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: -2))),
+            ]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(
+            [
+                "Catalog row 1 (resident/renewal_window): no move date action in_days 0 must be positive.",
+                "Catalog row 2 (resident/welcome): no move date action value -2 must be positive.",
+            ],
+            result.Error.Split(Environment.NewLine));
+    }
+
+    // Sample 2 is the one prospect/open record with a date more than 45 days out.
+    [Fact]
+    public void Default_ProspectOpenOnTheLongBranch_ComesFromItsRow()
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", "open", HorizonBranch.Long);
+
+        Assert.Equal(new NextAction(ActionTypes.FollowUpInDays, Value: 3), match.Action);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // The hold-out's rows. None of these records states a move date, so each sets its row's
+    // no-move-date branch, the only branch its row states apart from prospect/open's sample 2.
     [Theory]
     [InlineData("prospect", "new", ActionTypes.StartCadence, "prospect_welcome_long_horizon", null)]
+    [InlineData("prospect", "open", ActionTypes.FollowUpInDays, null, 2)]
     [InlineData("prospect", "no_show", ActionTypes.ResetCadence, "prospect_reengage", null)]
     [InlineData("prospect", "cancelled_manager", ActionTypes.FollowUpInDays, null, 2)]
-    [InlineData("resident", "renewal_window", ActionTypes.ScheduleSmsReminder, null, null)]
-    [InlineData("resident", "renewal_undecided", ActionTypes.BranchOnIntent, null, null)]
     [InlineData("resident", "welcome", ActionTypes.FollowUpInDays, null, 2)]
     [InlineData("resident", "loyalty_engage", ActionTypes.FollowUpInDays, null, 5)]
     [InlineData("resident", "renewal_details_requested", ActionTypes.StartEsignFlow, null, null)]
-    public void Default_HoldOutStageOnTheLongBranch_ComesFromItsRow(string persona, string stage, string type, string? name, int? value)
+    public void Default_HoldOutStageWithNoMoveDate_ComesFromItsRow(string persona, string stage, string type, string? name, int? value)
     {
-        ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, HorizonBranch.Long);
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, HorizonBranch.NoMoveDate);
 
         Assert.Equal(new NextAction(type, name, value), match.Action);
         Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // The two hold-out actions whose labels state more than a type and a name or value: the text
+    // reminder's day count and the reply-to-action mapping.
+    [Fact]
+    public void Default_RenewalReminderAndIntentBranch_CarryTheMembersTheirLabelsState()
+    {
+        ActionCatalogMatch reminder = ActionCatalog.Default.Resolve("resident", "renewal_window", HorizonBranch.NoMoveDate);
+        ActionCatalogMatch intent = ActionCatalog.Default.Resolve("resident", "renewal_undecided", HorizonBranch.NoMoveDate);
+
+        Assert.Equal(new NextAction(ActionTypes.ScheduleSmsReminder, InDays: 5), reminder.Action);
+        Assert.Equal(
+            new NextAction(
+                ActionTypes.BranchOnIntent,
+                Mapping: new Dictionary<string, string> { ["yes"] = "start_esign_flow", ["no"] = "exit_nurture", ["details"] = "send_offer_details_email" }),
+            intent.Action);
+    }
+
+    // Two mappings with the same entries are the same action whatever order they were written in,
+    // and a different target is a different action.
+    [Fact]
+    public void NextAction_Mappings_CompareByTheirEntries()
+    {
+        var written = new NextAction(ActionTypes.BranchOnIntent, Mapping: new Dictionary<string, string> { ["yes"] = "a", ["no"] = "b" });
+        var reordered = new NextAction(ActionTypes.BranchOnIntent, Mapping: new Dictionary<string, string> { ["no"] = "b", ["yes"] = "a" });
+        var retargeted = new NextAction(ActionTypes.BranchOnIntent, Mapping: new Dictionary<string, string> { ["yes"] = "a", ["no"] = "c" });
+
+        Assert.Equal(written, reordered);
+        Assert.Equal(written.GetHashCode(), reordered.GetHashCode());
+        Assert.NotEqual(written, retargeted);
+        Assert.NotEqual(written, new NextAction(ActionTypes.BranchOnIntent));
+        Assert.NotEqual(written, new NextAction(ActionTypes.BranchOnIntent, Mapping: new Dictionary<string, string> { ["yes"] = "a" }));
+        Assert.False(written.Equals(null));
     }
 
     [Fact]

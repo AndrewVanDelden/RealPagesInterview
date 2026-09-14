@@ -17,7 +17,8 @@ internal sealed record RulesFileCatalogRow(
     string? Persona = null,
     string? LifecycleStage = null,
     NextAction? ShortHorizonAction = null,
-    NextAction? LongHorizonAction = null);
+    NextAction? LongHorizonAction = null,
+    NextAction? NoMoveDateAction = null);
 
 // A send-slot row as the file states it. Every member may be absent here so the loader can name
 // each one that is; the local time is 24-hour "HH:mm", the minute being the slot's grain.

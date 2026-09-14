@@ -25,6 +25,10 @@ public sealed class ActionCatalog
 {
     private const string GenericRowLabel = "Generic catalog row";
 
+    private const string ShortBranchLabel = "short horizon";
+    private const string LongBranchLabel = "long horizon";
+    private const string NoMoveDateBranchLabel = "no move date";
+
     private readonly FrozenDictionary<(string Persona, string LifecycleStage), ActionCatalogRow> _rowsByKey;
 
     private ActionCatalog(
@@ -43,32 +47,39 @@ public sealed class ActionCatalog
     public IReadOnlyList<ActionCatalogRow> Rows { get; }
 
     // The rows the labeled records have evidence for, plus the generic row of A8. A row states
-    // only the branch its record showed; the other branch falls to the generic row. Every
-    // hold-out record below states no move date, so each sets its row's long branch (A7).
+    // only the branches its records showed; any other branch falls to the generic row. Every
+    // hold-out record below states no move date, so each sets its row's no-move-date branch (A7).
     public static ActionCatalog Default { get; } = Create(
         new GenericActionRow(
             new NextAction(ActionTypes.StartCadence, "prospect_welcome_short_horizon"),
             new NextAction(ActionTypes.FollowUpInDays, Value: 3)),
         [
-            // Short: sample 1, 32 days out. Long: hold-out prospect_consent_block_sms_fallback_email,
-            // whose label names the cadence for the long horizon.
+            // Short: sample 1, 32 days out. No move date: hold-out
+            // prospect_consent_block_sms_fallback_email, whose label names the long-horizon
+            // cadence. That cadence is also the long branch's: its name states the horizon it is
+            // for, and a prospect whose move is months away belongs in a nurture sequence, not in
+            // the generic row's short follow-up.
             new ActionCatalogRow(
                 "prospect",
                 "new",
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_short_horizon")),
+                Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon")),
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"))),
 
-            // Sample 2, 68 days out.
+            // Long: sample 2, 68 days out. No move date: hold-out prospect_spanish_locale, followed
+            // up sooner because the timeline is not yet qualified.
             new ActionCatalogRow(
                 "prospect",
                 "open",
                 Option<NextAction>.None(),
-                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 3))),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 3)),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
 
             // Hold-out prospect_no_show_reengage.
             new ActionCatalogRow(
                 "prospect",
                 "no_show",
+                Option<NextAction>.None(),
                 Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.ResetCadence, "prospect_reengage"))),
 
@@ -77,28 +88,37 @@ public sealed class ActionCatalog
                 "prospect",
                 "cancelled_manager",
                 Option<NextAction>.None(),
+                Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
 
-            // Hold-out resident_renewal_90day_notice. Its label also states in_days 5, which
-            // NextAction has no member for, so the reminder's day count is not emitted.
+            // Hold-out resident_renewal_90day_notice: the text reminder in 5 days.
             new ActionCatalogRow(
                 "resident",
                 "renewal_window",
                 Option<NextAction>.None(),
-                Option<NextAction>.Some(new NextAction(ActionTypes.ScheduleSmsReminder))),
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.ScheduleSmsReminder, InDays: 5))),
 
-            // Hold-out resident_renewal_undecided_followup. Its label also states the reply
-            // mapping, which NextAction has no member for, so the mapping is not emitted.
+            // Hold-out resident_renewal_undecided_followup: the action each reply leads to.
             new ActionCatalogRow(
                 "resident",
                 "renewal_undecided",
                 Option<NextAction>.None(),
-                Option<NextAction>.Some(new NextAction(ActionTypes.BranchOnIntent))),
+                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(
+                    ActionTypes.BranchOnIntent,
+                    Mapping: new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["yes"] = "start_esign_flow",
+                        ["no"] = "exit_nurture",
+                        ["details"] = "send_offer_details_email",
+                    }))),
 
             // Hold-out resident_welcome_day0.
             new ActionCatalogRow(
                 "resident",
                 "welcome",
+                Option<NextAction>.None(),
                 Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
 
@@ -107,12 +127,14 @@ public sealed class ActionCatalog
                 "resident",
                 "loyalty_engage",
                 Option<NextAction>.None(),
+                Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 5))),
 
             // Hold-out resident_renewal_details_branch_email.
             new ActionCatalogRow(
                 "resident",
                 "renewal_details_requested",
+                Option<NextAction>.None(),
                 Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartEsignFlow))),
         ]).Value;
@@ -129,7 +151,7 @@ public sealed class ActionCatalog
     internal static Result<ActionCatalog> Create(Result<GenericActionRow> genericRow, IReadOnlyList<(int Position, ActionCatalogRow Row)> rows)
     {
         List<string> failures = genericRow.IsSuccess
-            ? [.. ActionFailures(GenericRowLabel, "short", genericRow.Value.ShortHorizonAction), .. ActionFailures(GenericRowLabel, "long", genericRow.Value.LongHorizonAction)]
+            ? [.. ActionFailures(GenericRowLabel, ShortBranchLabel, genericRow.Value.ShortHorizonAction), .. ActionFailures(GenericRowLabel, LongBranchLabel, genericRow.Value.LongHorizonAction)]
             : [genericRow.Error];
 
         var byKey = new Dictionary<(string Persona, string LifecycleStage), (int Position, ActionCatalogRow Row)>();
@@ -154,8 +176,9 @@ public sealed class ActionCatalog
                 failures.Add($"{label}: duplicates catalog row {byKey[key].Position}.");
             }
 
-            failures.AddRange(StatedActionFailures(label, "short", row.ShortHorizonAction));
-            failures.AddRange(StatedActionFailures(label, "long", row.LongHorizonAction));
+            failures.AddRange(StatedActionFailures(label, ShortBranchLabel, row.ShortHorizonAction));
+            failures.AddRange(StatedActionFailures(label, LongBranchLabel, row.LongHorizonAction));
+            failures.AddRange(StatedActionFailures(label, NoMoveDateBranchLabel, row.NoMoveDateAction));
         }
 
         return failures.Count == 0
@@ -199,19 +222,24 @@ public sealed class ActionCatalog
 
     // The deleted NextActionPlannerOptions threw when its follow-up-days setting was not
     // positive; Create is the row's replacement gate, so the same guarantee lives here
-    // instead of at a caller that could forget it.
+    // instead of at a caller that could forget it, and a reminder's day count holds to it too.
     private static List<string> ActionFailures(string label, string branch, NextAction action)
     {
         List<string> failures = [];
 
         if (!ActionTypes.All.Contains(action.Type))
         {
-            failures.Add($"{label}: {branch} horizon action type '{action.Type}' is unknown.");
+            failures.Add($"{label}: {branch} action type '{action.Type}' is unknown.");
         }
 
         if (action.Value is { } value && value <= 0)
         {
-            failures.Add($"{label}: {branch} horizon action value {value} must be positive.");
+            failures.Add($"{label}: {branch} action value {value} must be positive.");
+        }
+
+        if (action.InDays is { } inDays && inDays <= 0)
+        {
+            failures.Add($"{label}: {branch} action in_days {inDays} must be positive.");
         }
 
         return failures;

@@ -331,6 +331,20 @@ public class SemanticJudgeTests
         Assert.Equal("the candidate never names the week", judged.RecordScores[0].JudgeReason);
     }
 
+    // The judge grades the action the way the exact check does, every member included, so it is
+    // shown both actions whole rather than their type names.
+    [Fact]
+    public async Task GradeAsync_UserPrompt_ShowsBothActionsWhole()
+    {
+        var fakeClient = new FakeCompletionClient(BothMatchJson);
+
+        await new SemanticJudge(fakeClient).GradeAsync(Run());
+
+        string[] actionLines = [.. fakeClient.LastUserPrompt!.Split('\n').Where(line => line.StartsWith("next_action: ", StringComparison.Ordinal))];
+        Assert.Equal(2, actionLines.Length);
+        Assert.All(actionLines, line => Assert.Equal("next_action: {\"type\":\"start_cadence\",\"name\":\"prospect_welcome_short_horizon\"}", line));
+    }
+
     // What grading cost is the evaluation's spend, so it is its own total on the scorecard, and
     // the batch's model cost, the product's spend, is carried through unchanged.
     [Fact]
@@ -375,7 +389,7 @@ public class SemanticJudgeTests
     [Fact]
     public async Task GradeAsync_CompletedCallHadNoChoice_CountsTheCompletedCallAndItsTokens()
     {
-        var judge = new SemanticJudge(new FakeCompletionClient(throwException: new NoCompletionChoiceException(11, 7, new ArgumentOutOfRangeException())));
+        var judge = new SemanticJudge(new FakeCompletionClient(throwException: new NoCompletionChoiceException(11, 7, 0, new ArgumentOutOfRangeException())));
 
         JudgeVerdict verdict = await judge.GradeAsync(Run());
 

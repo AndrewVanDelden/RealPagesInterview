@@ -39,7 +39,7 @@ public class RulesFileLoaderTests
               "action_catalog": {
                 "generic_row": {{ValidGenericRow}},
                 "rows": [
-                  { "persona": "prospect", "lifecycle_stage": "toured", "short_horizon_action": null, "long_horizon_action": { "type": "reset_cadence", "name": "after_tour" } }
+                  { "persona": "prospect", "lifecycle_stage": "toured", "short_horizon_action": null, "long_horizon_action": { "type": "reset_cadence", "name": "after_tour" }, "no_move_date_action": { "type": "schedule_sms_reminder", "in_days": 2 } }
                 ]
               },
               "send_slots": [
@@ -51,6 +51,7 @@ public class RulesFileLoaderTests
         Assert.True(result.IsSuccess);
         DecisionRules rules = result.Value;
         Assert.Equal(new ActionCatalogMatch(new NextAction(ActionTypes.ResetCadence, "after_tour"), ActionSource.CatalogRow), rules.Catalog.Resolve("prospect", "toured", HorizonBranch.Long));
+        Assert.Equal(new ActionCatalogMatch(new NextAction(ActionTypes.ScheduleSmsReminder, InDays: 2), ActionSource.CatalogRow), rules.Catalog.Resolve("prospect", "toured", HorizonBranch.NoMoveDate));
         Assert.Equal(new ActionCatalogMatch(new NextAction(ActionTypes.StartCadence, "welcome"), ActionSource.GenericRowNoBranch), rules.Catalog.Resolve("prospect", "toured", HorizonBranch.Short));
         Assert.Equal(new ActionCatalogMatch(new NextAction(ActionTypes.FollowUpInDays, Value: 4), ActionSource.GenericRowNoMatch), rules.Catalog.Resolve("resident", "welcome", HorizonBranch.Long));
         Assert.Equal(new SendSlotRow("prospect", "toured", CommunicationChannel.Sms, 2, new TimeOnly(8, 45)), rules.SendSlots.Find("prospect", "toured", CommunicationChannel.Sms).Value);

@@ -353,6 +353,22 @@ public class OpenAiCompletionClientTests
         Assert.Equal(0, exception.OutputTokens);
     }
 
+    // A no-choice response that followed a transient retry made two attempts, and the retry is
+    // as real as the tokens, so it rides on the exception with them.
+    [Fact]
+    public async Task CompleteAsync_ResponseHasNoChoiceAfterATransientRetry_ThrowsWithTheRetryCount()
+    {
+        const string noChoiceJson = """{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""";
+        var handler = new FakeHttpMessageHandler((HttpStatusCode.ServiceUnavailable, "{}"), (HttpStatusCode.OK, noChoiceJson));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+
+        NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
+
+        Assert.Equal(1, exception.NetworkRetries);
+        Assert.Equal(2, handler.CallCount);
+    }
+
     // Cost in the diagnostics is measured tokens, never money, and the measurement is the
     // vendor's own usage block on the completion. Confirmed by reflection over the restored OpenAI
     // 2.13.0 assembly on 2026-09-09: ChatCompletion.Usage is a ChatTokenUsage with int

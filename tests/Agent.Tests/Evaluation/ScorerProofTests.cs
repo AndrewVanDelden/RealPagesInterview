@@ -30,7 +30,7 @@ public class ScorerProofTests
     [InlineData(EvaluationCheck.Channel)]
     [InlineData(EvaluationCheck.SendAtDay)]
     [InlineData(EvaluationCheck.SendAtHour)]
-    [InlineData(EvaluationCheck.NextActionType)]
+    [InlineData(EvaluationCheck.NextActionMatch)]
     [InlineData(EvaluationCheck.OptOut)]
     [InlineData(EvaluationCheck.CtaType)]
     [InlineData(EvaluationCheck.CtaPayload)]
@@ -68,7 +68,7 @@ public class ScorerProofTests
             EvaluationCheck.Channel => WithMessage(golden, message with { Channel = CommunicationChannel.Email }),
             EvaluationCheck.SendAtDay => WithMessage(golden, message with { SendAt = message.SendAt!.Value.AddDays(1) }),
             EvaluationCheck.SendAtHour => WithMessage(golden, message with { SendAt = message.SendAt!.Value.AddHours(1) }),
-            EvaluationCheck.NextActionType => golden with { Output = golden.Output with { NextAction = new NextAction("corrupted") } },
+            EvaluationCheck.NextActionMatch => golden with { Output = golden.Output with { NextAction = new NextAction("corrupted") } },
             EvaluationCheck.OptOut => WithMessage(golden, message with { Body = "Hi Taylor, welcome to Oak Ridge! Tours are available this week." }),
             EvaluationCheck.CtaType => WithMessage(golden, message with { Cta = message.Cta! with { Type = "corrupted" } }),
             EvaluationCheck.CtaPayload => WithMessage(golden, message with { Cta = new Cta(message.Cta!.Type) }),

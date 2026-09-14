@@ -72,6 +72,7 @@ public sealed class CliRunner(
         string? reviewQueuePath = GetOption(args, "--review-queue");
         string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
         string? rulesPath = GetOption(args, "--rules");
+        string? propertyDataPath = GetOption(args, "--property-data");
 
         // The judge is off unless it is asked for, so an offline run and every pinned baseline
         // never depend on a network call. It is a presence flag, not an option with a value:
@@ -101,7 +102,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--property-data <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -126,6 +127,14 @@ public sealed class CliRunner(
         if (rulesPath is not null && replayPath is not null)
         {
             error.WriteLine("--rules needs a run that plans: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A replay composes nothing and loads no offer, so property data could change nothing it
+        // reports. Refused for the same reason --rules is.
+        if (propertyDataPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--property-data needs a run that composes: it cannot be combined with --replay.");
             return CliExitCodes.UsageError;
         }
 
@@ -239,6 +248,21 @@ public sealed class CliRunner(
                 rules.SendSlots.Rows.Count);
         }
 
+        // The property data file, the stand-in for the property management system's feed, is read
+        // and checked at the same point and for the same reason as the rules file: a bad file costs
+        // no record, no model call and no partial output.
+        Result<PropertyData?> propertyDataLoad = LoadPropertyData(propertyDataPath);
+        if (ReportIfFailed(propertyDataLoad, log))
+        {
+            return CliExitCodes.UsageError;
+        }
+
+        PropertyData? propertyData = propertyDataLoad.Value;
+        if (propertyData is not null)
+        {
+            log.LogInformation("Property data loaded: {PropertyCount} property record(s).", propertyData.Properties.Count);
+        }
+
         // A model call is bounded by the strictest latency budget the records state, so the
         // model composer is built after a first pass over the file finds it. Nothing that costs
         // time or money has happened yet: reading the file is local, and a bad composer name or
@@ -250,7 +274,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget), propertyData),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -280,7 +304,8 @@ public sealed class CliRunner(
             safetyValidator,
             new SendScheduler(rules?.SendSlots),
             new NextActionPlanner(rules?.Catalog),
-            loggerFactory.CreateLogger<LeasingMessageAgent>());
+            loggerFactory.CreateLogger<LeasingMessageAgent>(),
+            propertyData);
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output, diagnostics or review-queue path (bad directory, no write permission) must fail
@@ -762,6 +787,29 @@ public sealed class CliRunner(
     private static Result<StreamReader> OpenInputReader(string flag, string path) =>
         TryOpen(flag, path, p => new StreamReader(p));
 
+    // No path is no property data, and no property fact is offered to the model. A path that will
+    // not open, or a file the loader refuses, fails the way --rules does.
+    // O(n) time and space in the file's length, the loader's cost.
+    private static Result<PropertyData?> LoadPropertyData(string? path)
+    {
+        if (path is null)
+        {
+            return Result<PropertyData?>.Success(null);
+        }
+
+        Result<StreamReader> opened = OpenInputReader("--property-data", path);
+        if (!opened.IsSuccess)
+        {
+            return Result<PropertyData?>.Failure(opened.Error);
+        }
+
+        using StreamReader reader = opened.Value;
+        Result<PropertyData> loaded = PropertyDataLoader.Load(reader);
+        return loaded.IsSuccess
+            ? Result<PropertyData?>.Success(loaded.Value)
+            : Result<PropertyData?>.Failure($"Could not load --property-data '{path}':{Environment.NewLine}{loaded.Error}");
+    }
+
     // No path is no rules file, and the compiled rules apply. A path that will not open fails
     // the way --input does; a file the loader refuses fails with a line naming the flag and
     // then the loader's failure, which already carries one line per bad row.
@@ -806,7 +854,7 @@ public sealed class CliRunner(
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
 
-    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
+    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout, PropertyData? propertyData)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
             ?? throw new InvalidOperationException(
@@ -821,7 +869,7 @@ public sealed class CliRunner(
             "Composer: openai, model {Model}. Call budget: {CallBudget}.", model, callBudgetDescription);
 
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
-        return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
+        return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>(), propertyData);
     }
 
     // Console goes through ConsoleLoggerProvider(error), not Microsoft.Extensions.Logging.Console's

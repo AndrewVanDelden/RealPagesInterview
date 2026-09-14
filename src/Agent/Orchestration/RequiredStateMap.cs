@@ -7,14 +7,15 @@ namespace Agent.Orchestration;
 // and any other name is recorded as one this program has no check for (A14). Keys are the
 // record's own strings, written verbatim (AgentJsonOptions sets no DictionaryKeyPolicy) and
 // compared ordinally: data values, not names this program coins, so the answer traces to the
-// assertion and a differently cased name is a different name with no check. No rule exists
-// beyond the three below: of the three hold-out records asserting renewal_offer_loaded, two
-// carry a renewal_offer_id and one does not, and no check scores a state, so nothing says what earns it.
+// assertion and a differently cased name is a different name with no check. renewal_offer_loaded
+// is earned by finding the record's renewal offer in the property data, which stands in for the
+// property management system that holds the offer.
 public static class RequiredStateMap
 {
     private const string ConsentVerifiedState = "consent_verified";
     private const string FairHousingCheckPassedState = "fair_housing_check_passed";
     private const string BrandStyleAppliedState = "brand_style_applied";
+    private const string RenewalOfferLoadedState = "renewal_offer_loaded";
 
     // An absent or empty list is a question with no items, so the answer is an empty map
     // rather than null: null would be indistinguishable from a run that never built one.
@@ -23,7 +24,8 @@ public static class RequiredStateMap
         IReadOnlyList<string?>? requiredStates,
         RequiredStateVerdict consentVerified,
         RequiredStateVerdict fairHousingCheckPassed,
-        RequiredStateVerdict brandStyleApplied)
+        RequiredStateVerdict brandStyleApplied,
+        RequiredStateVerdict renewalOfferLoaded)
     {
         var verdicts = new Dictionary<string, RequiredStateVerdict>(StringComparer.Ordinal);
 
@@ -45,6 +47,7 @@ public static class RequiredStateMap
                 ConsentVerifiedState => consentVerified,
                 FairHousingCheckPassedState => fairHousingCheckPassed,
                 BrandStyleAppliedState => brandStyleApplied,
+                RenewalOfferLoadedState => renewalOfferLoaded,
                 _ => RequiredStateVerdict.NoCheckDefined,
             };
         }

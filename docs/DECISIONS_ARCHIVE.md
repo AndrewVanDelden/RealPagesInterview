@@ -3106,11 +3106,124 @@ evidence shows, which A21 already refuses for an absent property name. Scopes:
 resident email labels of `holdout_12.jsonl`. Assumptions: A21, A26. Taken on the owner's
 instruction of 2026-09-13.
 
-**D98 (open). A no-completion-choice call keeps its retry count (proposed 2026-09-13).** Question:
+**D98. A no-completion-choice call keeps its retry count (taken 2026-09-13).** Question:
 the finding of 2026-09-11 above: `NoCompletionChoiceException` carries tokens and no retry count,
 so a no-choice call that followed a transient retry reports null retries. Options: (a) the
 exception carries the retries the client made, and the model composer's catch sets
 `NetworkRetries` from it, as every other completed-call exit does; (b) document the undercount in
 DESIGN.md. Recommendation: (a), the rule D66 set for spend applied to retries. Scopes: the
 completion client, the exception, the model composer and their tests. Evidence: that finding.
-Assumptions: none. Not taken.
+Assumptions: none. Taken on the owner's instruction of 2026-09-13 to finish Sprint 16.
+
+**D99. The action check compares every member the label states (taken 2026-09-13).** Question:
+the exact action check compares `next_action.type` only, and the judge is shown only the type. In
+the hold-out run of 2026-09-13 three records differ from their labels and pass both:
+`resident_renewal_90day_notice` has no `in_days` (label 5), `resident_renewal_undecided_followup`
+has no `mapping`, and `prospect_spanish_locale` follows up in 3 days (label 2). The first two
+cannot be emitted at all, since `NextAction` has no member for either. Options: (a) `NextAction`
+gains `in_days` and `mapping`; the check passes when the type matches and every member the label
+states equals the output's, a member the label does not state is not compared; the judge is shown
+both actions whole; the catalog emits the two members its labels state; (b) compare the type and
+report differing members as a diagnostic. Recommendation: (a), since a check that passes a reminder
+in the wrong number of days measures the type name and not the action. Scopes: `NextAction`,
+`ActionCatalog`, the rules file, `Evaluator`, `SemanticJudge` and their tests. Evidence: that run.
+Assumptions: A8. Taken on the owner's instruction of 2026-09-13.
+
+**D100. The sms payload check compares the reply options (taken 2026-09-13).** Question: the sms
+payload check passes any non-empty option list. The run of 2026-09-11 sent "Yes, reschedule / No,
+thank you" where the label offered today and tomorrow, and passed. Options: (a) when the label
+states options, the output's options must equal them in order, compared after trimming and without
+regard to case; the model composer sends the language set's options for a call to action the set
+has a row for, since D96 already tells the model to offer exactly those, and keeps the model's only
+where the set has none; (b) keep presence. Recommendation: (a). The four labeled option lists are
+the language sets' rows (Thu and Fri, today and tomorrow, yes, no and details, jueves and viernes),
+so code owns them as it owns the link. Scopes: `Evaluator`, `OpenAiMessageComposer` and their
+tests. Evidence: the hold-out labels and that run. Assumptions: A10. Taken on the owner's
+instruction of 2026-09-13.
+
+**D100 addendum, weekday spellings (2026-09-13).** With exact option comparison,
+`synthetic_12.jsonl` fell from Payload 10 of 10 to 4 of 10: four records failed only because their
+labels spell "Thursday" and "Friday" where the language set sends "Thu" and "Fri", the same
+question to the recipient. The owner took the recommendation: the scorer alone folds English and
+Spanish weekday names and their standard abbreviations to one day before comparing, and the product
+keeps its own spelling. `synthetic_12_unseen_cta_vocabulary` (morning or afternoon) and
+`synthetic_13_past_move_date` (tour or update) remain option failures, both real.
+
+**D101. Property facts come from a property data file, never from the model (taken 2026-09-13).**
+Question: three hold-out bodies state facts no input field carries: tours available this week,
+evening and weekend tour times, studios starting near $1,650, and a renewal offer that holds current
+pricing for 10 days and offers text reminders. Research of 2026-09-13: RealPage's LUMINA AI Leasing
+Agent quotes real-time pricing, availability and amenity information by integrating with the
+property management system (realpage.com, "LUMINA AI Leasing Agent Transforms Multifamily
+Leasing"); the FTC's Greystar order requires the total monthly rent, mandatory fees included, to be
+advertised most prominently (arnoldporter.com advisory, February 2026). Options: (a) a
+`--property-data <file.json>` file standing in for the property management system's feed, keyed by
+property name, carrying tour availability and tour times, starting total monthly prices by floor
+plan with an as-of date, and renewal offers keyed by unit or offer id with price-hold days and
+whether text reminders are offered; loaded and refused whole before any record runs, as `--rules`
+is; the model composer lists the facts found for the record in the data block and the model may
+state only those; a record whose renewal offer is found earns `renewal_offer_loaded`, and one
+asserting it with none found does not; (b) no data source, three honest failures. Recommendation:
+(a), the owner's choice. A price is stated as the total monthly price the feed gives, never as a
+base rent. The hold-out's file, `holdout_12_property_data.json`, is written from its labels, which
+D81 makes training data, and says so; the file is prose facts the model words, not rules. Scopes:
+a new `PropertyData` type and loader, `CliRunner`, `OpenAiMessageComposer`, `LeasingMessageAgent`,
+`RequiredStateMap`, OPERATIONS.md and A27. Evidence: that research and the three labels.
+Assumptions: A27. Taken on the owner's instruction of 2026-09-13.
+
+**D102. No move date is its own horizon branch (taken 2026-09-13).** Question: A7 puts an absent
+move date on the long branch, but the two prospect/open records disagree: sample 2, 68 days out,
+follows up in 3 days, and `prospect_spanish_locale`, with no date, in 2. Research of 2026-09-13:
+the move-in timeline is the first lead qualification question (Buildium, "Multifamily Lead
+Management Guide": "Move-in timeline: Are they looking for next month, or 'sometime this year'?"),
+and follow-up frequency follows how urgent the move is, hot leads same day, warm leads regular
+check-ins, cold leads a nurture sequence (same guide). Options: (a) three branches: short (at most
+45 days, or past), long (more than 45 days), and no move date; every catalog row's evidence from a
+record with no date moves to the no-date branch; prospect/open follows up in 3 days on long and 2
+on no date, sooner because the timeline is not yet qualified; the generic row answers no date with
+its long action; the rules file gains `no_move_date_action`; (b) keep two branches and one miss.
+Recommendation: (a), the owner's choice: it keys on an input field, and every no-date row the
+hold-out shows (cancelled_manager 2, resident welcome 2) already follows up sooner than sample 2's
+dated record. Scopes: `HorizonBranch`, `ActionCatalogRow`, `GenericActionRow`, `ActionCatalog`,
+`NextActionPlanner`, `RulesFileLoader`, A7, A8 and their tests. Evidence: that research, sample 2
+and the hold-out. Assumptions: A7. Taken on the owner's instruction of 2026-09-13.
+
+**Run and debug fact, the stricter checks re-pinned (2026-09-13).** Template composer, reference
+times as documented, after D99, D100, D102 and the two addenda: `sample.jsonl` 2 of 2 and
+`holdout_12.jsonl` 12 of 12, unchanged; `synthetic_12.jsonl` 9 of 13, from 12 of 13, where
+`synthetic_03_lease_end_instead_of_move_date` (no move date, labeled 3 days where D102 gives 2),
+`synthetic_12_unseen_cta_vocabulary` (morning or afternoon) and `synthetic_13_past_move_date` (tour
+or update) now fail; and `synthetic_v2.jsonl` 1 of 30, from 13 of 30, with Action 12 of 29 (from 17)
+and Payload 8 of 25 (from 24). The blind set's drops, read record by record: most sms labels offer
+Mon and Tue where the language set sends Thu and Fri; its email labels name pages no row builds
+(`/portal`, `/lease`, `/renew`, `/maintenance`); and its actions name cadences and values for
+stages no catalog row covers (`resident_move_in_prep`, follow-up in 7). None of those is fitted.
+`BaselineNumbersTests` now pins all four sets, `synthetic_v2.jsonl` added. Process fact: the
+D101 and D103 tests were written in the same step as their implementation and first run with it,
+not run red first, against the repository's test-first rule.
+
+**D102 addendum, the long cadence stays on the long branch (2026-09-13).** Moving every no-date
+record's evidence to the new branch left prospect/new with no long action, so a prospect dated
+more than 45 days out took the generic `follow_up_in_days` 3 instead of
+`prospect_welcome_long_horizon`. The template run of `synthetic_v2.jsonl` showed it: three records
+(`v2_prospect_new_long_email`, `v2_horizon_boundary_61_days`, `v2_dst_fall_back_london`) lost the
+action they had passed. The prospect/new row now states that cadence on both the long and the
+no-date branch: the cadence's own name states the horizon it is for, and the research of D102 puts
+a prospect whose move is months away in a nurture sequence (Apartment List, "Qualified Apartment
+Leads": a six-month prospect belongs in a nurture sequence). The blind set prompted the look, so
+this one rule is recorded as seen against it.
+
+**D103. The prompt states each call to action's purpose (taken 2026-09-13).** Question: in the run
+of 2026-09-13 the model left out or blurred three facts it was given: the mid-February move in
+`prospect_long_horizon_day3`, the direct question whether to renew A-204 in
+`resident_renewal_undecided_followup`, and the setup tasks in `features_enablement` in
+`resident_welcome_day0`; and `prospect_long_horizon_day3` broke the one-exclamation brand rule.
+Options: (a) the call-to-action table gains a purpose sentence per call to action the labels show,
+given to the model as an instruction (for `intent_capture`, ask directly whether the resident wants
+to renew their unit; for `get_started`, ask the resident to complete each feature to set up before
+move-in); the system prompt tells the model to mention a stated move or move-in date as a timeline
+and to use at most one exclamation mark; (b) leave the model to infer purpose from the stage name.
+Recommendation: (a): the purpose of a call to action is a decision, so code owns it the way it owns
+the type, and the brand rule is code's already. Scopes: `CallToActionCatalog`,
+`OpenAiMessageComposer` and its goldens. Evidence: that run's judge reasons. Assumptions: A18.
+Taken on the owner's instruction of 2026-09-13.

@@ -2512,6 +2512,7 @@ public class CliRunnerTests
                             ? new NextAction(ActionTypes.StartCadence, cadenceName)
                             : StatedOrNull(row.ShortHorizonAction),
                         LongHorizonAction = StatedOrNull(row.LongHorizonAction),
+                        NoMoveDateAction = StatedOrNull(row.NoMoveDateAction),
                     }),
                 },
                 SendSlots = SendSlotTable.Default.Rows.Select(row => new
@@ -2526,6 +2527,127 @@ public class CliRunnerTests
             AgentJsonOptions.Default);
 
     private static NextAction? StatedOrNull(Option<NextAction> action) => action.HasValue ? action.Value : null;
+
+    private const string OakRidgePropertyDataJson = """
+        { "properties": [ { "property_name": "Oak Ridge", "renewal_offers": [ { "unit": "A-204", "price_hold_days": 10 } ] } ] }
+        """;
+
+    private static string RenewalRecordJson(string taskId) =>
+        RecordJson(taskId, "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"required_states\":[]", "\"required_states\":[\"renewal_offer_loaded\"]");
+
+    // The property data file stands in for the property management system: a record whose
+    // renewal offer it holds has that offer loaded, and the diagnostics row says so.
+    [Fact]
+    public async Task RunAsync_PropertyDataHoldsTheRecordsOffer_DiagnosticsRecordTheOfferLoaded()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RenewalRecordJson("t1"));
+        await File.WriteAllTextAsync(propertyDataPath, OakRidgePropertyDataJson);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("earned", diagnostics.RootElement[0].GetProperty("diagnostics").GetProperty("required_states").GetProperty("renewal_offer_loaded").GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(propertyDataPath);
+        }
+    }
+
+    // A replay composes nothing, so property data would change nothing it reports.
+    [Fact]
+    public async Task RunAsync_PropertyDataWithReplay_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        await File.WriteAllTextAsync(propertyDataPath, OakRidgePropertyDataJson);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--property-data needs a run that composes: it cannot be combined with --replay.", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(propertyDataPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PropertyDataPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string propertyDataPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "property.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --property-data '{propertyDataPath}'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // A refused property data file costs nothing: it is loaded before any composer or output file,
+    // and every bad property is its own line, worded as the loader words it.
+    [Fact]
+    public async Task RunAsync_PropertyDataFileRefused_NamesTheFlagAndThePropertyAndWritesNoOutput()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(propertyDataPath, """{ "properties": [ { "property_name": " " } ] }""");
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            string[] errorLines = errorWriter.ToString().Split(Environment.NewLine);
+            Assert.Contains($"Could not load --property-data '{propertyDataPath}':", errorLines);
+            Assert.Contains("Property 1: property_name is blank.", errorLines);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(propertyDataPath);
+        }
+    }
 
     // A replay runs no agent, so a rules file would change nothing it reports. Refused rather
     // than ignored, so a replay never reads as scored under rules it did not use.
