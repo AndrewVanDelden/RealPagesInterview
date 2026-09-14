@@ -2,7 +2,8 @@
   "properties": [
     {
       "property_name": "Oak Ridge Apartments",
-      "tour_availability": "Tours are available this week, including evening and weekend times.",
+      "tour_availability": "Tours are available this week.",
+      "extended_tour_hours": "Evening and weekend tours are available.",
       "starting_prices": [
         { "floor_plan": "studio", "total_monthly_price": 1650, "as_of": "2025-12-08" }
       ],

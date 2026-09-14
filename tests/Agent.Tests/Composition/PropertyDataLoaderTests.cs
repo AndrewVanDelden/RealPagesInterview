@@ -24,6 +24,7 @@ public class PropertyDataLoaderTests
                 {
                   "property_name": "Oak Ridge Apartments",
                   "tour_availability": "Tours are available this week.",
+                  "extended_tour_hours": "Evening and weekend tours are available.",
                   "starting_prices": [ { "floor_plan": "studio", "total_monthly_price": 1650, "as_of": "2025-12-08" } ],
                   "renewal_offers": [ { "unit": "A-204", "offer_id": "REN-1", "price_hold_days": 10, "text_reminders_offered": true }, { "offer_id": "REN-2" } ]
                 },
@@ -37,6 +38,7 @@ public class PropertyDataLoaderTests
         PropertyFacts facts = result.Value.Properties[0];
         Assert.Equal("Oak Ridge Apartments", facts.PropertyName);
         Assert.Equal("Tours are available this week.", facts.TourAvailability);
+        Assert.Equal("Evening and weekend tours are available.", facts.ExtendedTourHours);
         Assert.Equal(new StartingPrice("studio", 1650m, new DateOnly(2025, 12, 8)), Assert.Single(facts.StartingPrices!));
         Assert.Equal([new RenewalOffer("A-204", "REN-1", 10, true), new RenewalOffer(OfferId: "REN-2")], facts.RenewalOffers!);
         Assert.Null(result.Value.Properties[1].StartingPrices);

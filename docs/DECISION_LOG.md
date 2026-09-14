@@ -141,11 +141,10 @@ and PR #33's review findings were fixed, all run and debug facts.
 value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
 tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.
 
-**D94 to D103, Sprint 16 continued (2026-09-13).** The hold-out run of 2026-09-11 scored every
+**D94 to D105, Sprint 16 continued (2026-09-13).** The hold-out run of 2026-09-11 scored every
 decision 12 of 12 and failed every message body on the judge. The payload check compares the
 label's link and options (D94, D100) and the action check every stated member (D99); the judge's
 reason and tokens are kept (D95); the prompt carries the stage's facts, the link, the reply options
 and each call to action's purpose (D96, D103); resident links are built from the record (D97); a
-no-choice call keeps its retries (D98); property facts come from `--property-data` (D101); and no
-move date is its own horizon branch (D102). The stricter checks re-pinned both synthetic sets, a run
-and debug fact.
+no-choice call keeps its retries (D98); property facts come from `--property-data` (D101), chosen per
+call to action (D104); no move date is its own branch (D102); and D105 fixes three prompt misses.

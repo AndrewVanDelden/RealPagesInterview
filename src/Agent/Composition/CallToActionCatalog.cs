@@ -4,11 +4,11 @@ using Agent.Common;
 namespace Agent.Composition;
 
 // One call to action: the type that goes on the wire, the path an email link ends in (A9, A21),
-// and the purpose the model is told the message serves, a decision code owns like the type and
-// null for a call to action no label shows. The sms reply options are not here: they are prose,
-// so they live in the language sets with the rest of the words a person reads, and one list in
-// one place is the point of a table.
-internal sealed record CallToAction(string Type, string LinkPath, string? Purpose = null);
+// the purpose the model is told the message serves, a decision code owns like the type and null
+// for a call to action no label shows, and the kinds of property fact that serve it, null when none
+// does. The sms reply options are not here: they are prose, so they live in the language sets with
+// the rest of the words a person reads, and one list in one place is the point of a table.
+internal sealed record CallToAction(string Type, string LinkPath, string? Purpose = null, FrozenSet<PropertyFactKind>? FactKinds = null);
 
 // Playbook step 42: the call-to-action vocabulary in one table. Nothing else in the
 // program spells a call-to-action type or a link path. The payload shape stays the channel's
@@ -21,7 +21,15 @@ internal static class CallToActionCatalog
     public static readonly CallToAction Generic = new("reply", "reply");
 
     // Sample 2's link, https://oakridge.example/tour, gives the tour its path.
-    private static readonly CallToAction ScheduleTour = new("schedule_tour", "tour", "invite the prospect to book a tour");
+    // A tour invitation can carry the property's tour availability, its extended tour hours and
+    // its starting prices; the composer gives the last two only to a record whose input calls for
+    // them. Hold-out prospect_welcome_day0 uses the availability and
+    // prospect_cancellation_manager_cross_sell all three.
+    private static readonly CallToAction ScheduleTour = new(
+        "schedule_tour",
+        "tour",
+        "invite the prospect to book a tour",
+        new[] { PropertyFactKind.TourAvailability, PropertyFactKind.ExtendedTourHours, PropertyFactKind.StartingPrice }.ToFrozenSet());
 
     // The rows a record's primary_cta names: a wire type that differs from it, a link path the
     // generic row does not have, or both. The two sms rows show no link in their labels, so they
@@ -44,7 +52,11 @@ internal static class CallToActionCatalog
             ["enroll_loyalty"] = new("enroll_loyalty", "loyalty", "invite the resident to enroll in the loyalty program"),
 
             // resident_renewal_90day_notice
-            ["review_renewal"] = new("review_renewal", $"renewal/{PropertyLink.UnitSegment}", "ask the resident to review their renewal offer"),
+            ["review_renewal"] = new(
+                "review_renewal",
+                $"renewal/{PropertyLink.UnitSegment}",
+                "ask the resident to review their renewal offer",
+                new[] { PropertyFactKind.RenewalOffer }.ToFrozenSet()),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     // A record with no primary_cta at these personas and stages gets the stage's own call to

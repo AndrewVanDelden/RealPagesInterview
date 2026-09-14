@@ -3217,6 +3217,42 @@ line 15 as designed; Overall 1 of 30; ActionSem 13 of 29; BodySem 0 of 24; revie
 Results are in `holdout_12_run_2026-09-13_final` and `synthetic_v2_run_2026-09-13` on the owner's
 desktop. Not decided: a table of which property facts serve which call to action.
 
+**D104. Which property facts serve which call to action (taken 2026-09-13).** Question: in the full
+hold-out run after D103, four bodies failed the judge because they stated property facts their labels
+do not use: the model received every fact the property data holds on every message. Options: (a) a
+table on the call-to-action catalog naming the fact kinds each call to action may carry, with two
+conditions keyed on input the record states: tour availability for a tour invitation; extended tour
+hours for a tour invitation only when the record's `cancellation_reason` is `schedule_conflict`, the
+objection those hours answer; a starting price for a tour invitation only when the record states
+`budget_max`, the question a price answers; and the renewal offer's price hold and text-reminder
+offer for the renewal review; the property data splits `tour_availability` from
+`extended_tour_hours`; and the model is told to state each fact it is given, since code has chosen
+them; (b) leave the selection to the model. Recommendation: (a). Which fact serves a message is a
+decision, and a message that answers an objection the prospect never raised or quotes a price nobody
+asked about reads as a pitch; addressing the prospect's stated objection is the standard follow-up
+rule the D102 research describes ("each message should either answer something, show something, or
+make the next step easier", ResiDesk multifamily lead nurturing). Scopes: `CallToActionCatalog`, a
+fact selection in composition, `PropertyFacts`, the loader, `OpenAiMessageComposer`,
+`holdout_12_property_data.json`, OPERATIONS.md and A27. Evidence: the judge reasons of that run and
+the labels of `prospect_welcome_day0`, `prospect_cancellation_manager_cross_sell` and
+`resident_renewal_90day_notice`. Assumptions: A27. Taken on the owner's instruction of 2026-09-13.
+
+**D105. The prompt misses of the run after D103 (taken 2026-09-13).** Question: that run's judge
+reasons name three misses the prompt caused or failed to prevent: `prospect_long_horizon_day3` left
+out the mid-February move although told to mention a stated timeline;
+`resident_welcome_day0` stated the move-in date because the same rule covered move-in dates; and
+`resident_renewal_90day_notice` left out the price hold the property facts gave it, under an
+instruction to state only the facts that serve the call to action. Two messages also used more than
+one exclamation mark. Options: (a) code computes a prospect's move timeline from `move_date_target`
+as early, mid or late in the month, and the instruction to mention it is given only when a prospect
+states one; the system-wide timeline rule is removed, so a resident's move-in date is data and not an
+instruction; the property facts instruction says to state each fact given (D104 has chosen them); and
+code keeps the first exclamation mark of a model body and turns later ones into periods, since the
+one-mark limit is code's brand rule; (b) reword the system prompt again. Recommendation: (a): each
+miss becomes a fact or a rule code owns, rather than a sentence the model may weigh. Scopes:
+`OpenAiMessageComposer` and its goldens. Evidence: that run. Assumptions: A18. Taken on the owner's
+instruction of 2026-09-13.
+
 **D102 addendum, the long cadence stays on the long branch (2026-09-13).** Moving every no-date
 record's evidence to the new branch left prospect/new with no long action, so a prospect dated
 more than 45 days out took the generic `follow_up_in_days` 3 instead of

@@ -72,7 +72,7 @@ public static class PropertyDataLoader
 
             failures.AddRange(PriceFailures(label, entry.StartingPrices ?? []));
             failures.AddRange(OfferFailures(label, entry.RenewalOffers ?? []));
-            properties.Add(new PropertyFacts(entry.PropertyName, entry.TourAvailability, entry.StartingPrices, entry.RenewalOffers));
+            properties.Add(new PropertyFacts(entry.PropertyName, entry.TourAvailability, entry.StartingPrices, entry.RenewalOffers, entry.ExtendedTourHours));
         }
 
         return failures.Count == 0
@@ -144,4 +144,5 @@ internal sealed record PropertyFileEntry(
     string? PropertyName = null,
     string? TourAvailability = null,
     IReadOnlyList<StartingPrice>? StartingPrices = null,
-    IReadOnlyList<RenewalOffer>? RenewalOffers = null);
+    IReadOnlyList<RenewalOffer>? RenewalOffers = null,
+    string? ExtendedTourHours = null);

@@ -8,7 +8,8 @@ public sealed record PropertyFacts(
     string PropertyName,
     string? TourAvailability = null,
     IReadOnlyList<StartingPrice>? StartingPrices = null,
-    IReadOnlyList<RenewalOffer>? RenewalOffers = null)
+    IReadOnlyList<RenewalOffer>? RenewalOffers = null,
+    string? ExtendedTourHours = null)
 {
     // The offer id a record states identifies its offer; a record that states none is matched by
     // its unit. Both are identifiers, so they are compared trimmed and ordinally. O(o) in the
