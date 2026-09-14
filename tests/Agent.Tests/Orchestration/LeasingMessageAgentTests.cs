@@ -60,6 +60,25 @@ public class LeasingMessageAgentTests
         Assert.Equal(expected, result.Diagnostics.RequiredStates["renewal_offer_loaded"]);
     }
 
+    // The tour options are planned from the message's own send time, so the agent schedules before it
+    // composes: an sms sent Tuesday 09:00 offers Thursday and Friday at 10:00, and a property whose
+    // calendar tours only on Saturdays at 11:00 offers the next two Saturdays.
+    [Theory]
+    [InlineData(false, new[] { "Dec 11, 2025, 10:00 AM", "Dec 12, 2025, 10:00 AM" })]
+    [InlineData(true, new[] { "Dec 13, 2025, 11:00 AM", "Dec 20, 2025, 11:00 AM" })]
+    public async Task RunAsync_TourSms_OffersTheSlotsPlannedFromItsSendTime(bool withCalendar, string[] expectedOptions)
+    {
+        PropertyData? propertyData = withCalendar
+            ? new PropertyData([new PropertyFacts("Oak Ridge Apartments", TourCalendar: new TourCalendar(OpenDays: [DayOfWeek.Saturday], TourTime: new TimeOnly(11, 0)))])
+            : null;
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(propertyData: propertyData);
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage!.SendAt);
+        Assert.Equal(expectedOptions, result.Output.NextMessage.Cta!.Options);
+    }
+
     // A record with no consented channel reaches no step past the channel selection, so the offer
     // was never looked up and the state is not evaluated.
     [Fact]

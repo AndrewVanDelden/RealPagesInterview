@@ -17,7 +17,8 @@ internal sealed class CancelOnFirstComposeComposer(CancellationTokenSource runCa
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null)
     {
         if (Interlocked.Increment(ref calls) == 1)
         {

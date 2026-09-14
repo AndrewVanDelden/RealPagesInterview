@@ -117,7 +117,9 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             ? CheckResult.NotMeasured
             : Verdict(actual.Cta?.Type == expectedCtaType);
 
-        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual, expectedMessage?.Cta);
+        // The label's send date in its own offset is the day its weekday options count from.
+        DateOnly? labelSendDate = expectedMessage?.SendAt is { } labelSendAt ? DateOnly.FromDateTime(labelSendAt.DateTime) : null;
+        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual, expectedMessage?.Cta, labelSendDate);
 
         // Tokenized once and shared: BodyLanguage and Personalization both check words
         // drawn from the same message text.
@@ -197,19 +199,19 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     // are; a label that states neither leaves presence as the one thing to measure. The whole
     // absolute URI is compared, host included, after Uri has lowercased the scheme and the host;
     // options are compared in order, by ReplyOptionSpelling's rule.
-    private static CheckResult ScoreCtaPayload(NextMessage message, Cta? expectedCta) => message.Channel switch
+    private static CheckResult ScoreCtaPayload(NextMessage message, Cta? expectedCta, DateOnly? labelSendDate) => message.Channel switch
     {
         CommunicationChannel.Sms => Verdict(
-            message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { Count: > 0 } expectedOptions || OptionsMatch(options, expectedOptions))),
+            message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { Count: > 0 } expectedOptions || OptionsMatch(options, expectedOptions, labelSendDate))),
         CommunicationChannel.Email => Verdict(
             message.Cta?.Link is { } link && (expectedCta?.Link is not { } expectedLink || string.Equals(link.AbsoluteUri, expectedLink.AbsoluteUri, StringComparison.Ordinal))),
         _ => CheckResult.NotMeasured,
     };
 
     // O(k) in the number of options.
-    private static bool OptionsMatch(IReadOnlyList<string> options, IReadOnlyList<string> expectedOptions) =>
+    private static bool OptionsMatch(IReadOnlyList<string> options, IReadOnlyList<string> expectedOptions, DateOnly? labelSendDate) =>
         options.Count == expectedOptions.Count
-        && options.Zip(expectedOptions).All(pair => ReplyOptionSpelling.SameOption(pair.First, pair.Second));
+        && options.Zip(expectedOptions).All(pair => ReplyOptionSpelling.SameOption(pair.First, pair.Second, labelSendDate));
 
     // Exact against the label, member by member: every member the label states must equal the
     // output's, and a member the label leaves out is not compared, since a label that names only a

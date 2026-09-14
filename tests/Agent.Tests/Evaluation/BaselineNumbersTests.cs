@@ -15,7 +15,10 @@ namespace Agent.Tests.Evaluation;
 // synthetic_v2.jsonl's line 15 are malformed on purpose. The action check compares every member a
 // label states and the payload check compares the label's link and options, so the two synthetic
 // sets read lower than they did under type-only and presence-only checks: those are the honest
-// numbers of stricter checks, re-pinned deliberately, not regressions.
+// numbers of stricter checks, re-pinned deliberately, not regressions. A tour invitation now offers
+// dated slots from two days after its send date, so synthetic_12.jsonl's Saturday sends offer Monday
+// and Tuesday where its labels, written by this project under the old fixed Thursday and Friday pair,
+// say Thursday and Friday: its payload tally is re-pinned lower for that reason.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -32,8 +35,8 @@ public class BaselineNumbersTests
     [InlineData(
         "synthetic_12.jsonl",
         "2026-03-07T12:00:00Z",
-        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 11/12, OptOut 10/10, CTA 10/10, Payload 8/10, Lang 10/10, Safety 12/12, Personalization 9/9",
-        "Overall: 9/13 passed")]
+        "Checks: Channel 12/12, Day 10/10, Hour 10/10, Action 11/12, OptOut 10/10, CTA 10/10, Payload 3/10, Lang 10/10, Safety 12/12, Personalization 9/9",
+        "Overall: 5/13 passed")]
     [InlineData(
         "synthetic_v2.jsonl",
         "2026-10-24T22:00:00Z",

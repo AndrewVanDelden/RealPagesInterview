@@ -644,19 +644,21 @@ public class OpenAiMessageComposerTests
         Assert.Equal("hi\nTo opt out of emails, reply STOP.", ComposedOf(outcome).Message.Body);
     }
 
-    // The reply options are the language set's row for the call to action, the list the template
-    // sends and the labels spell, so the model is told to offer exactly those, in the record's
-    // language.
+    // A tour invitation's reply options are the tour slots the agent planned, written as dates the
+    // same way in every language, so the model is told to offer exactly those, joined with a
+    // semicolon because each carries commas; a call to action with a language-set row gets that row.
     [Theory]
-    [InlineData("en", "offer exactly these reply options, numbered in this order: Thu, Fri.")]
-    [InlineData("es", "offer exactly these reply options, numbered in this order: jueves, viernes.")]
-    public async Task ComposeAsync_SmsUserPrompt_NamesTheLanguageSetsOptions(string language, string expectedInstruction)
+    [InlineData("en", null, "schedule_tour", "offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM.")]
+    [InlineData("es", null, "schedule_tour", "offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM.")]
+    [InlineData("es", "reschedule_tour", "reschedule", "offer exactly these reply options, numbered in this order: hoy; mañana.")]
+    public async Task ComposeAsync_SmsUserPrompt_NamesTheOptionsCodeChose(string language, string? primaryCta, string ctaType, string expectedInstruction)
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        string json = $$"""{"subject":null,"body":"hi","cta_type":"{{ctaType}}","cta_options":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: language, primaryCta: primaryCta ?? "book_tour", lifecycleStage: primaryCta is null ? "new" : "no_show");
 
-        await composer.ComposeAsync(SampleProspectCases.Minimal(language: language), CommunicationChannel.Sms);
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         Assert.Contains(expectedInstruction, fakeClient.LastUserPrompt);
     }
@@ -708,17 +710,17 @@ public class OpenAiMessageComposerTests
         Assert.Null(result.Message.Cta.Link);
     }
 
-    // The language set holds the options a call to action's label offers, so an sms carries
-    // those whatever the model returned, the way an email carries code's link.
+    // The tour slots are code's decision, so a tour sms carries them whatever the model returned, the
+    // way an email carries code's link.
     [Fact]
-    public async Task ComposeAsync_SmsWhoseCallToActionTheSetHasOptionsFor_CarriesTheSetsOptionsNotTheModels()
+    public async Task ComposeAsync_TourSms_CarriesTheTourSlotsNotTheModelsOptions()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":["Yes, book a tour","No, thanks"]}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
 
-        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
-        Assert.Equal(["Thu", "Fri"], ComposedOf(outcome).Message.Cta!.Options);
+        Assert.Equal(SampleTourSlots.TuesdayText, ComposedOf(outcome).Message.Cta!.Options);
     }
 
     // The purpose of a call to action is a decision, so code states it to the model, one sentence
@@ -1129,7 +1131,7 @@ public class OpenAiMessageComposerTests
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
 
-        await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
+        await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         Assert.Equal(
             """
@@ -1138,7 +1140,7 @@ public class OpenAiMessageComposerTests
             The call to action must be exactly 'schedule_tour'.
             Purpose of the call to action: invite the prospect to book a tour.
             Opt-out instructions: the system appends them, so do not write any.
-            This is sms: offer exactly these reply options, numbered in this order: Thu, Fri. Put them in the body and return the same options in cta_options. Do not write a link.
+            This is sms: offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Put them in the body and return the same options in cta_options. Do not write a link.
             <prospect_data>
             channel: sms
             language: en
@@ -1154,11 +1156,12 @@ public class OpenAiMessageComposerTests
             Normalized(fakeClient.LastUserPrompt));
     }
 
-    // A10: the payload shape is the channel's rule, not the model's choice. A model that
-    // legally returns no options still has to produce an sms with options, and they come
-    // from the record's own language set so a Spanish message does not get English ones.
+    // A10: the payload shape is the channel's rule, not the model's choice. A tour sms with no planned
+    // slots and a model that legally returns no options still has to produce an sms with options, and
+    // they are the record's own language set's generic pair so a Spanish message does not get English
+    // ones and no day is invented.
     [Fact]
-    public async Task ComposeAsync_SmsAndTheModelReturnsNoOptions_FallsBackToTheLanguageSetsOptions()
+    public async Task ComposeAsync_TourSmsWithNoSlotsAndTheModelReturnsNoOptions_FallsBackToTheLanguageSetsGenericPair()
     {
         const string json = """{"subject":null,"body":"hola","cta_type":"schedule_tour","cta_options":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
@@ -1168,21 +1171,21 @@ public class OpenAiMessageComposerTests
 
         ComposedMessage result = ComposedOf(outcome);
 
-        Assert.Equal(["jueves", "viernes"], result.Message.Cta!.Options);
+        Assert.Equal(["una pregunta", "una visita"], result.Message.Cta!.Options);
     }
 
     [Fact]
-    public async Task ComposeAsync_SmsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsOptions()
+    public async Task ComposeAsync_TourSmsWithEmptySlotsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsGenericPair()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":[]}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: []);
 
         ComposedMessage result = ComposedOf(outcome);
 
-        Assert.Equal(["Thu", "Fri"], result.Message.Cta!.Options);
+        Assert.Equal(["a question", "a tour"], result.Message.Cta!.Options);
     }
 
     // Cost state three of three (no call, abandoned, completed): a call that completed carries

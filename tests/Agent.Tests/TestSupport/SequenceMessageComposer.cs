@@ -30,7 +30,8 @@ internal sealed class SequenceMessageComposer(params Result<NextMessage>[] resul
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null)
     {
         LastPriorViolations = priorViolations;
         Result<NextMessage> result = results[Math.Min(CallCount, results.Length - 1)];

@@ -3,13 +3,15 @@ using Agent.Common;
 namespace Agent.Composition;
 
 // One property's facts as the property management system states them. Every fact is optional:
-// a fact the system does not give is one no message states.
+// a fact the system does not give is one no message states, and a property with no tour calendar
+// is offered tour slots on the planner's default days and time.
 public sealed record PropertyFacts(
     string PropertyName,
     string? TourAvailability = null,
     IReadOnlyList<StartingPrice>? StartingPrices = null,
     IReadOnlyList<RenewalOffer>? RenewalOffers = null,
-    string? ExtendedTourHours = null)
+    string? ExtendedTourHours = null,
+    TourCalendar? TourCalendar = null)
 {
     // The offer id a record states identifies its offer; a record that states none is matched by
     // its unit. Both are identifiers, so they are compared trimmed and ordinally. O(o) in the

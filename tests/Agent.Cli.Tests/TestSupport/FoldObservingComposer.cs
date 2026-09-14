@@ -18,7 +18,8 @@ internal sealed class FoldObservingComposer(string faultTaskId, string observerT
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null)
     {
         if (prospectCase.TaskId == faultTaskId)
         {

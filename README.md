@@ -18,10 +18,10 @@ flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
     B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
-    C --> D[3 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
-    D -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
-    D -- a draft, composed or refused --> E[4 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone]
-    E --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
+    C --> D[3 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone; tour slots from the send date]
+    D --> E[4 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
+    E -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
+    E -- a draft, composed or refused --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
     F -- violations --> S3[Suppress: reason safety_violation, plus a review queue row carrying the draft]
     F -- clean --> G[6 Emit]
     S --> H[Output plus diagnostics: every decision input, every defaulted field, every fallback]
@@ -30,8 +30,9 @@ flowchart TD
     G --> H
 ```
 
-Step 3 is `ValidatingMessageComposer`: at most two composer attempts, the second only after a
-safety rejection, then the template (D34). Step 5 also checks brand style, recorded and never a
+Step 3 schedules before step 4 composes because a tour invitation's reply options are the next two
+open tour slots counted from the send date (D108). Step 4 is `ValidatingMessageComposer`: at most two
+composer attempts, the second only after a safety rejection, then the template (D34). Step 5 also checks brand style, recorded and never a
 gate (D39). Components and the three interfaces: [docs/DESIGN.md](docs/DESIGN.md) section 5.
 
 ## Run
@@ -70,7 +71,7 @@ and `synthetic_v2.jsonl`, written blind to the code, carries the honest number (
 |---|---|---|---|
 | `sample.jsonl` | 2 of 2 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
 | `holdout_12.jsonl`, fitted since D81 | 12 of 12 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
-| `synthetic_12.jsonl` | 9 of 13 | action 11 of 12, call-to-action payload 8 of 10, under the checks that compare every stated action member and the label's options and link (D99, D100); line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
+| `synthetic_12.jsonl` | 5 of 13 | action 11 of 12, call-to-action payload 3 of 10, under the checks that compare every stated action member and the label's options and link (D99, D100); its tour labels say Thursday and Friday on a Saturday send, written under the fixed pair that dated tour slots replaced (D108); line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
 | `synthetic_v2.jsonl`, the honest number | 1 of 30 | channel 25 of 29, day 24 of 26, hour 19 of 26, action 12 of 29, call-to-action type 23 of 24, call-to-action payload 8 of 25, under the same stricter checks (D99, D100); line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
 
 The hold-out is fitted, so 12 of 12 shows the rules reproduce their own evidence and says

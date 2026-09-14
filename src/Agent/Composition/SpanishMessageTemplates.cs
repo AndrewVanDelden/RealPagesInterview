@@ -42,7 +42,6 @@ internal static class SpanishMessageTemplates
         }.ToFrozenDictionary(StringComparer.Ordinal),
         SmsOptionsByCtaType: new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
-            ["schedule_tour"] = ["jueves", "viernes"],
             ["reschedule"] = ["hoy", "mañana"],
             ["intent_capture"] = ["sí", "no", "detalles"],
         }.ToFrozenDictionary(StringComparer.Ordinal),

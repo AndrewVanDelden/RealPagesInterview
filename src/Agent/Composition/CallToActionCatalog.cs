@@ -20,13 +20,16 @@ internal static class CallToActionCatalog
     // have no default below, and the payload every unrecognized one falls back to.
     public static readonly CallToAction Generic = new("reply", "reply");
 
+    // The tour invitation's wire type, named once: its sms reply options are the planned tour slots.
+    public const string TourType = "schedule_tour";
+
     // Sample 2's link, https://oakridge.example/tour, gives the tour its path.
     // A tour invitation can carry the property's tour availability, its extended tour hours and
     // its starting prices; the composer gives the last two only to a record whose input calls for
     // them. Hold-out prospect_welcome_day0 uses the availability and
     // prospect_cancellation_manager_cross_sell all three.
     private static readonly CallToAction ScheduleTour = new(
-        "schedule_tour",
+        TourType,
         "tour",
         "invite the prospect to book a tour",
         new[] { PropertyFactKind.TourAvailability, PropertyFactKind.ExtendedTourHours, PropertyFactKind.StartingPrice }.ToFrozenSet());

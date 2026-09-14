@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are all to the model composer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 810 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner takes or declines D108 and D109, then names the full run that measures D110 to D112.
-Open decisions: D108, D109.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 842 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the owner takes or declines D109, then names the full run that measures D108 and D110 to D112.
+Open decisions: D109.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -146,10 +146,10 @@ left eighteen findings: three declined against D101, A19 and no stated rule, fou
 first, among them a judge fault that crashed the batch and a linear property scan; 919 tests at 100
 percent, run and debug facts. PR #36 merged into `dev` as `b3f9036`, closing the sprint (D106).
 
-**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 checks the stricter scorer failed are
-read record by record, not fitted: 19 are product gaps, 5 the label author's choices, and no label or
-tally moves (D107). Two gaps are the owner's to decide: tour reply days fixed as Thu and Fri (D108),
-and a record nothing covers answered as a prospect (D109). The three hold-out bodies the judge failed:
-the move timeline goes on email only (D110), tour availability only to an invitation the record names
-(D111), and code writes a renewal offer's terms while the lease end date leaves the prompt (D112). No
-model run measured them; a run and debug fact corrects D108's and D109's evidence.
+**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 failed checks are read record by record,
+not fitted: 19 product gaps, 5 label choices (D107). D108 is taken: a tour sms offers the next two open
+slots from two days after its send date, Monday to Saturday at 10:00 by default, written as dates,
+and the scorer reads a label's weekday as a date;
+`synthetic_12.jsonl` falls to 5 of 13. D109, records nothing covers, is open. The move timeline goes
+on email only (D110), tour availability only to a named invitation (D111), and code writes renewal
+terms (D112). No model run measured D108 or D110 to D112; run and debug facts hold the evidence.

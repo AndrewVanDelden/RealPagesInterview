@@ -78,7 +78,8 @@ public sealed class OpenAiMessageComposer(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null)
     {
         // The call to action is a decision, and code owns decisions, so code resolves it the way
         // the template does: the record's primary_cta through the catalog, and when it is absent
@@ -98,12 +99,14 @@ public sealed class OpenAiMessageComposer(
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail ? PropertyLink.For(context.PropertyName, callToAction.LinkPath, context.Unit) : null;
 
-        // A10: the options are the record's language set's row for this call to action when the
-        // set has one, the list the template sends; a call to action with no row leaves them to
-        // the model, since the set's generic pair answers no particular question.
-        IReadOnlyList<string>? namedOptions = !isEmail && templates.SmsOptionsByCtaType.TryGetValue(requiredCtaType, out IReadOnlyList<string>? setOptions)
-            ? setOptions
-            : null;
+        // A10: a tour invitation's options are the tour slots the agent planned, written as dates; any
+        // other call to action takes the record's language set's row when the set has one, the list
+        // the template sends; a call to action with neither leaves them to the model, since the set's
+        // generic pair answers no particular question.
+        IReadOnlyList<string>? namedOptions = isEmail
+            ? null
+            : TourSlotText.OptionsFor(requiredCtaType, tourSlots)
+                ?? (templates.SmsOptionsByCtaType.TryGetValue(requiredCtaType, out IReadOnlyList<string>? setOptions) ? setOptions : null);
 
         // A renewal offer's terms are an offer the property makes, so code writes them after the
         // model does, in the record's language and exactly as the property system states them.
@@ -306,7 +309,7 @@ public sealed class OpenAiMessageComposer(
             (true, null, _) =>
                 $"This is {channelName}: return a subject line and no reply options. Do not write a link.",
             (false, _, { } options) =>
-                $"This is {channelName}: offer exactly these reply options, numbered in this order: {string.Join(", ", options)}. Put them in the body and return the same options in cta_options. Do not write a link.",
+                $"This is {channelName}: offer exactly these reply options, numbered in this order: {string.Join("; ", options)}. Put them in the body and return the same options in cta_options. Do not write a link.",
             (false, _, null) =>
                 $"This is {channelName}: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.",
         };

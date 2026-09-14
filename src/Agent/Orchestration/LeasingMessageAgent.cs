@@ -113,12 +113,24 @@ public sealed class LeasingMessageAgent(
                 planned.Branch);
         }
 
-        // Step 3: compose. Three outcomes, and two of them carry a draft: a composed
+        // Step 3: schedule (A4, A5), before composing, because a tour invitation's reply options are
+        // the tour slots counted from the send time. The scheduler reads the record and the channel and
+        // nothing a draft sets. It returns the send with its working, so the diagnostics can name the
+        // floor, the zone and the slot the way they name the plan; the slot is never a wall time the
+        // zone did not reach (A20). The tour slots follow the property's calendar when the property
+        // data holds one.
+        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage);
+        IReadOnlyList<DateTimeOffset> tourSlots = TourSlots.For(
+            scheduled.SendAt,
+            context.TimeZoneId,
+            propertyFacts.HasValue ? propertyFacts.Value.TourCalendar : null);
+
+        // Step 4: compose. Three outcomes, and two of them carry a draft: a composed
         // message, and one the compose-validate loop refused on safety. The refused draft is
-        // scheduled and validated below like any draft without the loop's verdict, so step 5 is the one
+        // validated below like any draft without the loop's verdict, so step 5 is the one
         // place that names the violations; a composition that produced no draft at all is the
         // only one that short-circuits here, because there is nothing to validate.
-        ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
+        ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken, tourSlots: tourSlots);
 
         // What the run spent is read once, here, and reaches every diagnostics this method
         // builds below. It is a fact about the record and not about a message, so unlike the
@@ -154,10 +166,7 @@ public sealed class LeasingMessageAgent(
                 return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan, modelCost, networkRetries, renewalOfferLoaded);
         }
 
-        // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
-        // diagnostics can name the floor, the zone and the slot the way they name the plan;
-        // the slot is never a wall time the zone did not reach (A20).
-        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage);
+        // The draft takes the send time step 3 resolved.
         NextMessage finalMessage = draft with { SendAt = scheduled.SendAt };
         var scheduleNotes = new ScheduleNotes(scheduled.Floor, scheduled.TimeZoneId, scheduled.Slot, scheduled.Source);
 

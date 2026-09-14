@@ -3493,5 +3493,54 @@ are the generic pair, or whose unrecognized email call to action links to `/repl
 invitation, labeled `no_op` `lead_closed`) and `v2_unusual_persona_stage` (labeled `no_op`
 `persona_stage_mismatch`); three are on `synthetic_12.jsonl`. Seven of the nine catalog rows state
 only the no-move-date branch and prospect/open has no short branch, so a dated record at those
-stages also falls to the generic row. The
+stages also falls to the generic row.
+
+**D108 addendum, taken: tour options are dated slots (2026-09-14).** The owner rejected every option as
+written: no weekday is a deciding day, and a reply option should be a date anyone can read in any
+language. Taken: an sms tour invitation offers the next two open tour slots, counted from the
+message's local send date. The first slot is at least two days after that date; a day is open when
+the property data's `tour_days` names its weekday and `tour_closed_dates` does not name the date, and
+with no property calendar the open days are Monday to Saturday; each slot is at the property data's
+`tour_time`, and 10:00 AM with none, resolved in the record's zone. Each option is written as
+`MMM dd, yyyy, h:mm AM` in the invariant culture (`Oct 27, 2026, 10:00 AM`) in every language, so a
+record's language set no longer holds tour options, and numbered options are joined with a semicolon
+since each option carries commas. The agent schedules before it composes, since the options need the
+send date; the scheduler reads nothing a draft sets. The scorer reads a label's weekday option as the
+first date with that weekday after the label's own local send date, and compares it with the date of
+an option written in this format; a label option that is not a weekday is compared as before.
+Research of 2026-09-14: tours scheduled within 3 days of the inquiry show at 85% and at 40% after 10 or
+more days, across 1.5 million tour appointments at more than 1,000 properties (Zuma, "Why Your
+Apartment Tours Aren't Converting"); 76% of renters name the weekend the best time to tour (NMHC renter
+preferences survey, as summarized by Swiftlane) and weekends 10 am to 5 pm are the most popular window
+(tour24 study); larger operators keep Saturday leasing hours while Sunday hours are not universal
+(Multi-Housing News, "Does Your Leasing Office Have Weekend Hours?"). The owner chose the format and
+10:00 AM, and asked for the lead time and the open days to be researched and applied. Lead time two
+days: the research asks for a tour within three days and does not separate one day from two, and the
+one fitted example, sent Tuesday and labeled Thu and Fri, is two days; the blind set implies one day and
+is not fitted (D81). Monday to Saturday: weekend demand is strong, but a Sunday slot the office does not
+staff is a promise the property breaks, and with a calendar the property's own days win. Known limit:
+an office that opens Saturday at noon is offered 10:00 AM Saturday unless its calendar states a time.
+Expected effect on the template baselines: `sample.jsonl` and `holdout_12.jsonl` unchanged; five
+`synthetic_12.jsonl` records whose labels this project wrote under the fixed pair now fail the payload
+check; `synthetic_v2.jsonl` unchanged, its Sunday Mon and Tue labels being one day where this rule
+starts at two. Scopes: a tour slot planner in `Decisions`, `PropertyFacts` and its loader, both
+composers and their interface, `ValidatingMessageComposer`, both language sets, `LeasingMessageAgent`,
+`ReplyOptionSpelling`, `Evaluator`, `BaselineNumbersTests`, A10, A27 and OPERATIONS.md. Assumptions:
+A10, A27. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D108 built (2026-09-14).** On `sprint-17`, test first in three slices. The tour
+slot planner and the option format failed to compile, then passed their 16 tests. The property
+calendar's loader tests failed to compile and the scorer's dated-option tests failed 4 cases at
+runtime, then both passed. The composer, compose-validate loop and agent tests failed to compile on
+the missing `tourSlots` parameter, then passed. The first full gate failed on exactly the baseline the
+decision predicted: `synthetic_12.jsonl`'s Saturday tour sends now offer Monday and Tuesday against
+Thursday and Friday labels this project wrote under the fixed pair. It was re-pinned at payload 3 of 10
+and overall 5 of 13, with the reason in the test. `.\test.ps1` then passed 115 and 842 tests at 100
+percent line, branch and method coverage. Template runs of all four sets: `sample.jsonl` 2 of 2 and
+`holdout_12.jsonl` 12 of 12, unchanged, their Tuesday tour sms offering `Dec 11, 2025, 10:00 AM` and
+`Dec 12, 2025, 10:00 AM`; `synthetic_v2.jsonl` 1 of 30, unchanged, its Sunday sends offering October 27
+and 28 where its labels name Mon and Tue. The committed `synthetic_12` scorecard was refreshed; the
+`synthetic_v2` one was left as it was, since only its latency figures moved. Numbered sms options are
+now joined with a semicolon on every call to action. The README diagram and the narration's rehearsal
+now schedule at step 3 and compose at step 4. No model run was made. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

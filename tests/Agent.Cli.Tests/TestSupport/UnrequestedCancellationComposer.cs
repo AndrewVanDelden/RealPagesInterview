@@ -22,7 +22,8 @@ internal sealed class UnrequestedCancellationComposer(string taskIdThatThrows) :
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null)
     {
         if (prospectCase.TaskId == taskIdThatThrows)
         {
