@@ -1,41 +1,32 @@
 # How the next-best-message agent works, out loud
 
-Filled from Appendix B of `~/.agent-rules/PROJECT_PLAYBOOK.md`. The script below answers all
-seven questions in 274 words, a minute and a half spoken, one paragraph per question and
-questions 2 and 3 together. Rules while speaking: no pattern names, no class names, one file name
-at most, and walk one record rather than the parts. The number in question 6 is updated after
-every run that changes it.
+Filled from Appendix B of `~/.agent-rules/PROJECT_PLAYBOOK.md`. The script below is 180 words,
+about one minute spoken, and answers the seven questions in order. Rules while speaking: no
+pattern names, no class names, one file name at most, and walk one record rather than the parts.
+The numbers are updated after every run that changes them.
 
 ## One minute
 
-It reads leasing prospect records and writes one row for each: which channel, when to send, the
-message, and what to do next. A record nobody may contact still gets a row saying so.
+It reads leasing records and writes one row for each: whether to message, on which channel, when,
+what to say, and what happens next.
 
-Six steps run in order in one file, `LeasingMessageAgent.cs`. Pick the first channel the prospect
-prefers and has consented to. Look up the next action by who they are, where they are in the lease
-cycle, and how far off their move date is. Write the message in their language. Schedule it at the
-time their stage calls for, or the channel's hour, in their timezone. Run four safety checks. Emit
-the row with a reason for every decision.
+Six steps run in one file. Pick the first channel the person prefers and has consented to. Plan the
+next action from who they are, their stage, and how far off their move is. Write the message: code
+picks the call to action, its link, the reply options and the property facts that serve it, and a
+language model writes only the sentences around them. Schedule it in their timezone. Run four
+safety checks. Emit the row with a reason for every decision.
 
-Code makes every decision. A language model, only when asked for, writes the prose, and the same
-safety gate checks its draft before anything ships.
+If the model fails or a draft is unsafe, a template writes it. If no rule fits, a fallback answers
+and a person reviews it.
 
-It fails three ways. A line that will not parse becomes one error row and the batch keeps going.
-If the model is down or its draft fails safety, a fixed template writes the message instead and
-the row says so. If no rule covers a prospect, a generic fallback answers, and the record goes on
-a review queue for a person to confirm.
+On the hold-out, which the rules were fitted to, every decision is right and a model judge matches 8
+of 11 message bodies. On a set written blind, 1 of 30. That gap is the honest number, and closing it
+means rules for the stages that set shows.
 
-An evaluator scores each field against the customer's own labels. The rules were fitted to the
-hold-out, so its 12 of 12 proves nothing. The honest number is a set written blind to the code:
-13 of 30, and half its misses are stages no rule covers yet.
-
-Only the model judge can fail a weak message body, and it is off by default. I would make it part
-of every run.
-
-Last result, 2026-09-11, the PR #33 merge into `dev` at `6e05adb`, the final Sprint 15 code, template composer, reference
-times as documented: `holdout_12.jsonl` 12 of 12, fitted; `synthetic_12.jsonl` 12 of 13;
-`synthetic_v2.jsonl` 13 of 30, the honest number; each malformed line an error row, and zero
-safety violations on all three.
+Last result, 2026-09-13, `sprint-16` at `f313f98`: `holdout_12.jsonl` with the model, the judge and
+its property data, 12 of 12 with bodies 8 of 11; template composer, reference times as documented,
+`sample.jsonl` 2 of 2, `synthetic_12.jsonl` 9 of 13 and `synthetic_v2.jsonl` 1 of 30, each
+malformed line an error row, and zero safety violations on all four.
 
 ## Curveballs I have rehearsed
 
@@ -45,10 +36,11 @@ safety violations on all three.
   guessing a zone and hiding the guess. Proof: `synthetic_08_unknown_timezone`, which passes send
   day and send hour with the zone recorded as UTC. The blind set's author guessed Central time for
   the same case, and that disagreement is recorded rather than refitted.
-- **A required state the program has no check for.** Three hold-out records assert
-  `renewal_offer_loaded` and nothing in the program can earn it. Today it is recorded by name as
-  having no check, neither claimed nor failed. Step 6 owns it. Fix: write the check when a labeled
-  record shows what would earn it. Proof: those three records, whose state map names it.
+- **A required state the program has no check for.** Any name outside the four it checks is
+  recorded by name as having no check, neither claimed nor failed. Step 6 owns it.
+  `renewal_offer_loaded` was such a name; it is now earned by finding the record's renewal offer in
+  the property data, the stand-in for the property management system. Proof: the hold-out's three
+  renewal records, earned with `--property-data` and not earned without it.
 - **A record that asks for quiet hours.** Today it gets its stage's send time, or the channel's
   hour when its stage has none, because no quiet-hours window is modeled and no input file has
   ever carried one. Step 4 owns it. Fix: read the window off the record and move the slot to the
@@ -61,7 +53,7 @@ safety violations on all three.
   queue row.
 - **A persona and lifecycle stage no row covers.** Today the generic row answers, the message
   goes out, and the record gets a review-queue row naming the missing pair, so a person sees it
-  without opening the diagnostics. On the blind set that is 8 of its 16 failing records. Step 2
+  without opening the diagnostics. On the blind set that is 11 records, each queued. Step 2
   owns it. Fix: add the row when a labeled training record shows the pair. Proof:
   `synthetic_02_unseen_persona_and_stage`, which the generic row answers correctly and which is
   still queued, because a correct guess is still a guess.
@@ -94,7 +86,8 @@ the diagnostics file, the review queue and the evaluation report switched on.
   `src/Agent/Composition/TemplateMessageComposer.cs`.** The record's language is English, so the
   English prose set is used and the account records that the locale was applied. The record's
   call to action, book a tour, maps to the wire type `schedule_tour` in the call-to-action table,
-  which holds only the type and an email link path. The reply options Thu and Fri come from the
+  which holds the type, the email link path, the purpose the model is told, and the kinds of
+  property fact that serve it. The reply options Thu and Fri come from the
   English set in `src/Agent/Composition/EnglishMessageTemplates.cs`, keyed by that type, and the
   link stays null because this is SMS. The body comes back as "Hi Taylor! Welcome to Oak Ridge
   Apartments. We heard you're looking in Richardson, TX. Reply to book a tour. Reply 1 for Thu, 2

@@ -3253,6 +3253,19 @@ miss becomes a fact or a rule code owns, rather than a sentence the model may we
 `OpenAiMessageComposer` and its goldens. Evidence: that run. Assumptions: A18. Taken on the owner's
 instruction of 2026-09-13.
 
+**Run and debug fact, the hold-out after D104 and D105 (2026-09-13).** The D104 and D105 tests ran
+red first (14 failing) and pass with their implementation; `.\test.ps1` passes 112 and 788 tests at
+100 percent. One full run of `holdout_12.jsonl`, every flag and `--property-data`: exit 0; every
+deterministic check full; ActionSem 12 of 12; BodySem 8 of 11, from 5 of 11; p95 1976 ms against
+2000 ms, under it; no brand-style warning; review queue empty. The three bodies the judge still fails:
+`prospect_welcome_day0` states the computed timeline ("early January"), which its label omits, and
+the judge's reason also says it lacks the reply options it carries (Thu or Fri);
+`prospect_consent_block_sms_fallback_email` states the tour availability its label omits; and
+`resident_renewal_90day_notice` rewords the price hold as "review within the next 10 days", adds the
+lease end date and leaves out the text-reminder offer. Results are in
+`holdout_12_run_2026-09-13_d105` on the owner's desktop. `synthetic_v2.jsonl` was not re-run after
+D104 and D105.
+
 **D102 addendum, the long cadence stays on the long branch (2026-09-13).** Moving every no-date
 record's evidence to the new branch left prospect/new with no long action, so a prospect dated
 more than 45 days out took the generic `follow_up_in_days` 3 instead of
