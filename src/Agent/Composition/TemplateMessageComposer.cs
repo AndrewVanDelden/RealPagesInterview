@@ -69,7 +69,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
         IReadOnlyList<string> optionTexts)
     {
         string welcome = propertyName is null ? string.Empty : Fill(templates.SmsWelcome, propertyName);
-        string options = Fill(templates.SmsOptionsSentence, NumberedOptions(templates, optionTexts));
+        string options = templates.NumberedOptionsSentence(optionTexts);
 
         return $"{greeting}!{welcome} {interestPhrase}{Fill(templates.SmsCtaSentence, ctaPhrase)} {options} {templates.SmsOptOut}";
     }
@@ -92,13 +92,6 @@ public sealed class TemplateMessageComposer : IMessageComposer
 
     private static string Fill(string template, params object[] values) =>
         string.Format(CultureInfo.InvariantCulture, template, values);
-
-    // A10: sample 1's shape, "Reply 1 for ..., 2 for ...", so the body and cta.options carry the same
-    // list and a reader of the message can act on it. The numbered options are joined with a semicolon
-    // because a dated tour option carries commas of its own. O(n) in the number of options, a language
-    // set's row or the planned slots, never input.
-    private static string NumberedOptions(MessageTemplates templates, IReadOnlyList<string> optionTexts) =>
-        string.Join("; ", optionTexts.Select((option, index) => Fill(templates.SmsOption, index + 1, option)));
 
     private static string BuildInterestPhrase(ProspectProfile profile, MessageTemplates templates)
     {

@@ -34,7 +34,7 @@ public class OpenAiMessageComposerTests
 
         ComposedMessage result = ComposedOf(outcome);
         NextMessage message = result.Message;
-        Assert.Equal("Hi Taylor, book a tour! Reply STOP to opt out.", message.Body);
+        Assert.Equal("Hi Taylor, book a tour! Reply STOP to opt out. Reply 1 for Thu; 2 for Fri.", message.Body);
         Assert.Equal("Tour Oak Ridge", message.Subject);
         Assert.Equal("schedule_tour", message.Cta!.Type);
         Assert.Equal(["Thu", "Fri"], message.Cta.Options);
@@ -205,12 +205,13 @@ public class OpenAiMessageComposerTests
 
     // A required disclosure is a reproducible decision, so code owns it and the model writes
     // only prose. A body the model wrote without an opt-out gets the record's own language set's
-    // sentence, the one the template writes: after a space on sms, on its own line on email, where
-    // it follows the link line a draft without the link also gets, so it stays the last line.
+    // sentence, the one the template writes: after a space on sms, where it follows the numbered
+    // options sentence code also writes, on its own line on email, where it follows the link line a
+    // draft without the link also gets, so it stays the last line.
     [Theory]
-    [InlineData("en", CommunicationChannel.Sms, "hi Reply STOP to opt out.")]
+    [InlineData("en", CommunicationChannel.Sms, "hi Reply 1 for a question; 2 for a tour. Reply STOP to opt out.")]
     [InlineData("en", CommunicationChannel.Email, "hi\nGet started: https://oakridge.example/tour\nTo opt out of emails, reply STOP.")]
-    [InlineData("es", CommunicationChannel.Sms, "hi Responde STOP para cancelar.")]
+    [InlineData("es", CommunicationChannel.Sms, "hi Responde 1 para una pregunta; 2 para una visita. Responde STOP para cancelar.")]
     [InlineData("es", CommunicationChannel.Email, "hi\nEmpieza aquí: https://oakridge.example/tour\nPara cancelar los correos, responde STOP.")]
     public async Task ComposeAsync_OptOutRequiredAndTheModelWroteNone_AppendsTheLanguageSetsSentence(string language, CommunicationChannel channel, string expectedBody)
     {
@@ -234,12 +235,13 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal("Hi Taylor. Reply STOP to opt out.", ComposedOf(outcome).Message.Body);
+        Assert.Equal("Hi Taylor. Reply STOP to opt out. Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
     }
 
-    // Nothing is appended that the record did not ask for.
+    // No opt-out is appended that the record did not ask for; the numbered options still are, since
+    // an sms always carries its options (A10).
     [Fact]
-    public async Task ComposeAsync_OptOutNotRequired_AppendsNothing()
+    public async Task ComposeAsync_OptOutNotRequired_AppendsOnlyTheOptions()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
@@ -247,7 +249,24 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal("hi", ComposedOf(outcome).Message.Body);
+        Assert.Equal("hi Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
+    }
+
+    // The model dropped the numbered options from one sms and translated the dates of another, so
+    // code writes the options sentence the template writes, in the record's language around options
+    // that read the same in every language, and the body and cta.options always agree.
+    [Theory]
+    [InlineData("en", "hi Reply 1 for Dec 11, 2025, 10:00 AM; 2 for Dec 12, 2025, 10:00 AM. Reply STOP to opt out.")]
+    [InlineData("es", "hi Responde 1 para Dec 11, 2025, 10:00 AM; 2 para Dec 12, 2025, 10:00 AM. Responde STOP para cancelar.")]
+    public async Task ComposeAsync_TourSms_CodeWritesTheNumberedOptionsSentence(string language, string expectedBody)
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(language: language), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
+
+        Assert.Equal(expectedBody, ComposedOf(outcome).Message.Body);
+        Assert.Equal(SampleTourSlots.TuesdayText, ComposedOf(outcome).Message.Cta!.Options);
     }
 
     [Fact]
@@ -648,9 +667,9 @@ public class OpenAiMessageComposerTests
     // same way in every language, so the model is told to offer exactly those, joined with a
     // semicolon because each carries commas; a call to action with a language-set row gets that row.
     [Theory]
-    [InlineData("en", null, "schedule_tour", "offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM.")]
-    [InlineData("es", null, "schedule_tour", "offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM.")]
-    [InlineData("es", "reschedule_tour", "reschedule", "offer exactly these reply options, numbered in this order: hoy; mañana.")]
+    [InlineData("en", null, "schedule_tour", "the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options.")]
+    [InlineData("es", null, "schedule_tour", "the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options.")]
+    [InlineData("es", "reschedule_tour", "reschedule", "the system appends these reply options to the body, numbered in this order: hoy; mañana. Do not write reply options in the body; return the same options in cta_options.")]
     public async Task ComposeAsync_SmsUserPrompt_NamesTheOptionsCodeChose(string language, string? primaryCta, string ctaType, string expectedInstruction)
     {
         string json = $$"""{"subject":null,"body":"hi","cta_type":"{{ctaType}}","cta_options":null}""";
@@ -674,7 +693,7 @@ public class OpenAiMessageComposerTests
 
         await composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open"), CommunicationChannel.Sms);
 
-        Assert.Contains("This is sms: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.", fakeClient.LastUserPrompt);
+        Assert.Contains("This is sms: return the reply options in cta_options; the system appends them to the body, numbered, so do not write reply options in the body. Do not write a link.", fakeClient.LastUserPrompt);
     }
 
     // TemplateMessageComposerTests pins the same input for the offline composer
@@ -803,7 +822,7 @@ public class OpenAiMessageComposerTests
         ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Sms);
 
         Assert.Equal(
-            "Hi Jordan, review your renewal offer. We've reserved current pricing for 10 days. If you prefer text, reply YES to get reminders by SMS. Reply STOP to opt out.",
+            "Hi Jordan, review your renewal offer. We've reserved current pricing for 10 days. If you prefer text, reply YES to get reminders by SMS. Reply 1 for yes; 2 for no. Reply STOP to opt out.",
             ComposedOf(outcome).Message.Body);
     }
 
@@ -998,7 +1017,7 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(includeOptOutInstructions: false), CommunicationChannel.Sms);
 
-        Assert.Equal("Hi Taylor! Welcome to Oak Ridge. Book a tour today.", ComposedOf(outcome).Message.Body);
+        Assert.Equal("Hi Taylor! Welcome to Oak Ridge. Book a tour today. Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
     }
 
     // An offer that states only its price hold writes only that, with the data's own number of days.
@@ -1140,7 +1159,7 @@ public class OpenAiMessageComposerTests
             The call to action must be exactly 'schedule_tour'.
             Purpose of the call to action: invite the prospect to book a tour.
             Opt-out instructions: the system appends them, so do not write any.
-            This is sms: offer exactly these reply options, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Put them in the body and return the same options in cta_options. Do not write a link.
+            This is sms: the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options. Do not write a link.
             <prospect_data>
             channel: sms
             language: en

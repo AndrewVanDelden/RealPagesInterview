@@ -14,9 +14,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 859 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner takes or declines D113 and D114, which the full runs after D112 raised.
-Open decisions: D113, D114.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 862 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the full runs after D114 are read against the runs after D112.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -151,6 +151,6 @@ named invitation (D111), and code writes renewal terms (D112). Run and debug fac
 **D113 and D114, the full runs after D112, Sprint 17 (2026-09-14).** One model run of each file, a
 run and debug fact. The hold-out keeps every deterministic check, and bodies read 7 of 11 from 8: the
 welcome email with no named call to action now passes, and two bodies that passed now fail. The blind
-set's bodies read 2 of 24 from 0. p95 latency failed both. The judge sees no send date, so it cannot
-tell a date is the label's weekday (D113), and the model dropped or translated the code's reply options
-(D114). Both are proposed.
+set's bodies read 2 of 24 from 0. p95 latency failed both. Both proposals were taken: the judge sees
+each side's send time and weekday (D113), and code writes the sms reply options sentence (D114). A
+second pair of runs measures them.

@@ -3620,5 +3620,25 @@ options, as it is told for the opt-out, and code appends the language set's opti
 the template writes, before the opt-out on every sms with options; (b) tell the model to copy the
 options verbatim; (c) leave it. Recommendation: (a), D105's rule: text the model rewrote or dropped
 becomes text code writes; (b) is a prose instruction of the kind the model just ignored. Scopes:
-`OpenAiMessageComposer`, its goldens and A10. Evidence: the two bodies. Assumptions: A10, A18. Open. The
+`OpenAiMessageComposer`, its goldens and A10. Evidence: the two bodies. Assumptions: A10, A18. Open.
+
+**D113 and D114 addendum, taken: option (a) each (2026-09-14).** The owner took both recommendations.
+D113: the judge's reference and candidate blocks each carry `send_at`, and the rubric says a weekday on
+one side and a date on the other name the same day when the date is the first with that weekday after
+that side's send date. D114: on sms the model writes no reply options in the body; it is told the
+system appends them, and it still returns options in `cta_options` for a call to action code has none
+for. Code appends the language set's numbered options sentence, the one the template writes, after the
+draft and any renewal offer terms and before the opt-out, and the options sentence is built by one rule
+both composers share. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D113 and D114 built (2026-09-14).** On `sprint-17`, test first: 16 cases in
+`SemanticJudgeTests` and `OpenAiMessageComposerTests` failed for the intended reasons, the golden rubric,
+a new prompt test for each side's `send_at` and weekday, the sms instruction theory, the no-options
+instruction, the golden user prompt, and eight sms bodies that now end with code's numbered options
+sentence before the opt-out; all passed with the implementation. The options sentence moved from a
+private method of the template composer to `MessageTemplates`, so both composers build it one way.
+A body the model wrote with its own opt-out now gets the options after it, because code cannot tell
+where in the draft that sentence sits; the model is told the system appends both. `.\test.ps1` passed
+115 and 862 tests at 100 percent line, branch and method coverage, with every pinned template baseline
+unchanged, since the template composer's output did not change. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

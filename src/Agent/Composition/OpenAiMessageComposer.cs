@@ -246,9 +246,14 @@ public sealed class OpenAiMessageComposer(
         // OptOutInstructions, the one definition the gate and the scorer use, gets the record's
         // language set's sentence, the one the template writes, after the link line so it stays
         // the last line; a body that has one is left as the model wrote it.
-        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithLink)
-            ? isEmail ? $"{bodyWithLink}\n{templates.EmailOptOut}" : $"{bodyWithLink} {templates.SmsOptOut}"
-            : bodyWithLink;
+        // The numbered options are code's like the link: the model dropped them from one sms and
+        // translated another's dates, so an sms gets the language set's options sentence, the one the
+        // template writes, after the draft and any offer terms and before the opt-out.
+        string bodyWithOptions = isEmail ? bodyWithLink : $"{bodyWithLink} {templates.NumberedOptionsSentence(options!)}";
+
+        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithOptions)
+            ? isEmail ? $"{bodyWithOptions}\n{templates.EmailOptOut}" : $"{bodyWithOptions} {templates.SmsOptOut}"
+            : bodyWithOptions;
 
         var cta = new Cta(payload.CtaType, options, link);
         var message = new NextMessage(channel, null, payload.Subject, body, cta);
@@ -309,9 +314,9 @@ public sealed class OpenAiMessageComposer(
             (true, null, _) =>
                 $"This is {channelName}: return a subject line and no reply options. Do not write a link.",
             (false, _, { } options) =>
-                $"This is {channelName}: offer exactly these reply options, numbered in this order: {string.Join("; ", options)}. Put them in the body and return the same options in cta_options. Do not write a link.",
+                $"This is {channelName}: the system appends these reply options to the body, numbered in this order: {string.Join("; ", options)}. Do not write reply options in the body; return the same options in cta_options. Do not write a link.",
             (false, _, null) =>
-                $"This is {channelName}: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.",
+                $"This is {channelName}: return the reply options in cta_options; the system appends them to the body, numbered, so do not write reply options in the body. Do not write a link.",
         };
 
         // These have to be plain instructions, not <prospect_data> fields: the system
