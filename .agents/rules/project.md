@@ -59,8 +59,12 @@ sets it. Never read, print, or write the value.
 - Every substantive decision, bug, or run/debug fact lands in `docs/DECISIONS_ARCHIVE.md` before
   the turn ends, named in the log's sprint paragraph, never in this file. Assume the chat can be cleared at any time.
 - After any edit to this file, run `.\check-instruction-files.ps1`, which CI also runs (rules only, 150 lines, the phase
-  state in the log, the log's word cap, every citation resolving, no decision number in `src` or `tests`), then `.\sync-agent-rules.ps1`,
-  which regenerates `.agents/rules/project.md` for Antigravity. Never edit the generated copy.
+  state in the log, the log's word cap, every citation resolving, no decision number in `src` or `tests`), then `.\sync-agent-config.ps1`,
+  which regenerates `.agents/rules/project.md`, the review skill, the reviewer subagent, and the hook wiring
+  under `.claude/` and `.agents/` from `agent/`. Never edit a generated copy.
+- Before a PR, run `/review` against `dev` and act on every finding or record why not in `docs/CODE_REVIEW.md`.
+  The agent hooks, the pre-commit hook, and CI all refuse an em dash, a commit on `main`, and an instruction
+  file out of shape; the scripts are under `agent/hooks/`.
 
 ## Conventions that differ from defaults
 
@@ -120,34 +124,25 @@ sets it. Never read, print, or write the value.
 
 ## Review criteria
 
-A review starts from the assumption that the diff has a regression, a gap, or a wasted
-cost, and reaches "Nothing to report" only after an active search fails to find one. It is
-not a check that the code matches its own description or that the author's own tests pass:
-the author wrote the code, the tests, and the description, so confirming those against each
-other only reproduces the author's blind spots. Coverage proves every line ran, not that
-its arithmetic, its deleted behavior, or its edge cases are correct. A line that raises a
-question is traced to an answer or checked with a scratch test, never waved through as
-"probably intended" or "that's asking for defensive code."
+A review is run against the artifact alone: the diff and the code it depends on, without
+the pull request description, the commit messages, or the session that produced the
+change. `/review` runs it that way. Before any verdict, the review states its evidence:
 
-Run these passes over the diff, not one narrative read:
+- For every line the diff removes or replaces: what it guaranteed, and where the new code
+  re-establishes that guarantee. A guarantee with no new home is a finding.
+- For every counter, accumulator, and branch condition the diff touches: one concrete trace
+  with real values.
+- For the inputs the diff handles: what happens on an invalid combination, an empty
+  collection, a null on a path that looks unreachable, or calls made out of order.
 
-- Contract and removed behavior: for every line the diff deletes or replaces, name what it
-  guaranteed, and find where the new code re-establishes that guarantee. If you can't, that
-  is a finding.
-- State and arithmetic tracing: follow every counter, accumulator, and branch condition
-  through at least one concrete scenario with real values. Code that reads correctly and
-  code that computes correctly are different claims.
-- Boundary and hostile inputs: name what happens on an invalid combination of inputs, an
-  empty collection, a null on a path that looks unreachable, or calls made out of order.
-- Access costs: check whether a property, getter, or formatter hides an allocation, a
-  repeated scan, a re-sort, or I/O behind what reads like a cheap read.
+Cost questions (a repeated scan, a re-sort, an allocation or I/O behind a property) are
+answered by the Bounded Cost benchmark, not by reading the diff.
 
-Then check the pillars in `~/.claude/CLAUDE.md` by acronym (VF, LC, EA, SD, HR, SCU, EET,
-HSC, SCS, BC, HB, PF, DBT; the key and the evidence for each are in
+Then check the pillars loaded at user scope by acronym (VF, LC, EA, SD, HR, SCU, EET, HSC,
+SCS, BC, HB, PF, DBT; the key and the evidence for each are in
 `~/.agent-rules/CODE_PILLARS.md`). Report a finding only when it affects correctness, a
 stated requirement, or a named pillar, and name which. Do not report style preferences,
 hypothetical future needs, or requests for more abstraction, defensive code, or tests for
 cases that cannot occur. A reviewer asked to find gaps will report some in sound work; a
-finding without a named rule behind it is optional and should say so. "Nothing to report"
-is earned by running every pass above and finding nothing, never the default outcome of a
-read that happened to feel clean.
+finding without a named rule behind it is optional and should say so. If no finding meets
+the bar, the findings section is: Nothing to report.

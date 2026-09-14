@@ -29,8 +29,20 @@ cited by acronym: VF, LC, EA, SD, HR, SCU, EET, HSC, SCS, BC, HB, PF, DBT;
 the key and the evidence for each are in `~/.agent-rules/CODE_PILLARS.md`.
 The pillar text is not reproduced here; `AGENTS.md` is the single project
 source and the pillars' source lives outside the repo. A finding must name a
-correctness defect, a stated requirement, or a pillar. An empty review
-outputs exactly "Nothing to report."
+correctness defect, a stated requirement, or a pillar. The review states its
+evidence (removed guarantees, concrete traces, boundaries) before any verdict;
+if no finding meets the bar, its findings section is exactly "Nothing to report."
+
+The `/review` skill (`agent/skills/review`, generated into both tools' folders by
+`sync-agent-config.ps1`) runs that review cold: the diff and the code, never the PR
+description, the commit messages, or the session that wrote the change. On Claude Code it
+runs in the `code-reviewer` subagent, which has no conversation history by construction.
+Its canary is PR #18 as of commit 8692e23, before the fix commit 4c3fc4f: three confirmed
+correctness findings that the second reviewer reported as "Nothing to report" on 2026-09-08.
+Run cold on 2026-09-13 as a fresh-context subagent with the diff and the code only, it
+reported the batch-total double count and the `--output`/`--replay` conflict as findings and
+the opt-out case narrowing as optional, evidence section first, plus one boundary case the
+original review had not named: a missing `--replay` file escapes as an unhandled exception.
 
 The earlier version of this section listed a "SOLID and DRY" mandate and a
 "Cutting-Edge Language Sync" rule. Both were retired on 2026-09-05 and

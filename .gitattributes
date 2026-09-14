@@ -2,3 +2,7 @@
 .agents/rules/*.md text eol=lf
 AGENTS.md text eol=lf
 CLAUDE.md text eol=lf
+agent/**/*.md text eol=lf
+.claude/**/*.md text eol=lf
+.agents/**/*.md text eol=lf
+.githooks/* text eol=lf
