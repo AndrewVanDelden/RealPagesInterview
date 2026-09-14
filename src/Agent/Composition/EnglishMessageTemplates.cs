@@ -34,6 +34,9 @@ internal static class EnglishMessageTemplates
             ["reschedule"] = "reschedule your tour",
             ["intent_capture"] = "tell us if you plan to renew",
             ["review_renewal_details"] = "review your renewal details",
+            ["get_started"] = "get started with your move-in checklist",
+            ["enroll_loyalty"] = "enroll in the loyalty program",
+            ["review_renewal"] = "review your renewal offer",
         }.ToFrozenDictionary(StringComparer.Ordinal),
         SmsOptionsByCtaType: new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {

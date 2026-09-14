@@ -200,7 +200,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     private static CheckResult ScoreCtaPayload(NextMessage message, Cta? expectedCta) => message.Channel switch
     {
         CommunicationChannel.Sms => Verdict(
-            message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { } expectedOptions || OptionsMatch(options, expectedOptions))),
+            message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { Count: > 0 } expectedOptions || OptionsMatch(options, expectedOptions))),
         CommunicationChannel.Email => Verdict(
             message.Cta?.Link is { } link && (expectedCta?.Link is not { } expectedLink || string.Equals(link.AbsoluteUri, expectedLink.AbsoluteUri, StringComparison.Ordinal))),
         _ => CheckResult.NotMeasured,

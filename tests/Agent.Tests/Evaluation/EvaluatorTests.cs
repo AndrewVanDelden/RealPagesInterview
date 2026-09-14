@@ -367,13 +367,17 @@ public class EvaluatorTests
     }
 
     // A weekday offered as an abbreviation asks the recipient the same question as the day's full
-    // name, so the scorer folds English and Spanish weekday names before comparing; a different day
-    // is still a different option.
+    // name, so the scorer folds a weekday's own abbreviation and full name before comparing,
+    // English against English and Spanish against Spanish; a different day, or the same day in
+    // the other language, is still a different option - an English option is not the record's
+    // Spanish label, however the two spell the same weekday.
     [Theory]
     [InlineData(new[] { "Thursday", "Friday" }, new[] { "Thu", "Fri" }, CheckResult.Passed)]
     [InlineData(new[] { "Thursday", "Friday" }, new[] { "Thurs", "fri." }, CheckResult.Passed)]
     [InlineData(new[] { "jueves", "viernes" }, new[] { "jue", "vie" }, CheckResult.Passed)]
     [InlineData(new[] { "Thursday", "Friday" }, new[] { "Tue", "Fri" }, CheckResult.Failed)]
+    [InlineData(new[] { "jueves", "viernes" }, new[] { "Thu", "Fri" }, CheckResult.Failed)]
+    [InlineData(new[] { "Thursday", "Friday" }, new[] { "jueves", "viernes" }, CheckResult.Failed)]
     public void Evaluate_SmsOptionsNamingTheSameWeekdays_PassWhateverTheSpelling(string[] labelOptions, string[] options, CheckResult expected)
     {
         var label = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour", labelOptions));
@@ -391,6 +395,19 @@ public class EvaluatorTests
     {
         var labelWithoutOptions = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour"));
         ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithoutOptions));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: ["a question", "a tour"])));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    // A label whose options list is present but empty has stated no option to compare against,
+    // the same fact an absent list states, so it is scored the same way: presence.
+    [Fact]
+    public void Evaluate_LabelSmsStatesAnEmptyOptionsList_AnyOptionsThatArePresentPass()
+    {
+        var labelWithEmptyOptions = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour", []));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithEmptyOptions));
 
         RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: ["a question", "a tour"])));
 

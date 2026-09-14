@@ -35,7 +35,7 @@ public sealed class CliRunner(
     TextWriter output,
     TextWriter error,
     IMessageComposer? composerOverride = null,
-    SemanticJudge? judgeOverride = null)
+    ISemanticJudge? judgeOverride = null)
 {
     private static readonly HttpClient SharedHttpClient = new();
 
@@ -138,6 +138,27 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
+        // A replay runs no agent, so it has no per-record AgentDiagnostics or IngestNotes to
+        // write: ReplayAsync takes no diagnostics stream. Refused rather than silently never
+        // opening the file, for the same reason every other flag a replay cannot honor is.
+        if (diagnosticsPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--diagnostics needs a run that produces per-record diagnostics: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A live run's judge verdicts reach the record only through the eval report or the
+        // diagnostics row (RunRecordAsync); with neither flag they are computed and thrown away,
+        // spending a real model call per record for nothing anyone reads. Refused before the
+        // judge is built, so no call is ever made. A replay is exempt: WriteScorecardAsync always
+        // prints its report to the console, --eval-report or not, so its judge calls are read
+        // regardless.
+        if (judgeRequested && replayPath is null && evalReportPath is null && diagnosticsPath is null)
+        {
+            error.WriteLine("--judge needs --eval-report or --diagnostics: without either, its verdicts are never written anywhere.");
+            return CliExitCodes.UsageError;
+        }
+
         // The run's reference time is a value passed in, never a clock read inside the library,
         // so a documented run can pass the date its labels were written against and reproduce
         // its send times on any day. Without the flag it is the current UTC time, so send times
@@ -201,7 +222,7 @@ public sealed class CliRunner(
         // The judge is configuration, not a per-record decision, so it is built before
         // either path runs and a missing key is a usage error before any work happens
         // (playbook step 77).
-        SemanticJudge? judge;
+        ISemanticJudge? judge;
         try
         {
             judge = judgeRequested ? judgeOverride ?? BuildJudge(configuration, loggerFactory) : null;
@@ -409,7 +430,7 @@ public sealed class CliRunner(
     // O(n) time in the input lines; O(MaxConcurrentRecords + f) space, f the lines that did not parse.
     private async Task<(int RecordsRead, List<string> ParseFailures)> RunWindowedAsync(
         LeasingMessageAgent agent,
-        SemanticJudge? judge,
+        ISemanticJudge? judge,
         IEnumerable<Result<ProspectCase>> reads,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -508,7 +529,7 @@ public sealed class CliRunner(
     // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
     private static async Task<RecordRun> RunRecordAsync(
         LeasingMessageAgent agent,
-        SemanticJudge? judge,
+        ISemanticJudge? judge,
         ProspectCase prospectCase,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -562,9 +583,25 @@ public sealed class CliRunner(
         // latency is measured, so the grade's call is in neither the latency nor another record's
         // lines. The verdict rides the result to the fold, the one writer of the diagnostics row
         // and the score row it lands on. The batch's elapsed includes these calls.
-        JudgeVerdict? judgement = judge is null
-            ? null
-            : await judge.GradeAsync(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs), cancellationToken);
+        //
+        // Per-record isolation again, the same rule agent.RunAsync's own catch above states: a bug
+        // in the judge is not evidence about this record's own output, which the pipeline already
+        // produced before the judge ever ran, so it must not discard that output or stop a later
+        // record from running behind it. The verdict is simply not measured; the caught exception
+        // is not attached to the entry for the same reason SemanticJudge.GradeAsync's own catch
+        // gives (step 68).
+        JudgeVerdict? judgement = null;
+        if (judge is not null)
+        {
+            try
+            {
+                judgement = await judge.GradeAsync(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs), cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogError(ex, "Judge call failed; the record's own output is unaffected.");
+            }
+        }
 
         return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, judgement);
     }
@@ -577,7 +614,7 @@ public sealed class CliRunner(
         string inputPath,
         string replayPath,
         string? evalReportPath,
-        SemanticJudge? judge,
+        ISemanticJudge? judge,
         ILoggerFactory loggerFactory,
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)

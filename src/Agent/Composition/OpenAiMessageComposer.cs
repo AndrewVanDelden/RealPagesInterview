@@ -1,5 +1,4 @@
 using System.ClientModel;
-using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -131,7 +130,7 @@ public sealed class OpenAiMessageComposer(
             log.LogWarning("Completion request failed: {CompletionFailure}.", noChoiceFailure);
             return new ComposeOutcome.Failed($"Completion request failed: {noChoiceFailure}")
             {
-                ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 1, ex.InputTokens, ex.OutputTokens),
+                ModelCost = ModelCostNotes.ForFailedCall(ex),
                 NetworkRetries = ex.NetworkRetries,
             };
         }
@@ -153,7 +152,7 @@ public sealed class OpenAiMessageComposer(
             // completion and fails at the JSON parse below with its tokens and retries.
             return new ComposeOutcome.Failed($"Completion request failed: {failure}")
             {
-                ModelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0),
+                ModelCost = ModelCostNotes.ForFailedCall(ex),
             };
         }
 
@@ -384,7 +383,7 @@ public sealed class OpenAiMessageComposer(
 
         return string.Concat(
             kinds.Contains(PropertyFactKind.TourAvailability) ? StatedLine("tour_availability", facts.TourAvailability) : string.Empty,
-            kinds.Contains(PropertyFactKind.ExtendedTourHours) && context.CancellationReason == ScheduleConflict
+            kinds.Contains(PropertyFactKind.ExtendedTourHours) && IsScheduleConflict(context.CancellationReason)
                 ? StatedLine("extended_tour_hours", facts.ExtendedTourHours)
                 : string.Empty,
             kinds.Contains(PropertyFactKind.StartingPrice) && context.ProfileOrEmpty.BudgetMax is not null
@@ -398,6 +397,9 @@ public sealed class OpenAiMessageComposer(
 
     private static bool IsProspect(string? persona) =>
         persona is not null && string.Equals(persona.Trim(), "prospect", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsScheduleConflict(string? cancellationReason) =>
+        cancellationReason is not null && string.Equals(cancellationReason.Trim(), ScheduleConflict, StringComparison.OrdinalIgnoreCase);
 
     // The day of the month as a person says it: the first ten days early, the next ten mid, the
     // rest late, the phrase the hold-out's label uses for a move on the 15th ("mid-February").

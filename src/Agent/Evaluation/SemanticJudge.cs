@@ -14,7 +14,7 @@ namespace Agent.Evaluation;
 // given --judge, so offline runs report both as not measured. Known limitation: one vendor key
 // makes judge and composer one model family (self-preference); offline text is not model-written,
 // the label as reference mitigates the model path, and the judge model is pinned apart.
-public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<SemanticJudge>? logger = null)
+public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<SemanticJudge>? logger = null) : ISemanticJudge
 {
     private readonly ILogger<SemanticJudge> log = logger.OrNullLogger();
 
@@ -103,10 +103,7 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
                 run.ProspectCase.TaskId,
                 ex.ToRedactedDiagnosticString());
 
-            ModelCostNotes callCost = ex is NoCompletionChoiceException noChoice
-                ? new ModelCostNotes(Calls: 1, CompletedCalls: 1, noChoice.InputTokens, noChoice.OutputTokens)
-                : new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0);
-            return Unmeasured(callCost);
+            return Unmeasured(ModelCostNotes.ForFailedCall(ex));
         }
 
         var modelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 1, completion.InputTokens, completion.OutputTokens);

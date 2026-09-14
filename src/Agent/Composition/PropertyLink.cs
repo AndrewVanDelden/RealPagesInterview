@@ -53,12 +53,18 @@ internal static partial class PropertyLink
 
         string unitSegment = Presence.IsAbsent(unit)
             ? string.Empty
-            : NonUnitCharacters().Replace(DashCharacters().Replace(unit!, "-"), string.Empty);
+            : NonUnitCharacters().Replace(FoldDashes(unit!), string.Empty);
 
         return unitSegment.Length == 0
             ? null
             : new Uri($"https://{slug}.example/{path.Replace(UnitSegment, unitSegment, StringComparison.Ordinal)}");
     }
+
+    // Every dash character written as an ASCII hyphen, so a unit is the same identifier
+    // whichever one a person typed it with. The one place this fold is written: PropertyFacts
+    // calls it too, to match a renewal offer's unit against a record's regardless of which
+    // dash each was authored with.
+    internal static string FoldDashes(string unit) => DashCharacters().Replace(unit, "-");
 
     // The type word is dropped only when something else remains: a property called "Lofts"
     // is its own slug, and dropping the word would leave no host at all.

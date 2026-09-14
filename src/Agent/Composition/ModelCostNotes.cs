@@ -34,6 +34,15 @@ public sealed record ModelCostNotes(int Calls, int CompletedCalls, int InputToke
             left.OutputTokens + right.OutputTokens);
     }
 
+    // What a failed completion call costs, the one rule every ICompletionClient caller shares
+    // (OpenAiMessageComposer.ComposeAsync, SemanticJudge.GradeAsync): a completion with no
+    // choice still carries the vendor's own usage block on the exception, so it is counted as
+    // completed with those tokens; any other failure is a counted call the client threw before
+    // or instead of a completion, so nothing came back to measure. O(1).
+    public static ModelCostNotes ForFailedCall(Exception ex) => ex is NoCompletionChoiceException noChoice
+        ? new ModelCostNotes(Calls: 1, CompletedCalls: 1, noChoice.InputTokens, noChoice.OutputTokens)
+        : new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0);
+
     // One rendering for both per-batch surfaces, the scorecard and the Batch complete log line,
     // so the two cannot word the same number differently. O(1).
     public static string Describe(ModelCostNotes? notes) =>

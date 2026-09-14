@@ -62,4 +62,18 @@ public class PropertyDataTests
         Assert.False(new PropertyFacts("Lakeview Commons").RenewalOfferFor("A‑204", null).HasValue);
         Assert.False(new PropertyFacts("Lakeview Commons").RenewalOfferFor(null, "REN-1").HasValue);
     }
+
+    // A unit is the same identifier whichever dash character wrote it, the same fold
+    // PropertyLink.For already applies before it builds the unit's link segment: an offer
+    // authored with a plain hyphen is still found by a record whose unit states a non-breaking
+    // one, and the reverse.
+    [Theory]
+    [InlineData("A-204", "A‑204")]
+    [InlineData("A‑204", "A-204")]
+    public void RenewalOfferFor_UnitsWrittenWithDifferentDashCharacters_StillMatch(string offerUnit, string recordUnit)
+    {
+        var facts = new PropertyFacts("Lakeview Commons", RenewalOffers: [new RenewalOffer(Unit: offerUnit)]);
+
+        Assert.True(facts.RenewalOfferFor(recordUnit, null).HasValue);
+    }
 }

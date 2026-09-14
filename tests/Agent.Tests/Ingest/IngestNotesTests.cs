@@ -13,7 +13,9 @@ public class IngestNotesTests
         "{\"task_id\":\"full\",\"persona\":\"prospect\",\"lifecycle_stage\":\"new\"," +
         "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false}," +
         "\"channel_preferences\":[\"sms\"]," +
-        "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\",\"profile\":{\"first_name\":\"Taylor\",\"city_interest\":\"Richardson, TX\",\"amenity_interest\":[\"pool\"]}}," +
+        "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\"," +
+        "\"unit\":\"A-204\",\"move_in_date\":\"2026-01-10\",\"lease_end_date\":\"2026-12-31\",\"renewal_offer_id\":\"REN-A204\",\"missed_tour_time\":\"2025-12-08T15:04:00Z\",\"cancellation_reason\":\"schedule_conflict\"," +
+        "\"profile\":{\"first_name\":\"Taylor\",\"city_interest\":\"Richardson, TX\",\"amenity_interest\":[\"pool\"],\"budget_max\":1800,\"tenure_months\":12,\"loyalty_status\":\"enrolled\",\"features_enablement\":[\"keyless_entry\"]}}," +
         "\"assertions\":{\"required_states\":[],\"constraints\":{\"no_pii_leak\":true,\"include_opt_out_instructions\":true,\"primary_cta\":\"book_tour\"}}," +
         "\"thresholds\":{\"p95_latency_ms\":2000,\"personalization_score_min\":0.85,\"reply_classification_f1_min\":0.9,\"safety_violations_max\":0}}";
 
@@ -46,9 +48,19 @@ public class IngestNotesTests
             "input.last_interaction",
             "input.timezone",
             "input.language",
+            "input.unit",
+            "input.move_in_date",
+            "input.lease_end_date",
+            "input.renewal_offer_id",
+            "input.missed_tour_time",
+            "input.cancellation_reason",
             "input.profile.first_name",
             "input.profile.city_interest",
             "input.profile.amenity_interest",
+            "input.profile.budget_max",
+            "input.profile.tenure_months",
+            "input.profile.loyalty_status",
+            "input.profile.features_enablement",
             "assertions.constraints.no_pii_leak",
             "assertions.constraints.include_opt_out_instructions",
             "assertions.constraints.primary_cta",
@@ -76,9 +88,19 @@ public class IngestNotesTests
 
         string[] expectedDefaulted =
         [
+            "input.unit",
+            "input.move_in_date",
+            "input.lease_end_date",
+            "input.renewal_offer_id",
+            "input.missed_tour_time",
+            "input.cancellation_reason",
             "input.profile.first_name",
             "input.profile.city_interest",
             "input.profile.amenity_interest",
+            "input.profile.budget_max",
+            "input.profile.tenure_months",
+            "input.profile.loyalty_status",
+            "input.profile.features_enablement",
             "assertions.constraints.no_pii_leak",
             "assertions.constraints.include_opt_out_instructions",
             "assertions.constraints.primary_cta",

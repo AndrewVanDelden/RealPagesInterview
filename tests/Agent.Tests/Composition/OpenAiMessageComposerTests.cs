@@ -816,6 +816,9 @@ public class OpenAiMessageComposerTests
     [InlineData("moved_away", null, false, false)]
     [InlineData(null, 1700, false, true)]
     [InlineData("schedule_conflict", 1700, true, true)]
+    [InlineData("Schedule_Conflict", null, true, false)]
+    [InlineData(" schedule_conflict ", null, true, false)]
+    [InlineData("SCHEDULE_CONFLICT", null, true, false)]
     public async Task ComposeAsync_TourInvitation_ListsTheTourFactsTheRecordsOwnInputCallsFor(string? cancellationReason, int? budgetMax, bool extendedHours, bool price)
     {
         const string json = """{"subject":"Tour","body":"hi","cta_type":"schedule_tour","cta_options":null}""";

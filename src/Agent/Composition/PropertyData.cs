@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Agent.Common;
 
 namespace Agent.Composition;
@@ -7,8 +8,15 @@ namespace Agent.Composition;
 // only state when this system of record gives them; the model never supplies one.
 public sealed record PropertyData(IReadOnlyList<PropertyFacts> Properties)
 {
-    // O(p) in the properties. The name is compared trimmed and without regard to case, the way
-    // people type a property's name; an absent name finds nothing.
+    // Built once, here, so every FactsFor call is a hash lookup rather than a scan: a live run
+    // calls it twice per record (LeasingMessageAgent, then the composer), once more per compose
+    // retry. The first property with a given name wins a duplicate, the way a linear first-match
+    // would have; PropertyDataLoader already refuses a file that names one twice.
+    private readonly FrozenDictionary<string, PropertyFacts> byName = BuildIndex(Properties);
+
+    // O(1): one hash lookup against the index built at construction. The name is compared
+    // trimmed and without regard to case, the way people type a property's name; an absent name
+    // finds nothing.
     public Option<PropertyFacts> FactsFor(string? propertyName)
     {
         if (Presence.IsAbsent(propertyName))
@@ -16,9 +24,21 @@ public sealed record PropertyData(IReadOnlyList<PropertyFacts> Properties)
             return Option<PropertyFacts>.None();
         }
 
-        string wanted = propertyName!.Trim();
-        PropertyFacts? found = Properties.FirstOrDefault(facts => string.Equals(facts.PropertyName.Trim(), wanted, StringComparison.OrdinalIgnoreCase));
+        return byName.TryGetValue(propertyName!.Trim(), out PropertyFacts? found)
+            ? Option<PropertyFacts>.Some(found)
+            : Option<PropertyFacts>.None();
+    }
 
-        return found is null ? Option<PropertyFacts>.None() : Option<PropertyFacts>.Some(found);
+    // O(p) in the properties, once.
+    private static FrozenDictionary<string, PropertyFacts> BuildIndex(IReadOnlyList<PropertyFacts> properties)
+    {
+        var index = new Dictionary<string, PropertyFacts>(properties.Count, StringComparer.OrdinalIgnoreCase);
+
+        foreach (PropertyFacts facts in properties)
+        {
+            index.TryAdd(facts.PropertyName.Trim(), facts);
+        }
+
+        return index.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 }

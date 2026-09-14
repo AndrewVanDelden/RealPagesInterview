@@ -3291,3 +3291,41 @@ Recommendation: (a): the purpose of a call to action is a decision, so code owns
 the type, and the brand rule is code's already. Scopes: `CallToActionCatalog`,
 `OpenAiMessageComposer` and its goldens. Evidence: that run's judge reasons. Assumptions: A18.
 Taken on the owner's instruction of 2026-09-13.
+
+**Run and debug fact, PR #36 review fixes (2026-09-14).** A `/code-review` of PR #36 (9 findings)
+and an Antigravity review already on the PR (9 findings, labeled Gemini 3.8 Flash) were checked
+against the code before any fix; three of the nine Antigravity findings were declined with
+evidence and left unfixed. `renewal_offer_loaded` computed in `LeasingMessageAgent` regardless of
+composer is D101 verbatim, not a bug. `TaskDiagnostics` referencing `Evaluation.JudgeVerdict` is a
+same-assembly namespace reference with no stated rule against it. `GenericActionRow` rejecting
+`no_move_date_action` is A19's own evidence rule for the generic row, stated in its comment. The
+other fourteen findings were fixed, strict TDD, each confirmed red before its fix: `get_started`,
+`enroll_loyalty` and `review_renewal` had no phrase in either language set, so
+`TemplateMessageComposer` wrote the literal type into a Spanish body; both sets gained a phrase.
+OPERATIONS.md's documented `holdout_12.jsonl` run omitted `--property-data`, so following it would
+not reproduce the PR's own `renewal_offer_loaded` numbers; added. `PropertyFacts.SameIdentifier`
+compared a unit's dash character raw while `PropertyLink.For` already folded it; `PropertyLink`
+now exposes `FoldDashes` and both call it (the originally-posted PR comment proposed reusing
+`SafetyTextNormalizer.FoldHyphens` instead, which on inspection is a narrower, differently-scoped
+fold for term-match bypass detection, not the same rule; that comment is superseded by this entry).
+`IngestNotes.Describe`'s `DefaultedFields` never named the ten members D96-D101 added, so their
+silent defaulting went unlogged against the type's own stated purpose; added, in the domain's
+member order. `DescribePropertyFacts`'s `cancellation_reason` check was a bare `==`, unlike every
+other free-text comparison in the file; trimmed and ordinal-ignore-case now, matching `IsProspect`.
+`Evaluator.ScoreCtaPayload` treated a present-but-empty labeled `options` list as a list to match
+rather than as absent, an unexcluded boundary; `is not { Count: > 0 }` now. `ReplyOptionSpelling`
+folded a weekday's English and Spanish spellings to one shared key, so an English reply option
+could pass as a Spanish label's weekday; canonical keys are now per-language. `PropertyData.FactsFor`
+scanned its list on every call, up to three times a record; it now indexes once at construction,
+O(1) after. `judge.GradeAsync` inside `CliRunner.RunRecordAsync` sat outside the try/catch
+`agent.RunAsync` already had, so a judge bug (not a real completion-client failure, which
+`GradeAsync` already catches) would discard every record's output in the batch; a new
+`ISemanticJudge` interface (`SemanticJudge`'s own shape, S3's seam) lets a test fault-inject past
+`GradeAsync`'s own catch, and `RunRecordAsync` now catches around the call the same way, the
+verdict becoming not-measured rather than the record failing. `--diagnostics` was missing from
+`--replay`'s mutual-exclusivity checks (`ReplayAsync` takes no diagnostics stream at all); added,
+matching `--rules` and `--property-data`. `--judge` alone, without `--eval-report` or
+`--diagnostics`, spent a real model call per record on a live run and wrote every verdict nowhere;
+refused before the judge is built, replay exempted since its report always prints regardless.
+`.\test.ps1` after every fix: 919 tests (115 Agent.Cli.Tests, 804 Agent.Tests), 100 percent line,
+branch and method coverage, both projects.

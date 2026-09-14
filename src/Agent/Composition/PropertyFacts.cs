@@ -23,6 +23,9 @@ public sealed record PropertyFacts(
         return found is null ? Option<RenewalOffer>.None() : Option<RenewalOffer>.Some(found);
     }
 
+    // Folded through PropertyLink.FoldDashes before comparing: a unit is the same identifier
+    // whichever dash character it was typed with, the same rule the link segment already
+    // follows for the same field.
     private static bool SameIdentifier(string? stated, string wanted) =>
-        stated is not null && string.Equals(stated.Trim(), wanted.Trim(), StringComparison.Ordinal);
+        stated is not null && string.Equals(PropertyLink.FoldDashes(stated.Trim()), PropertyLink.FoldDashes(wanted.Trim()), StringComparison.Ordinal);
 }

@@ -34,6 +34,9 @@ internal static class SpanishMessageTemplates
             ["reschedule"] = "reprogramar tu visita",
             ["intent_capture"] = "decirnos si piensas renovar",
             ["review_renewal_details"] = "revisar los detalles de tu renovación",
+            ["get_started"] = "completar tu proceso de mudanza",
+            ["enroll_loyalty"] = "inscribirte en el programa de lealtad",
+            ["review_renewal"] = "revisar tu oferta de renovación",
         }.ToFrozenDictionary(StringComparer.Ordinal),
         SmsOptionsByCtaType: new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {

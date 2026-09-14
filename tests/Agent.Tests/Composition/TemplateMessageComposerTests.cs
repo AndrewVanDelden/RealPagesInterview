@@ -253,10 +253,42 @@ public class TemplateMessageComposerTests
         Assert.Equal(new Uri("https://oakridge.example/reply"), result.Message.Cta!.Link);
     }
 
-    private static ProspectCase ResidentCase(string? primaryCta, string lifecycleStage, string? unit)
+    private static ProspectCase ResidentCase(string? primaryCta, string lifecycleStage, string? unit, string? language = "en")
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: primaryCta, persona: "resident", lifecycleStage: lifecycleStage);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: primaryCta, persona: "resident", lifecycleStage: lifecycleStage, language: language);
         return prospectCase with { Input = prospectCase.ContextOrEmpty with { Unit = unit } };
+    }
+
+    // Each resident call to action reads as its own phrase, not its wire type: a language set
+    // with no row for a type spells the type itself (A9), so a resident CTA without a row would
+    // otherwise read as English words inside a Spanish message.
+    [Theory]
+    [InlineData("get_started", "welcome", "get started with your move-in checklist")]
+    [InlineData("enroll_loyalty", "loyalty_engage", "enroll in the loyalty program")]
+    [InlineData("review_renewal", "renewal_window", "review your renewal offer")]
+    public async Task ComposeAsync_ResidentEmailEnglish_UsesTheCallToActionsOwnPhrase(string primaryCta, string lifecycleStage, string expectedPhrase)
+    {
+        ProspectCase prospectCase = ResidentCase(primaryCta, lifecycleStage, unit: "A‑204");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Contains(expectedPhrase, result.Message.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("get_started", "welcome", "completar tu proceso de mudanza")]
+    [InlineData("enroll_loyalty", "loyalty_engage", "inscribirte en el programa de lealtad")]
+    [InlineData("review_renewal", "renewal_window", "revisar tu oferta de renovación")]
+    public async Task ComposeAsync_ResidentEmailSpanish_UsesTheCallToActionsOwnPhrase(string primaryCta, string lifecycleStage, string expectedPhrase)
+    {
+        ProspectCase prospectCase = ResidentCase(primaryCta, lifecycleStage, unit: "A‑204", language: "es");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Contains(expectedPhrase, result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("get started", result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("enroll loyalty", result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("review renewal", result.Message.Body, StringComparison.OrdinalIgnoreCase);
     }
 
     // The hold-out's resident email labels: the welcome and loyalty pages by path, and the

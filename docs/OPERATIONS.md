@@ -12,7 +12,7 @@ written so it stands on its own without that history.
 dotnet build                                                  # build the whole solution
 .\test.ps1                                                    # run the suite; fails the build under 100% coverage; exits with dotnet test's exit code
 dotnet run --project src/Agent.Cli -- --input <file> --output <file> [--now <ISO-8601>] [options]
-dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json --now 2025-12-09T00:00:00-06:00 --eval-report eval.txt --diagnostics diag.json
+dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --output out.json --now 2025-12-09T00:00:00-06:00 --property-data holdout_12_property_data.json --eval-report eval.txt --diagnostics diag.json
 dotnet run --project src/Agent.Cli -- --input synthetic_12.jsonl --output out.json --now 2026-03-07T12:00:00Z --eval-report eval.txt
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt --judge
