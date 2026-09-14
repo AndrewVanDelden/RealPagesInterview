@@ -7,7 +7,7 @@ public enum EvaluationCheck
     Channel,
     SendAtDay,
     SendAtHour,
-    NextActionType,
+    NextActionMatch,
     OptOut,
     CtaType,
     CtaPayload,

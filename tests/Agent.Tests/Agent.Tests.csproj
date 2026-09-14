@@ -20,6 +20,7 @@
     <None Include="..\..\sample.jsonl" Link="TestData\sample.jsonl" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\holdout_12.jsonl" Link="TestData\holdout_12.jsonl" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\synthetic_12.jsonl" Link="TestData\synthetic_12.jsonl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\synthetic_v2.jsonl" Link="TestData\synthetic_v2.jsonl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

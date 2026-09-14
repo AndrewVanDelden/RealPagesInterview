@@ -3026,3 +3026,306 @@ agent: `NoCompletionChoiceException` carries tokens but no retry count, and the 
 for it never sets `NetworkRetries`, so a no-choice call that followed a transient retry reports
 null retries and the run undercounts retries, not tokens. Untested and unchanged; outside D91's
 scope for Sprint 16, it needs its own decision.
+
+**D94. The call-to-action payload check compares the link (taken 2026-09-13).** Question: the
+payload check passes any email whose link is present, whatever it points to. The owner's hold-out
+run of 2026-09-11 (`--composer openai --judge`, branch `sprint-16` at `8e397d8`) scored Payload
+11/11 while all four resident emails linked to `https://oakridge.example/reply` and their labels
+named `/welcome`, `/loyalty`, `/renewal/A-204` and `/renewal/A-204/details`. Options: (a) when the
+label states a link, an email passes only when its link equals the label's, and a label with no
+link keeps the presence rule; (b) compare the path and ignore the host; (c) keep presence and
+report a differing link as a diagnostic. Recommendation: (a). A check that cannot fail a wrong link
+measures nothing about the link, and the host is as much a fact as the path. The sms options are
+not compared: the labels spell them as prose a scorer would have to normalize, which is a separate
+question. Scopes: `Evaluator.ScoreCtaPayload` and its tests. On `synthetic_v2.jsonl`, whose
+labels were written blind and name paths such as `/portal` and `/renew` that no row builds, the
+payload tally can fall; that set is not pinned, it was not re-run this sprint, and
+`docs/scorecards/synthetic_v2_template.txt` predates the change. Evidence: that run. Assumptions: A10. Taken on the owner's instruction of
+2026-09-13.
+
+**D95. The judge's reason and its cost are kept (taken 2026-09-13).** Question: `SemanticJudge`
+reads a `reason` with every grade and nothing uses it, and its token cost is in no total: the
+scorecard it builds carries the batch cost computed before judging. A reader of `BodySem 0/11`
+cannot see why a body failed or what the grading cost. Options: (a) the judge grades each record
+inside that record's run, after its latency is measured; the verdict, the reason and the cost ride
+the record's result to the fold, which writes them on the diagnostics row as `judge` and on the
+score row, and the scorecard prints each reason and a `Judge model cost:` line beside `Batch model
+cost:`; a replay grades through the same per-record call after scoring; (b) keep grading after the
+batch and write judge rows to a second file; (c) the reason in the report only, and the judge's
+tokens added into `Batch model cost:`. Recommendation: (a). Diagnostics rows are written as each
+record folds, so a grade made after the batch cannot reach them, and grading per record also drops
+the list of every run the fold held for the judge. The judge's tokens get their own line because
+they are the evaluation's spend and not the product's, and one total would hide which is which.
+With `--judge`, `Batch latency:` includes the judge's calls. Scopes: `SemanticJudge`,
+`RecordScore`, `Scorecard`, `ScorecardFormatter`, `TaskDiagnostics`, `RecordRun`, `RecordFold`,
+`CliRunner` and OPERATIONS.md. Evidence: `SemanticJudge.cs` at `8e397d8`, where
+`JudgePayload.Reason` is read by nothing and `JudgeAsync` passes `scorecard.BatchModelCost`
+through. Assumptions: none. Taken on the owner's instruction of 2026-09-13.
+
+**D96. The model prompt carries the message's facts, its link and a rule against invented facts
+(taken 2026-09-13).** Question: the judge failed all 11 bodies of the run of 2026-09-11. The
+prompt's data block holds nine fields, so a record's unit, move-in date, lease end date, renewal
+offer, missed tour time, cancellation reason, budget, tenure, loyalty status and features to set up
+never reach the model; they are unknown members. The model stated facts no input gave it ("a
+variety of amenities to enhance your living experience" for a record that names no amenity), wrote
+the resident welcome as a pitch where the label asks the resident to register for packages and
+check amenity hours, offered reply options of its own where the language set holds the labeled
+ones, and never put the link in the body, where every labeled email has it. Options: (a) declare
+those ten fields as typed optional members and list each in the data block when the record states
+it; give the email's code-built link to the model as an instruction to write it in the body, and
+append the language set's link line when a draft leaves it out; on sms, name the language set's
+reply options for the call to action; and tell the model to state no fact that the data or the
+instructions do not give it, in at most three sentences before the link and with no sign-off;
+(b) pass every unknown member to the model by name; (c) tighten the system prompt only.
+Recommendation: (a). Typed members are an allowlist, so an arbitrary member a record carries, which
+could hold an identifier, never reaches the model, and a field the code reads has a type; (b)
+forwards whatever a record carries; (c) leaves the facts out, and a model told not to invent a fact
+it was never given cannot write the labeled message. The link stays code-built and the options stay
+the language set's, so neither is the model's invention. Scopes: `ProspectContext`,
+`ProspectProfile`, `OpenAiMessageComposer` and its goldens. A label fact that no input field
+states, such as "Studios start near $1,650" or current pricing reserved for 10 days, stays
+unwritable, so a body whose label depends on one can still fail the judge. A value of the wrong
+type in one of the ten members now makes its line an error row, as a wrong type in any typed member
+already does; the three pinned sets parse unchanged (`BaselineNumbersTests`). Evidence: that run, and
+the input members of `holdout_12.jsonl`, training data since D81. Assumptions: A12, A18. Taken on
+the owner's instruction of 2026-09-13.
+
+**D97. A resident's link is built from the record (taken 2026-09-13).** Question: the
+call-to-action table has paths for the tour and the generic reply only, so `get_started`,
+`enroll_loyalty` and `review_renewal` pass through with the generic `reply` path, and
+`review_renewal_details` keeps it because its labeled link carries the unit and no path could build
+it. Options: (a) rows for `get_started` (`welcome`), `enroll_loyalty` (`loyalty`) and
+`review_renewal` (`renewal/{unit}`); the resident renewal-details stage's path becomes
+`renewal/{unit}/details`; the unit is a typed optional input member; its link segment is the unit
+with every dash character written as a hyphen and every character other than a letter, a digit or
+a hyphen removed, so `A‑204` with a non-breaking hyphen is `A-204`; and a path that needs a unit on
+a record with none gets no link; (b) the same, with the generic path when the unit is absent; (c)
+leave resident links generic. Recommendation: (a). Option (b) links a resident to a page no
+evidence shows, which A21 already refuses for an absent property name. Scopes:
+`CallToActionCatalog`, `PropertyLink`, both composers, A21 and the new A26. Evidence: the four
+resident email labels of `holdout_12.jsonl`. Assumptions: A21, A26. Taken on the owner's
+instruction of 2026-09-13.
+
+**D98. A no-completion-choice call keeps its retry count (taken 2026-09-13).** Question:
+the finding of 2026-09-11 above: `NoCompletionChoiceException` carries tokens and no retry count,
+so a no-choice call that followed a transient retry reports null retries. Options: (a) the
+exception carries the retries the client made, and the model composer's catch sets
+`NetworkRetries` from it, as every other completed-call exit does; (b) document the undercount in
+DESIGN.md. Recommendation: (a), the rule D66 set for spend applied to retries. Scopes: the
+completion client, the exception, the model composer and their tests. Evidence: that finding.
+Assumptions: none. Taken on the owner's instruction of 2026-09-13 to finish Sprint 16.
+
+**D99. The action check compares every member the label states (taken 2026-09-13).** Question:
+the exact action check compares `next_action.type` only, and the judge is shown only the type. In
+the hold-out run of 2026-09-13 three records differ from their labels and pass both:
+`resident_renewal_90day_notice` has no `in_days` (label 5), `resident_renewal_undecided_followup`
+has no `mapping`, and `prospect_spanish_locale` follows up in 3 days (label 2). The first two
+cannot be emitted at all, since `NextAction` has no member for either. Options: (a) `NextAction`
+gains `in_days` and `mapping`; the check passes when the type matches and every member the label
+states equals the output's, a member the label does not state is not compared; the judge is shown
+both actions whole; the catalog emits the two members its labels state; (b) compare the type and
+report differing members as a diagnostic. Recommendation: (a), since a check that passes a reminder
+in the wrong number of days measures the type name and not the action. Scopes: `NextAction`,
+`ActionCatalog`, the rules file, `Evaluator`, `SemanticJudge` and their tests. Evidence: that run.
+Assumptions: A8. Taken on the owner's instruction of 2026-09-13.
+
+**D100. The sms payload check compares the reply options (taken 2026-09-13).** Question: the sms
+payload check passes any non-empty option list. The run of 2026-09-11 sent "Yes, reschedule / No,
+thank you" where the label offered today and tomorrow, and passed. Options: (a) when the label
+states options, the output's options must equal them in order, compared after trimming and without
+regard to case; the model composer sends the language set's options for a call to action the set
+has a row for, since D96 already tells the model to offer exactly those, and keeps the model's only
+where the set has none; (b) keep presence. Recommendation: (a). The four labeled option lists are
+the language sets' rows (Thu and Fri, today and tomorrow, yes, no and details, jueves and viernes),
+so code owns them as it owns the link. Scopes: `Evaluator`, `OpenAiMessageComposer` and their
+tests. Evidence: the hold-out labels and that run. Assumptions: A10. Taken on the owner's
+instruction of 2026-09-13.
+
+**D100 addendum, weekday spellings (2026-09-13).** With exact option comparison,
+`synthetic_12.jsonl` fell from Payload 10 of 10 to 4 of 10: four records failed only because their
+labels spell "Thursday" and "Friday" where the language set sends "Thu" and "Fri", the same
+question to the recipient. The owner took the recommendation: the scorer alone folds English and
+Spanish weekday names and their standard abbreviations to one day before comparing, and the product
+keeps its own spelling. `synthetic_12_unseen_cta_vocabulary` (morning or afternoon) and
+`synthetic_13_past_move_date` (tour or update) remain option failures, both real.
+
+**D101. Property facts come from a property data file, never from the model (taken 2026-09-13).**
+Question: three hold-out bodies state facts no input field carries: tours available this week,
+evening and weekend tour times, studios starting near $1,650, and a renewal offer that holds current
+pricing for 10 days and offers text reminders. Research of 2026-09-13: RealPage's LUMINA AI Leasing
+Agent quotes real-time pricing, availability and amenity information by integrating with the
+property management system (realpage.com, "LUMINA AI Leasing Agent Transforms Multifamily
+Leasing"); the FTC's Greystar order requires the total monthly rent, mandatory fees included, to be
+advertised most prominently (arnoldporter.com advisory, February 2026). Options: (a) a
+`--property-data <file.json>` file standing in for the property management system's feed, keyed by
+property name, carrying tour availability and tour times, starting total monthly prices by floor
+plan with an as-of date, and renewal offers keyed by unit or offer id with price-hold days and
+whether text reminders are offered; loaded and refused whole before any record runs, as `--rules`
+is; the model composer lists the facts found for the record in the data block and the model may
+state only those; a record whose renewal offer is found earns `renewal_offer_loaded`, and one
+asserting it with none found does not; (b) no data source, three honest failures. Recommendation:
+(a), the owner's choice. A price is stated as the total monthly price the feed gives, never as a
+base rent. The hold-out's file, `holdout_12_property_data.json`, is written from its labels, which
+D81 makes training data, and says so; the file is prose facts the model words, not rules. Scopes:
+a new `PropertyData` type and loader, `CliRunner`, `OpenAiMessageComposer`, `LeasingMessageAgent`,
+`RequiredStateMap`, OPERATIONS.md and A27. Evidence: that research and the three labels.
+Assumptions: A27. Taken on the owner's instruction of 2026-09-13.
+
+**D102. No move date is its own horizon branch (taken 2026-09-13).** Question: A7 puts an absent
+move date on the long branch, but the two prospect/open records disagree: sample 2, 68 days out,
+follows up in 3 days, and `prospect_spanish_locale`, with no date, in 2. Research of 2026-09-13:
+the move-in timeline is the first lead qualification question (Buildium, "Multifamily Lead
+Management Guide": "Move-in timeline: Are they looking for next month, or 'sometime this year'?"),
+and follow-up frequency follows how urgent the move is, hot leads same day, warm leads regular
+check-ins, cold leads a nurture sequence (same guide). Options: (a) three branches: short (at most
+45 days, or past), long (more than 45 days), and no move date; every catalog row's evidence from a
+record with no date moves to the no-date branch; prospect/open follows up in 3 days on long and 2
+on no date, sooner because the timeline is not yet qualified; the generic row answers no date with
+its long action; the rules file gains `no_move_date_action`; (b) keep two branches and one miss.
+Recommendation: (a), the owner's choice: it keys on an input field, and every no-date row the
+hold-out shows (cancelled_manager 2, resident welcome 2) already follows up sooner than sample 2's
+dated record. Scopes: `HorizonBranch`, `ActionCatalogRow`, `GenericActionRow`, `ActionCatalog`,
+`NextActionPlanner`, `RulesFileLoader`, A7, A8 and their tests. Evidence: that research, sample 2
+and the hold-out. Assumptions: A7. Taken on the owner's instruction of 2026-09-13.
+
+**Run and debug fact, the stricter checks re-pinned (2026-09-13).** Template composer, reference
+times as documented, after D99, D100, D102 and the two addenda: `sample.jsonl` 2 of 2 and
+`holdout_12.jsonl` 12 of 12, unchanged; `synthetic_12.jsonl` 9 of 13, from 12 of 13, where
+`synthetic_03_lease_end_instead_of_move_date` (no move date, labeled 3 days where D102 gives 2),
+`synthetic_12_unseen_cta_vocabulary` (morning or afternoon) and `synthetic_13_past_move_date` (tour
+or update) now fail; and `synthetic_v2.jsonl` 1 of 30, from 13 of 30, with Action 12 of 29 (from 17)
+and Payload 8 of 25 (from 24). The blind set's drops, read record by record: most sms labels offer
+Mon and Tue where the language set sends Thu and Fri; its email labels name pages no row builds
+(`/portal`, `/lease`, `/renew`, `/maintenance`); and its actions name cadences and values for
+stages no catalog row covers (`resident_move_in_prep`, follow-up in 7). None of those is fitted.
+`BaselineNumbersTests` now pins all four sets, `synthetic_v2.jsonl` added. Process fact: the
+D101 and D103 tests were written in the same step as their implementation and first run with it,
+not run red first, against the repository's test-first rule.
+
+**Run and debug fact, the full runs after D103 (2026-09-13).** At `42ec311`, `--composer openai
+--model-call-budget-ms 30000 --judge` with every output flag. `holdout_12.jsonl` with
+`--property-data holdout_12_property_data.json`: exit 0; every deterministic check full; Overall 12 of
+12; ActionSem 12 of 12; BodySem 5 of 11 (4 of 11 on the run before D98 to D103, 0 of 11 on
+2026-09-11); review queue empty; p95 3551 ms against 2000 ms. The judge's reasons for the six body
+failures: four bodies state property facts their label does not use (tour times, the studio price),
+since the property data holds facts per property and nothing says which facts serve which call to
+action; two leave out a fact they were given (the mid-February move, the 10-day price hold); and
+`resident_welcome_day0` states the move-in date under D103's timeline rule, which its label omits.
+One judge reason is wrong on its own evidence: `prospect_welcome_day0`'s body offers Thu or Fri, and
+the reason says it names no days. `synthetic_v2.jsonl` with no property data: exit 2, its malformed
+line 15 as designed; Overall 1 of 30; ActionSem 13 of 29; BodySem 0 of 24; review queue 11 rows.
+Results are in `holdout_12_run_2026-09-13_final` and `synthetic_v2_run_2026-09-13` on the owner's
+desktop. Not decided: a table of which property facts serve which call to action.
+
+**D104. Which property facts serve which call to action (taken 2026-09-13).** Question: in the full
+hold-out run after D103, four bodies failed the judge because they stated property facts their labels
+do not use: the model received every fact the property data holds on every message. Options: (a) a
+table on the call-to-action catalog naming the fact kinds each call to action may carry, with two
+conditions keyed on input the record states: tour availability for a tour invitation; extended tour
+hours for a tour invitation only when the record's `cancellation_reason` is `schedule_conflict`, the
+objection those hours answer; a starting price for a tour invitation only when the record states
+`budget_max`, the question a price answers; and the renewal offer's price hold and text-reminder
+offer for the renewal review; the property data splits `tour_availability` from
+`extended_tour_hours`; and the model is told to state each fact it is given, since code has chosen
+them; (b) leave the selection to the model. Recommendation: (a). Which fact serves a message is a
+decision, and a message that answers an objection the prospect never raised or quotes a price nobody
+asked about reads as a pitch; addressing the prospect's stated objection is the standard follow-up
+rule the D102 research describes ("each message should either answer something, show something, or
+make the next step easier", ResiDesk multifamily lead nurturing). Scopes: `CallToActionCatalog`, a
+fact selection in composition, `PropertyFacts`, the loader, `OpenAiMessageComposer`,
+`holdout_12_property_data.json`, OPERATIONS.md and A27. Evidence: the judge reasons of that run and
+the labels of `prospect_welcome_day0`, `prospect_cancellation_manager_cross_sell` and
+`resident_renewal_90day_notice`. Assumptions: A27. Taken on the owner's instruction of 2026-09-13.
+
+**D105. The prompt misses of the run after D103 (taken 2026-09-13).** Question: that run's judge
+reasons name three misses the prompt caused or failed to prevent: `prospect_long_horizon_day3` left
+out the mid-February move although told to mention a stated timeline;
+`resident_welcome_day0` stated the move-in date because the same rule covered move-in dates; and
+`resident_renewal_90day_notice` left out the price hold the property facts gave it, under an
+instruction to state only the facts that serve the call to action. Two messages also used more than
+one exclamation mark. Options: (a) code computes a prospect's move timeline from `move_date_target`
+as early, mid or late in the month, and the instruction to mention it is given only when a prospect
+states one; the system-wide timeline rule is removed, so a resident's move-in date is data and not an
+instruction; the property facts instruction says to state each fact given (D104 has chosen them); and
+code keeps the first exclamation mark of a model body and turns later ones into periods, since the
+one-mark limit is code's brand rule; (b) reword the system prompt again. Recommendation: (a): each
+miss becomes a fact or a rule code owns, rather than a sentence the model may weigh. Scopes:
+`OpenAiMessageComposer` and its goldens. Evidence: that run. Assumptions: A18. Taken on the owner's
+instruction of 2026-09-13.
+
+**Run and debug fact, the hold-out after D104 and D105 (2026-09-13).** The D104 and D105 tests ran
+red first (14 failing) and pass with their implementation; `.\test.ps1` passes 112 and 788 tests at
+100 percent. One full run of `holdout_12.jsonl`, every flag and `--property-data`: exit 0; every
+deterministic check full; ActionSem 12 of 12; BodySem 8 of 11, from 5 of 11; p95 1976 ms against
+2000 ms, under it; no brand-style warning; review queue empty. The three bodies the judge still fails:
+`prospect_welcome_day0` states the computed timeline ("early January"), which its label omits, and
+the judge's reason also says it lacks the reply options it carries (Thu or Fri);
+`prospect_consent_block_sms_fallback_email` states the tour availability its label omits; and
+`resident_renewal_90day_notice` rewords the price hold as "review within the next 10 days", adds the
+lease end date and leaves out the text-reminder offer. Results are in
+`holdout_12_run_2026-09-13_d105` on the owner's desktop. `synthetic_v2.jsonl` was not re-run after
+D104 and D105.
+
+**D102 addendum, the long cadence stays on the long branch (2026-09-13).** Moving every no-date
+record's evidence to the new branch left prospect/new with no long action, so a prospect dated
+more than 45 days out took the generic `follow_up_in_days` 3 instead of
+`prospect_welcome_long_horizon`. The template run of `synthetic_v2.jsonl` showed it: three records
+(`v2_prospect_new_long_email`, `v2_horizon_boundary_61_days`, `v2_dst_fall_back_london`) lost the
+action they had passed. The prospect/new row now states that cadence on both the long and the
+no-date branch: the cadence's own name states the horizon it is for, and the research of D102 puts
+a prospect whose move is months away in a nurture sequence (Apartment List, "Qualified Apartment
+Leads": a six-month prospect belongs in a nurture sequence). The blind set prompted the look, so
+this one rule is recorded as seen against it.
+
+**D103. The prompt states each call to action's purpose (taken 2026-09-13).** Question: in the run
+of 2026-09-13 the model left out or blurred three facts it was given: the mid-February move in
+`prospect_long_horizon_day3`, the direct question whether to renew A-204 in
+`resident_renewal_undecided_followup`, and the setup tasks in `features_enablement` in
+`resident_welcome_day0`; and `prospect_long_horizon_day3` broke the one-exclamation brand rule.
+Options: (a) the call-to-action table gains a purpose sentence per call to action the labels show,
+given to the model as an instruction (for `intent_capture`, ask directly whether the resident wants
+to renew their unit; for `get_started`, ask the resident to complete each feature to set up before
+move-in); the system prompt tells the model to mention a stated move or move-in date as a timeline
+and to use at most one exclamation mark; (b) leave the model to infer purpose from the stage name.
+Recommendation: (a): the purpose of a call to action is a decision, so code owns it the way it owns
+the type, and the brand rule is code's already. Scopes: `CallToActionCatalog`,
+`OpenAiMessageComposer` and its goldens. Evidence: that run's judge reasons. Assumptions: A18.
+Taken on the owner's instruction of 2026-09-13.
+
+**Run and debug fact, PR #36 review fixes (2026-09-14).** A `/code-review` of PR #36 (9 findings)
+and an Antigravity review already on the PR (9 findings, labeled Gemini 3.8 Flash) were checked
+against the code before any fix; three of the nine Antigravity findings were declined with
+evidence and left unfixed. `renewal_offer_loaded` computed in `LeasingMessageAgent` regardless of
+composer is D101 verbatim, not a bug. `TaskDiagnostics` referencing `Evaluation.JudgeVerdict` is a
+same-assembly namespace reference with no stated rule against it. `GenericActionRow` rejecting
+`no_move_date_action` is A19's own evidence rule for the generic row, stated in its comment. The
+other fourteen findings were fixed, strict TDD, each confirmed red before its fix: `get_started`,
+`enroll_loyalty` and `review_renewal` had no phrase in either language set, so
+`TemplateMessageComposer` wrote the literal type into a Spanish body; both sets gained a phrase.
+OPERATIONS.md's documented `holdout_12.jsonl` run omitted `--property-data`, so following it would
+not reproduce the PR's own `renewal_offer_loaded` numbers; added. `PropertyFacts.SameIdentifier`
+compared a unit's dash character raw while `PropertyLink.For` already folded it; `PropertyLink`
+now exposes `FoldDashes` and both call it (the originally-posted PR comment proposed reusing
+`SafetyTextNormalizer.FoldHyphens` instead, which on inspection is a narrower, differently-scoped
+fold for term-match bypass detection, not the same rule; that comment is superseded by this entry).
+`IngestNotes.Describe`'s `DefaultedFields` never named the ten members D96-D101 added, so their
+silent defaulting went unlogged against the type's own stated purpose; added, in the domain's
+member order. `DescribePropertyFacts`'s `cancellation_reason` check was a bare `==`, unlike every
+other free-text comparison in the file; trimmed and ordinal-ignore-case now, matching `IsProspect`.
+`Evaluator.ScoreCtaPayload` treated a present-but-empty labeled `options` list as a list to match
+rather than as absent, an unexcluded boundary; `is not { Count: > 0 }` now. `ReplyOptionSpelling`
+folded a weekday's English and Spanish spellings to one shared key, so an English reply option
+could pass as a Spanish label's weekday; canonical keys are now per-language. `PropertyData.FactsFor`
+scanned its list on every call, up to three times a record; it now indexes once at construction,
+O(1) after. `judge.GradeAsync` inside `CliRunner.RunRecordAsync` sat outside the try/catch
+`agent.RunAsync` already had, so a judge bug (not a real completion-client failure, which
+`GradeAsync` already catches) would discard every record's output in the batch; a new
+`ISemanticJudge` interface (`SemanticJudge`'s own shape, S3's seam) lets a test fault-inject past
+`GradeAsync`'s own catch, and `RunRecordAsync` now catches around the call the same way, the
+verdict becoming not-measured rather than the record failing. `--diagnostics` was missing from
+`--replay`'s mutual-exclusivity checks (`ReplayAsync` takes no diagnostics stream at all); added,
+matching `--rules` and `--property-data`. `--judge` alone, without `--eval-report` or
+`--diagnostics`, spent a real model call per record on a live run and wrote every verdict nowhere;
+refused before the judge is built, replay exempted since its report always prints regardless.
+`.\test.ps1` after every fix: 919 tests (115 Agent.Cli.Tests, 804 Agent.Tests), 100 percent line,
+branch and method coverage, both projects.

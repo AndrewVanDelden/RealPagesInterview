@@ -59,4 +59,24 @@ public class ModelCostNotesTests
 
         Assert.Equal("3 call(s), 1 completed, 11 input + 7 output token(s)", ModelCostNotes.Describe(notes));
     }
+
+    // The one rule for what a failed completion call costs, shared by every ICompletionClient
+    // caller: a completion with no choice still carries the vendor's usage on the exception, so
+    // it is counted as completed with those tokens; any other failure is a counted call with
+    // nothing to measure.
+    [Fact]
+    public void ForFailedCall_NoCompletionChoiceException_IsCompletedWithItsTokens()
+    {
+        var ex = new NoCompletionChoiceException(inputTokens: 11, outputTokens: 7, networkRetries: 2, new InvalidOperationException());
+
+        Assert.Equal(new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7), ModelCostNotes.ForFailedCall(ex));
+    }
+
+    [Fact]
+    public void ForFailedCall_AnyOtherException_IsCountedWithNothingMeasured()
+    {
+        Assert.Equal(
+            new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0),
+            ModelCostNotes.ForFailedCall(new TimeoutException()));
+    }
 }

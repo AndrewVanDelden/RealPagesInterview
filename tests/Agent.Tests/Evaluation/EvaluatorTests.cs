@@ -160,7 +160,7 @@ public class EvaluatorTests
     {
         RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody), BaselineAction));
 
-        Assert.Equal(CheckResult.Passed, score.NextActionType);
+        Assert.Equal(CheckResult.Passed, score.NextActionMatch);
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public class EvaluatorTests
     {
         RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody), new NextAction("follow_up_in_days", null, 3)));
 
-        Assert.Equal(CheckResult.Failed, score.NextActionType);
+        Assert.Equal(CheckResult.Failed, score.NextActionMatch);
     }
 
     // Opt-out: the shared instruction list over subject plus body, the one definition the
@@ -324,6 +324,150 @@ public class EvaluatorTests
         RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody)));
 
         Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    // The link is a fact like any other, so an email whose link is not the label's fails even
+    // though it carries one. Presence alone passed four resident emails that all pointed at the
+    // generic reply page while their labels named four different pages.
+    [Fact]
+    public void Evaluate_EmailLinkDiffersFromTheLabelsLink_CtaPayloadFailed()
+    {
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(EmailMessage("expected", link: new Uri("https://oakridge.example/renewal/A-204"))));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody, link: new Uri("https://oakridge.example/reply"))));
+
+        Assert.Equal(CheckResult.Failed, score.CtaPayload);
+    }
+
+    // A label that states no link has nothing to compare against, so presence is what the check
+    // can measure.
+    [Fact]
+    public void Evaluate_LabelEmailStatesNoLink_ALinkThatIsPresentPasses()
+    {
+        var labelWithoutLink = new NextMessage(CommunicationChannel.Email, BaselineSendAt, "Tour Oak Ridge", "expected", new Cta("schedule_tour"));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithoutLink));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody, link: new Uri("https://oakridge.example/anything"))));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    // The reply options are facts the label states, so an sms whose options are not the label's
+    // fails however many it carries; surrounding space and case do not make two options differ.
+    [Theory]
+    [InlineData(new[] { " thu", "FRI " }, CheckResult.Passed)]
+    [InlineData(new[] { "Fri", "Thu" }, CheckResult.Failed)]
+    [InlineData(new[] { "Thu" }, CheckResult.Failed)]
+    [InlineData(new[] { "Yes, book a tour", "No" }, CheckResult.Failed)]
+    public void Evaluate_SmsOptionsAgainstTheLabels_PassOnlyWhenEqual(string[] options, CheckResult expected)
+    {
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Sms, EnglishSmsBody, options: options)));
+
+        Assert.Equal(expected, score.CtaPayload);
+    }
+
+    // A weekday offered as an abbreviation asks the recipient the same question as the day's full
+    // name, so the scorer folds a weekday's own abbreviation and full name before comparing,
+    // English against English and Spanish against Spanish; a different day, or the same day in
+    // the other language, is still a different option - an English option is not the record's
+    // Spanish label, however the two spell the same weekday.
+    [Theory]
+    [InlineData(new[] { "Thursday", "Friday" }, new[] { "Thu", "Fri" }, CheckResult.Passed)]
+    [InlineData(new[] { "Thursday", "Friday" }, new[] { "Thurs", "fri." }, CheckResult.Passed)]
+    [InlineData(new[] { "jueves", "viernes" }, new[] { "jue", "vie" }, CheckResult.Passed)]
+    [InlineData(new[] { "Thursday", "Friday" }, new[] { "Tue", "Fri" }, CheckResult.Failed)]
+    [InlineData(new[] { "jueves", "viernes" }, new[] { "Thu", "Fri" }, CheckResult.Failed)]
+    [InlineData(new[] { "Thursday", "Friday" }, new[] { "jueves", "viernes" }, CheckResult.Failed)]
+    public void Evaluate_SmsOptionsNamingTheSameWeekdays_PassWhateverTheSpelling(string[] labelOptions, string[] options, CheckResult expected)
+    {
+        var label = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour", labelOptions));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(label));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: options)));
+
+        Assert.Equal(expected, score.CtaPayload);
+    }
+
+    // A label with no options has nothing to compare against, so presence is what the check can
+    // measure.
+    [Fact]
+    public void Evaluate_LabelSmsStatesNoOptions_AnyOptionsThatArePresentPass()
+    {
+        var labelWithoutOptions = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour"));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithoutOptions));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: ["a question", "a tour"])));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    // A label whose options list is present but empty has stated no option to compare against,
+    // the same fact an absent list states, so it is scored the same way: presence.
+    [Fact]
+    public void Evaluate_LabelSmsStatesAnEmptyOptionsList_AnyOptionsThatArePresentPass()
+    {
+        var labelWithEmptyOptions = new NextMessage(CommunicationChannel.Sms, BaselineSendAt, null, "expected", new Cta("schedule_tour", []));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(labelWithEmptyOptions));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: ["a question", "a tour"])));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    private static readonly Dictionary<string, string> LabelMapping = new() { ["yes"] = "start_esign_flow", ["no"] = "exit_nurture" };
+
+    // Each case is a label's action, an output's action, and whether the action check passes.
+    private static readonly (NextAction Label, NextAction Output, CheckResult Expected)[] ActionCases =
+    [
+        // 0: a value the label states that differs.
+        (new NextAction("follow_up_in_days", Value: 2), new NextAction("follow_up_in_days", Value: 3), CheckResult.Failed),
+        // 1: the same value.
+        (new NextAction("follow_up_in_days", Value: 2), new NextAction("follow_up_in_days", Value: 2), CheckResult.Passed),
+        // 2: a name the label states that differs.
+        (new NextAction("start_cadence", "a"), new NextAction("start_cadence", "b"), CheckResult.Failed),
+        // 3: a reason the label states that differs.
+        (new NextAction("no_op", Reason: "no_contact_consent"), new NextAction("no_op", Reason: "lead_closed"), CheckResult.Failed),
+        // 4: a day count the label states and the output leaves out.
+        (new NextAction("schedule_sms_reminder", InDays: 5), new NextAction("schedule_sms_reminder"), CheckResult.Failed),
+        // 5: a day count the label does not state is not compared.
+        (new NextAction("schedule_sms_reminder"), new NextAction("schedule_sms_reminder", InDays: 5), CheckResult.Passed),
+        // 6: a mapping the label states and the output leaves out.
+        (new NextAction("branch_on_intent", Mapping: LabelMapping), new NextAction("branch_on_intent"), CheckResult.Failed),
+        // 7: the same mapping written in another order.
+        (new NextAction("branch_on_intent", Mapping: LabelMapping), new NextAction("branch_on_intent", Mapping: new Dictionary<string, string> { ["no"] = "exit_nurture", ["yes"] = "start_esign_flow" }), CheckResult.Passed),
+        // 8: a mapping with a different target.
+        (new NextAction("branch_on_intent", Mapping: LabelMapping), new NextAction("branch_on_intent", Mapping: new Dictionary<string, string> { ["yes"] = "start_esign_flow", ["no"] = "send_offer_details_email" }), CheckResult.Failed),
+        // 9: a different type, whatever else agrees.
+        (new NextAction("follow_up_in_days", Value: 2), new NextAction("reset_cadence", Value: 2), CheckResult.Failed),
+        // 10: the same reason.
+        (new NextAction("no_op", Reason: "no_contact_consent"), new NextAction("no_op", Reason: "no_contact_consent"), CheckResult.Passed),
+        // 11: the same day count.
+        (new NextAction("schedule_sms_reminder", InDays: 5), new NextAction("schedule_sms_reminder", InDays: 5), CheckResult.Passed),
+    ];
+
+    // The action is compared member by member against the label: every member the label states
+    // must equal the output's, and a member the label does not state is not compared.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void Evaluate_NextActionAgainstTheLabel_EveryStatedMemberMustMatch(int caseIndex)
+    {
+        (NextAction label, NextAction output, CheckResult expected) = ActionCases[caseIndex];
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(action: label));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody), output));
+
+        Assert.Equal(expected, score.NextActionMatch);
     }
 
     [Fact]

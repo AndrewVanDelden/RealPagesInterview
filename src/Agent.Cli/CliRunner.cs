@@ -35,7 +35,7 @@ public sealed class CliRunner(
     TextWriter output,
     TextWriter error,
     IMessageComposer? composerOverride = null,
-    SemanticJudge? judgeOverride = null)
+    ISemanticJudge? judgeOverride = null)
 {
     private static readonly HttpClient SharedHttpClient = new();
 
@@ -72,6 +72,7 @@ public sealed class CliRunner(
         string? reviewQueuePath = GetOption(args, "--review-queue");
         string? modelCallBudgetOption = GetOption(args, "--model-call-budget-ms");
         string? rulesPath = GetOption(args, "--rules");
+        string? propertyDataPath = GetOption(args, "--property-data");
 
         // The judge is off unless it is asked for, so an offline run and every pinned baseline
         // never depend on a network call. It is a presence flag, not an option with a value:
@@ -101,7 +102,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--property-data <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -126,6 +127,35 @@ public sealed class CliRunner(
         if (rulesPath is not null && replayPath is not null)
         {
             error.WriteLine("--rules needs a run that plans: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A replay composes nothing and loads no offer, so property data could change nothing it
+        // reports. Refused for the same reason --rules is.
+        if (propertyDataPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--property-data needs a run that composes: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A replay runs no agent, so it has no per-record AgentDiagnostics or IngestNotes to
+        // write: ReplayAsync takes no diagnostics stream. Refused rather than silently never
+        // opening the file, for the same reason every other flag a replay cannot honor is.
+        if (diagnosticsPath is not null && replayPath is not null)
+        {
+            error.WriteLine("--diagnostics needs a run that produces per-record diagnostics: it cannot be combined with --replay.");
+            return CliExitCodes.UsageError;
+        }
+
+        // A live run's judge verdicts reach the record only through the eval report or the
+        // diagnostics row (RunRecordAsync); with neither flag they are computed and thrown away,
+        // spending a real model call per record for nothing anyone reads. Refused before the
+        // judge is built, so no call is ever made. A replay is exempt: WriteScorecardAsync always
+        // prints its report to the console, --eval-report or not, so its judge calls are read
+        // regardless.
+        if (judgeRequested && replayPath is null && evalReportPath is null && diagnosticsPath is null)
+        {
+            error.WriteLine("--judge needs --eval-report or --diagnostics: without either, its verdicts are never written anywhere.");
             return CliExitCodes.UsageError;
         }
 
@@ -192,7 +222,7 @@ public sealed class CliRunner(
         // The judge is configuration, not a per-record decision, so it is built before
         // either path runs and a missing key is a usage error before any work happens
         // (playbook step 77).
-        SemanticJudge? judge;
+        ISemanticJudge? judge;
         try
         {
             judge = judgeRequested ? judgeOverride ?? BuildJudge(configuration, loggerFactory) : null;
@@ -239,6 +269,21 @@ public sealed class CliRunner(
                 rules.SendSlots.Rows.Count);
         }
 
+        // The property data file, the stand-in for the property management system's feed, is read
+        // and checked at the same point and for the same reason as the rules file: a bad file costs
+        // no record, no model call and no partial output.
+        Result<PropertyData?> propertyDataLoad = LoadPropertyData(propertyDataPath);
+        if (ReportIfFailed(propertyDataLoad, log))
+        {
+            return CliExitCodes.UsageError;
+        }
+
+        PropertyData? propertyData = propertyDataLoad.Value;
+        if (propertyData is not null)
+        {
+            log.LogInformation("Property data loaded: {PropertyCount} property record(s).", propertyData.Properties.Count);
+        }
+
         // A model call is bounded by the strictest latency budget the records state, so the
         // model composer is built after a first pass over the file finds it. Nothing that costs
         // time or money has happened yet: reading the file is local, and a bad composer name or
@@ -250,7 +295,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget)),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget), propertyData),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -280,7 +325,8 @@ public sealed class CliRunner(
             safetyValidator,
             new SendScheduler(rules?.SendSlots),
             new NextActionPlanner(rules?.Catalog),
-            loggerFactory.CreateLogger<LeasingMessageAgent>());
+            loggerFactory.CreateLogger<LeasingMessageAgent>(),
+            propertyData);
 
         // Output streams are opened here, before the batch loop, deliberately: an invalid
         // output, diagnostics or review-queue path (bad directory, no write permission) must fail
@@ -319,15 +365,15 @@ public sealed class CliRunner(
         // Each file gets a record's rows as the record is folded, so memory holds the window of
         // runs waiting on an earlier record, never the batch's rows. With --eval-report each
         // record is scored as it is folded and keeps one small score row, because the p95, the
-        // tallies and the report cover the whole batch; with --judge the scored runs stay too.
+        // tallies and the report cover the whole batch; with --judge each record's grade arrives
+        // with its run, so no run is held for grading afterwards.
         Evaluator? evaluator = evalReportPath is null ? null : new Evaluator(loggerFactory.CreateLogger<Evaluator>());
         var fold = new RecordFold(
             error,
             new JsonArrayRecordWriter<AgentOutput>(outputStream),
             diagnosticsStream is null ? null : new JsonArrayRecordWriter<TaskDiagnostics>(diagnosticsStream),
             reviewQueueStream is null ? null : new JsonArrayRecordWriter<ReviewQueueEntry>(reviewQueueStream),
-            evaluator,
-            keepRunsForJudge: judge is not null);
+            evaluator);
 
         // Per batch: one wall-clock elapsed around the record loop, reported on the two artifacts
         // that are already per batch, the log line and the scorecard, and never as a row in the
@@ -340,7 +386,7 @@ public sealed class CliRunner(
         cancellationToken.ThrowIfCancellationRequested();
         await fold.BeginAsync(cancellationToken);
         (int recordsRead, List<string> parseFailures) = await RunWindowedAsync(
-            agent, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
+            agent, judge, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
 
         batchStopwatch.Stop();
         double batchLatencyMs = batchStopwatch.Elapsed.TotalMilliseconds;
@@ -361,12 +407,8 @@ public sealed class CliRunner(
             // report describes exactly what was persisted to --output. Every input the batch
             // could not process is a row too: the lines that did not parse, then the records
             // that threw, each in input order.
-            Scorecard scorecard = await JudgeAndAppendAsync(
-                fold.ScoreBatch(batchLatencyMs),
-                fold.JudgedRuns,
-                judge,
-                [.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows],
-                cancellationToken);
+            Scorecard scorecard = fold.ScoreBatch(batchLatencyMs)
+                .AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows]);
             if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
@@ -388,6 +430,7 @@ public sealed class CliRunner(
     // O(n) time in the input lines; O(MaxConcurrentRecords + f) space, f the lines that did not parse.
     private async Task<(int RecordsRead, List<string> ParseFailures)> RunWindowedAsync(
         LeasingMessageAgent agent,
+        ISemanticJudge? judge,
         IEnumerable<Result<ProspectCase>> reads,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -421,7 +464,7 @@ public sealed class CliRunner(
 
                 cancellationToken.ThrowIfCancellationRequested();
                 ProspectCase prospectCase = read.Value;
-                window.Enqueue(Task.Run(() => RunRecordAsync(agent, prospectCase, referenceTime, log, inFlightCancellation.Token)));
+                window.Enqueue(Task.Run(() => RunRecordAsync(agent, judge, prospectCase, referenceTime, log, inFlightCancellation.Token)));
             }
 
             await FoldEveryRunAsync(window, fold, cancellationToken);
@@ -486,6 +529,7 @@ public sealed class CliRunner(
     // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
     private static async Task<RecordRun> RunRecordAsync(
         LeasingMessageAgent agent,
+        ISemanticJudge? judge,
         ProspectCase prospectCase,
         DateTimeOffset referenceTime,
         ILogger<CliRunner> log,
@@ -534,7 +578,32 @@ public sealed class CliRunner(
         double latencyMs = stopwatch.Elapsed.TotalMilliseconds;
 
         log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
-        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs);
+
+        // With --judge the record is graded here, inside its own run and log scope and after its
+        // latency is measured, so the grade's call is in neither the latency nor another record's
+        // lines. The verdict rides the result to the fold, the one writer of the diagnostics row
+        // and the score row it lands on. The batch's elapsed includes these calls.
+        //
+        // Per-record isolation again, the same rule agent.RunAsync's own catch above states: a bug
+        // in the judge is not evidence about this record's own output, which the pipeline already
+        // produced before the judge ever ran, so it must not discard that output or stop a later
+        // record from running behind it. The verdict is simply not measured; the caught exception
+        // is not attached to the entry for the same reason SemanticJudge.GradeAsync's own catch
+        // gives (step 68).
+        JudgeVerdict? judgement = null;
+        if (judge is not null)
+        {
+            try
+            {
+                judgement = await judge.GradeAsync(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs), cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogError(ex, "Judge call failed; the record's own output is unaffected.");
+            }
+        }
+
+        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, judgement);
     }
 
     // Re-scores an existing output file against --input without running the agent. The output
@@ -545,7 +614,7 @@ public sealed class CliRunner(
         string inputPath,
         string replayPath,
         string? evalReportPath,
-        SemanticJudge? judge,
+        ISemanticJudge? judge,
         ILoggerFactory loggerFactory,
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
@@ -592,7 +661,10 @@ public sealed class CliRunner(
         // No batch latency and no batch cost: no record loop ran here, so nothing was timed and
         // nothing was spent, and the scorecard says so rather than printing zeros.
         Scorecard scored = new Evaluator(loggerFactory.CreateLogger<Evaluator>()).Evaluate(aligned.Value);
-        Scorecard scorecard = await JudgeAndAppendAsync(scored, aligned.Value, judge, [.. parseFailures.Select(RecordScore.DidNotParse)], cancellationToken);
+        // A replay has no record runs to grade inside, so the judge grades the scored rows here,
+        // pairing each with its run by position, before the unparsed lines are appended past them.
+        Scorecard judged = judge is null ? scored : await judge.JudgeAsync(scored, aligned.Value, cancellationToken);
+        Scorecard scorecard = judged.AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse)]);
         if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
@@ -752,6 +824,29 @@ public sealed class CliRunner(
     private static Result<StreamReader> OpenInputReader(string flag, string path) =>
         TryOpen(flag, path, p => new StreamReader(p));
 
+    // No path is no property data, and no property fact is offered to the model. A path that will
+    // not open, or a file the loader refuses, fails the way --rules does.
+    // O(n) time and space in the file's length, the loader's cost.
+    private static Result<PropertyData?> LoadPropertyData(string? path)
+    {
+        if (path is null)
+        {
+            return Result<PropertyData?>.Success(null);
+        }
+
+        Result<StreamReader> opened = OpenInputReader("--property-data", path);
+        if (!opened.IsSuccess)
+        {
+            return Result<PropertyData?>.Failure(opened.Error);
+        }
+
+        using StreamReader reader = opened.Value;
+        Result<PropertyData> loaded = PropertyDataLoader.Load(reader);
+        return loaded.IsSuccess
+            ? Result<PropertyData?>.Success(loaded.Value)
+            : Result<PropertyData?>.Failure($"Could not load --property-data '{path}':{Environment.NewLine}{loaded.Error}");
+    }
+
     // No path is no rules file, and the compiled rules apply. A path that will not open fails
     // the way --input does; a file the loader refuses fails with a line naming the flag and
     // then the loader's failure, which already carries one line per bad row.
@@ -796,31 +891,7 @@ public sealed class CliRunner(
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
 
-    // The judge's two verdicts on top of a scorecard when the run asked for them, then one row
-    // per input the batch could not process. Both paths finish scoring this way. The judge is one
-    // signal beside the deterministic checks and never replaces one, and the unprocessed rows go
-    // last because the judge pairs scorecard rows with runs by position.
-    // O(n) in the scored runs, one judge call each when the judge is on, plus the rebuilt
-    // scorecard's O(n) tallies and O(n log n) p95. AppendUnprocessed reruns both even when
-    // unprocessedRows is empty (the normal, clean-run case), which is redundant: fold.ScoreBatch
-    // already computed the same tallies and p95 for that record set. A skip-when-empty guard was
-    // tried and reverted: appending an empty list recomputes byte-identical values, so the guard
-    // changes no output this method's only test surface (RunAsync's output) can observe, and no
-    // test could pin it without an internal-visibility seam this codebase does not otherwise use.
-    // Left unconditional rather than add one for a redundant computation that is cheap at this
-    // batch's scale.
-    private static async Task<Scorecard> JudgeAndAppendAsync(
-        Scorecard scorecard,
-        IReadOnlyList<ScoredRun> runs,
-        SemanticJudge? judge,
-        IReadOnlyList<RecordScore> unprocessedRows,
-        CancellationToken cancellationToken)
-    {
-        Scorecard judged = judge is null ? scorecard : await judge.JudgeAsync(scorecard, runs, cancellationToken);
-        return judged.AppendUnprocessed(unprocessedRows);
-    }
-
-    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout)
+    private static IMessageComposer BuildOpenAiComposer(IConfiguration configuration, ILoggerFactory loggerFactory, TimeSpan? callTimeout, PropertyData? propertyData)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
             ?? throw new InvalidOperationException(
@@ -835,7 +906,7 @@ public sealed class CliRunner(
             "Composer: openai, model {Model}. Call budget: {CallBudget}.", model, callBudgetDescription);
 
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
-        return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>());
+        return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>(), propertyData);
     }
 
     // Console goes through ConsoleLoggerProvider(error), not Microsoft.Extensions.Logging.Console's

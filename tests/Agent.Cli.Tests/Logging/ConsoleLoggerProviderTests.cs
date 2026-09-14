@@ -23,6 +23,41 @@ public class ConsoleLoggerProviderTests
         Assert.Contains("Information", content);
     }
 
+    // Every line opens with the UTC time in the round-trip ISO 8601 form, then the level in
+    // brackets, then the category and the message, so lines sort by time and read the same on
+    // every machine whatever its culture.
+    [Fact]
+    public void CreateLogger_LogInformation_LineIsTimestampLevelCategoryAndMessage()
+    {
+        var writer = new StringWriter();
+        using (var provider = new ConsoleLoggerProvider(writer))
+        {
+            provider.CreateLogger("MyCategory").LogInformation("hello world");
+        }
+
+        Assert.Matches(
+            @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}\+00:00 \[Information\] MyCategory: hello world$",
+            writer.ToString().TrimEnd());
+    }
+
+    // A scope that is not a set of key/value pairs has no key to render, so it is written
+    // whole after an arrow.
+    [Fact]
+    public void CreateLogger_LogWithinAScopeThatIsNotKeyValuePairs_LineRendersTheScopeAfterAnArrow()
+    {
+        var writer = new StringWriter();
+        using (var provider = new ConsoleLoggerProvider(writer))
+        {
+            ILogger logger = provider.CreateLogger("MyCategory");
+            using (logger.BeginScope("batch 7"))
+            {
+                logger.LogInformation("processing");
+            }
+        }
+
+        Assert.EndsWith("MyCategory: processing => batch 7", writer.ToString().TrimEnd());
+    }
+
     [Fact]
     public void CreateLogger_LogWithException_AppendsExceptionDetailToTheLine()
     {

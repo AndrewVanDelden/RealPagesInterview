@@ -21,7 +21,8 @@ public sealed class LeasingMessageAgent(
     ISafetyValidator validator,
     SendScheduler scheduler,
     NextActionPlanner planner,
-    ILogger<LeasingMessageAgent>? logger = null)
+    ILogger<LeasingMessageAgent>? logger = null,
+    PropertyData? propertyData = null)
 {
     // A14: step 1, the consent-driven channel selection, is the step that owns this state, and
     // the state is earned by a record reaching that step at all. Step 1 runs on every record
@@ -76,10 +77,18 @@ public sealed class LeasingMessageAgent(
                 new NextAction(ActionTypes.NoOp, Reason: SuppressionReason.NoContactConsent.ToWireName()),
                 actionPlan: null,
                 modelCost: null,
-                networkRetries: null);
+                networkRetries: null,
+                renewalOfferLoaded: RequiredStateVerdict.NotEvaluated);
         }
 
         CommunicationChannel channel = contactableChannel.Value;
+
+        // renewal_offer_loaded is earned by finding the record's renewal offer in the property
+        // data, the stand-in for the property management system, and not earned when the run has
+        // no property data or it holds no offer for this record.
+        Option<PropertyFacts> propertyFacts = propertyData is null ? Option<PropertyFacts>.None() : propertyData.FactsFor(context.PropertyName);
+        RequiredStateVerdict renewalOfferLoaded = Verdict(
+            propertyFacts.HasValue && propertyFacts.Value.RenewalOfferFor(context.Unit, context.RenewalOfferId).HasValue);
 
         // Step 2: plan the next action from the horizon (A7), counted in days from the run's
         // reference time as a date in the record's own zone.
@@ -142,7 +151,7 @@ public sealed class LeasingMessageAgent(
             default:
                 var failed = (ComposeOutcome.Failed)composeOutcome;
                 log.LogWarning("Suppressing message: composition failed ({Error}).", failed.Error);
-                return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan, modelCost, networkRetries);
+                return Suppressed(prospectCase, SuppressionReason.CompositionFailed, nextAction, actionPlan, modelCost, networkRetries, renewalOfferLoaded);
         }
 
         // Step 4: schedule (A4, A5). The scheduler returns the send with its working, so the
@@ -192,7 +201,8 @@ public sealed class LeasingMessageAgent(
                 prospectCase.Assertions?.RequiredStates,
                 ConsentVerified,
                 Verdict(fairHousingCheckPassed),
-                Verdict(brandStyle.Applied)),
+                Verdict(brandStyle.Applied),
+                renewalOfferLoaded),
             validation.Violations.Count,
             brandStyle.FailedRules,
             hasViolations ? SuppressionReason.SafetyViolation : SuppressionReason.None,
@@ -248,14 +258,16 @@ public sealed class LeasingMessageAgent(
         NextAction nextAction,
         ActionPlanNotes? actionPlan,
         ModelCostNotes? modelCost,
-        int? networkRetries)
+        int? networkRetries,
+        RequiredStateVerdict renewalOfferLoaded)
     {
         var diagnostics = new AgentDiagnostics(
             RequiredStateMap.For(
                 prospectCase.Assertions?.RequiredStates,
                 ConsentVerified,
                 RequiredStateVerdict.NotEvaluated,
-                RequiredStateVerdict.NotEvaluated),
+                RequiredStateVerdict.NotEvaluated,
+                renewalOfferLoaded),
             SafetyViolationCount: 0,
             BrandStyleFailures: null,
             reason,

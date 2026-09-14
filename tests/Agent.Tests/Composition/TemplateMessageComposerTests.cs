@@ -253,6 +253,90 @@ public class TemplateMessageComposerTests
         Assert.Equal(new Uri("https://oakridge.example/reply"), result.Message.Cta!.Link);
     }
 
+    private static ProspectCase ResidentCase(string? primaryCta, string lifecycleStage, string? unit, string? language = "en")
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: primaryCta, persona: "resident", lifecycleStage: lifecycleStage, language: language);
+        return prospectCase with { Input = prospectCase.ContextOrEmpty with { Unit = unit } };
+    }
+
+    // Each resident call to action reads as its own phrase, not its wire type: a language set
+    // with no row for a type spells the type itself (A9), so a resident CTA without a row would
+    // otherwise read as English words inside a Spanish message.
+    [Theory]
+    [InlineData("get_started", "welcome", "get started with your move-in checklist")]
+    [InlineData("enroll_loyalty", "loyalty_engage", "enroll in the loyalty program")]
+    [InlineData("review_renewal", "renewal_window", "review your renewal offer")]
+    public async Task ComposeAsync_ResidentEmailEnglish_UsesTheCallToActionsOwnPhrase(string primaryCta, string lifecycleStage, string expectedPhrase)
+    {
+        ProspectCase prospectCase = ResidentCase(primaryCta, lifecycleStage, unit: "A‑204");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Contains(expectedPhrase, result.Message.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("get_started", "welcome", "completar tu proceso de mudanza")]
+    [InlineData("enroll_loyalty", "loyalty_engage", "inscribirte en el programa de lealtad")]
+    [InlineData("review_renewal", "renewal_window", "revisar tu oferta de renovación")]
+    public async Task ComposeAsync_ResidentEmailSpanish_UsesTheCallToActionsOwnPhrase(string primaryCta, string lifecycleStage, string expectedPhrase)
+    {
+        ProspectCase prospectCase = ResidentCase(primaryCta, lifecycleStage, unit: "A‑204", language: "es");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Contains(expectedPhrase, result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("get started", result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("enroll loyalty", result.Message.Body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("review renewal", result.Message.Body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The hold-out's resident email labels: the welcome and loyalty pages by path, and the
+    // renewal pages under the record's own unit, whose non-breaking hyphen is written as a plain
+    // hyphen, which is how the labels spell the link.
+    [Theory]
+    [InlineData("get_started", "welcome", "https://oakridge.example/welcome")]
+    [InlineData("enroll_loyalty", "loyalty_engage", "https://oakridge.example/loyalty")]
+    [InlineData("review_renewal", "renewal_window", "https://oakridge.example/renewal/A-204")]
+    [InlineData(null, "renewal_details_requested", "https://oakridge.example/renewal/A-204/details")]
+    public async Task ComposeAsync_ResidentEmail_BuildsItsCallToActionLinkFromTheRecord(string? primaryCta, string lifecycleStage, string expectedLink)
+    {
+        ProspectCase prospectCase = ResidentCase(primaryCta, lifecycleStage, unit: "A‑204");
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Equal(new Uri(expectedLink), result.Message.Cta!.Link);
+        Assert.Contains(expectedLink, result.Message.Body);
+    }
+
+    // A unit's segment keeps letters, digits and hyphens and drops every other character.
+    [Theory]
+    [InlineData("B 118", "https://oakridge.example/renewal/B118")]
+    [InlineData("#12/C", "https://oakridge.example/renewal/12C")]
+    public async Task ComposeAsync_RenewalEmail_DropsEveryOtherCharacterFromTheUnitSegment(string unit, string expectedLink)
+    {
+        ProspectCase prospectCase = ResidentCase("review_renewal", "renewal_window", unit);
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Equal(new Uri(expectedLink), result.Message.Cta!.Link);
+    }
+
+    // A path that names the unit has no page to point at on a record that states no usable unit,
+    // so no link is invented, the rule an absent property name already follows.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    [InlineData("#/")]
+    public async Task ComposeAsync_RenewalEmailWithoutAUsableUnit_CarriesNoLink(string? unit)
+    {
+        ProspectCase prospectCase = ResidentCase("review_renewal", "renewal_window", unit);
+
+        ComposedMessage result = ComposedOf(await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email));
+
+        Assert.Null(result.Message.Cta!.Link);
+    }
+
     // The hold-out's no-show record states reschedule_tour, and its label spells the type
     // reschedule with the options today and tomorrow.
     [Fact]

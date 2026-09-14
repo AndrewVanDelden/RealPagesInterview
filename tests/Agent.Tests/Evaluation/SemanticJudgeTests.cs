@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Agent.Composition;
 using Agent.Domain;
 using Agent.Evaluation;
 using Agent.Tests.TestSupport;
@@ -315,5 +316,95 @@ public class SemanticJudgeTests
 
         Assert.Equal(before.LatencyP95Ms, judged.LatencyP95Ms);
         Assert.Equal(before.LatencyBudgetMs, judged.LatencyBudgetMs);
+    }
+
+    // The reason is what a reader of a failed grade needs, so it travels with the grades to the
+    // score row rather than being read and dropped.
+    [Fact]
+    public async Task JudgeAsync_ModelGivesAReason_TheReasonReachesTheRecordScore()
+    {
+        ScoredRun run = Run();
+        var judge = new SemanticJudge(new FakeCompletionClient("""{"action_matches":true,"body_matches":false,"reason":"the candidate never names the week"}"""));
+
+        Scorecard judged = await judge.JudgeAsync(ScorecardFor(run), [run]);
+
+        Assert.Equal("the candidate never names the week", judged.RecordScores[0].JudgeReason);
+    }
+
+    // The judge grades the action the way the exact check does, every member included, so it is
+    // shown both actions whole rather than their type names.
+    [Fact]
+    public async Task GradeAsync_UserPrompt_ShowsBothActionsWhole()
+    {
+        var fakeClient = new FakeCompletionClient(BothMatchJson);
+
+        await new SemanticJudge(fakeClient).GradeAsync(Run());
+
+        string[] actionLines = [.. fakeClient.LastUserPrompt!.Split('\n').Where(line => line.StartsWith("next_action: ", StringComparison.Ordinal))];
+        Assert.Equal(2, actionLines.Length);
+        Assert.All(actionLines, line => Assert.Equal("next_action: {\"type\":\"start_cadence\",\"name\":\"prospect_welcome_short_horizon\"}", line));
+    }
+
+    // What grading cost is the evaluation's spend, so it is its own total on the scorecard, and
+    // the batch's model cost, the product's spend, is carried through unchanged.
+    [Fact]
+    public async Task JudgeAsync_CompletedCalls_AreTheJudgeCostAndTheBatchCostIsUnchanged()
+    {
+        ScoredRun run = Run();
+        var batchCost = new ModelCostNotes(Calls: 2, CompletedCalls: 2, InputTokens: 300, OutputTokens: 90);
+        Scorecard before = new Evaluator().Evaluate([run, run], batchLatencyMs: 10, batchModelCost: batchCost);
+        var judge = new SemanticJudge(new FakeCompletionClient(BothMatchJson, inputTokens: 40, outputTokens: 9));
+
+        Scorecard judged = await judge.JudgeAsync(before, [run, run]);
+
+        Assert.Equal(new ModelCostNotes(Calls: 2, CompletedCalls: 2, InputTokens: 80, OutputTokens: 18), judged.JudgeModelCost);
+        Assert.Equal(batchCost, judged.BatchModelCost);
+    }
+
+    // The judge's one call has the composer's three cost states: nothing when there is no label to
+    // grade against, a counted call with no tokens when it failed before a completion, and the
+    // vendor's own counts whenever a completion came back, usable or not.
+    [Fact]
+    public async Task GradeAsync_RecordHasNoLabel_MakesNoCallAndCostsNothing()
+    {
+        ScoredRun run = new(SampleProspectCases.Minimal(), Run().Output, 0, 5);
+        var fakeClient = new FakeCompletionClient(BothMatchJson);
+
+        JudgeVerdict verdict = await new SemanticJudge(fakeClient).GradeAsync(run);
+
+        Assert.Equal(new JudgeVerdict(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, ModelCost: null), verdict);
+        Assert.Null(fakeClient.LastUserPrompt);
+    }
+
+    [Fact]
+    public async Task GradeAsync_CallFailsBeforeACompletion_CountsTheCallWithNoTokens()
+    {
+        var judge = new SemanticJudge(new FakeCompletionClient(throwException: new TimeoutException("budget exceeded")));
+
+        JudgeVerdict verdict = await judge.GradeAsync(Run());
+
+        Assert.Equal(new JudgeVerdict(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, new ModelCostNotes(Calls: 1, CompletedCalls: 0, InputTokens: 0, OutputTokens: 0)), verdict);
+    }
+
+    [Fact]
+    public async Task GradeAsync_CompletedCallHadNoChoice_CountsTheCompletedCallAndItsTokens()
+    {
+        var judge = new SemanticJudge(new FakeCompletionClient(throwException: new NoCompletionChoiceException(11, 7, 0, new ArgumentOutOfRangeException())));
+
+        JudgeVerdict verdict = await judge.GradeAsync(Run());
+
+        Assert.Equal(new JudgeVerdict(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 11, OutputTokens: 7)), verdict);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("""{"action_matches":true}""")]
+    public async Task GradeAsync_CompletedCallIsUnusable_CountsTheCompletedCallAndMeasuresNothing(string response)
+    {
+        var judge = new SemanticJudge(new FakeCompletionClient(response, inputTokens: 9, outputTokens: 3));
+
+        JudgeVerdict verdict = await judge.GradeAsync(Run());
+
+        Assert.Equal(new JudgeVerdict(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, new ModelCostNotes(Calls: 1, CompletedCalls: 1, InputTokens: 9, OutputTokens: 3)), verdict);
     }
 }

@@ -11,18 +11,16 @@ namespace Agent.Cli;
 // finished, and writes its rows to the batch files at once rather than holding them to the end.
 // Input order is kept because --replay pairs output rows with input records by position, and
 // the other files and stderr's failure lines follow the same order. One caller, one run at a
-// time, so the counts, the cost total and the score rows need no lock.
+// time, so the counts, the cost totals and the score rows need no lock.
 internal sealed class RecordFold(
     TextWriter error,
     JsonArrayRecordWriter<AgentOutput> outputRows,
     JsonArrayRecordWriter<TaskDiagnostics>? diagnosticsRows,
     JsonArrayRecordWriter<ReviewQueueEntry>? reviewQueueRows,
-    Evaluator? evaluator,
-    bool keepRunsForJudge)
+    Evaluator? evaluator)
 {
     private readonly List<RecordScore> failedRecordRows = [];
     private readonly List<RecordScore> scores = [];
-    private readonly List<ScoredRun> judgedRuns = [];
     private int? latencyBudgetMs;
 
     public int FailedRecordCount => failedRecordRows.Count;
@@ -31,13 +29,13 @@ internal sealed class RecordFold(
     // the diagnostics file's model_cost column gives, and null while no record called a model.
     public ModelCostNotes? BatchModelCost { get; private set; }
 
+    // The same sum for the judge's calls, off the same rows' judge member: the evaluation's spend,
+    // kept apart from the product's, and null while no grade made a call.
+    public ModelCostNotes? JudgeModelCost { get; private set; }
+
     // One scorecard row per record that threw, carrying the exception type alone: the scorecard
     // is a file a person keeps, and nothing here knows who wrote the exception's message.
     public IReadOnlyList<RecordScore> FailedRecordRows => failedRecordRows;
-
-    // With --judge, every scored run, because the judge grades the whole scorecard after the
-    // batch and pairs its rows with these runs by position. Empty otherwise.
-    public IReadOnlyList<ScoredRun> JudgedRuns => judgedRuns;
 
     public async Task BeginAsync(CancellationToken cancellationToken)
     {
@@ -87,10 +85,13 @@ internal sealed class RecordFold(
 
         if (diagnosticsRows is not null)
         {
-            await diagnosticsRows.WriteRowAsync(new TaskDiagnostics(completed.Case.TaskId, result.Diagnostics, completed.IngestNotes, completed.LatencyMs), cancellationToken);
+            await diagnosticsRows.WriteRowAsync(
+                new TaskDiagnostics(completed.Case.TaskId, result.Diagnostics, completed.IngestNotes, completed.LatencyMs, completed.Judgement),
+                cancellationToken);
         }
 
         BatchModelCost = ModelCostNotes.Add(BatchModelCost, result.Diagnostics.ModelCost);
+        JudgeModelCost = ModelCostNotes.Add(JudgeModelCost, completed.Judgement?.ModelCost);
 
         // One queue row per record a person has to review, and ReviewQueueEntry.For decides which:
         // a draft the safety gate refused, an action the generic row chose, or both on one row. A
@@ -108,25 +109,22 @@ internal sealed class RecordFold(
 
         if (evaluator is not null)
         {
-            Score(evaluator, new ScoredRun(completed.Case, result.Output, result.Diagnostics.SafetyViolationCount, completed.LatencyMs));
+            Score(evaluator, new ScoredRun(completed.Case, result.Output, result.Diagnostics.SafetyViolationCount, completed.LatencyMs), completed.Judgement);
         }
     }
 
     // Every scored record in input order, with the batch's own numbers. O(n log n) in the scored
     // records, for the p95 sort the scorecard does when it is constructed.
-    public Scorecard ScoreBatch(double batchLatencyMs) => new(scores, latencyBudgetMs, batchLatencyMs, BatchModelCost);
+    public Scorecard ScoreBatch(double batchLatencyMs) => new(scores, latencyBudgetMs, batchLatencyMs, BatchModelCost, JudgeModelCost);
 
     // One record scored as it is folded, by the rule a whole batch is scored by, so its row is
-    // the row a whole-batch pass gives it. The budget the batch p95 is judged against is the
-    // strictest any scored record states, and null when none states one. O(1) beyond the row.
-    private void Score(Evaluator activeEvaluator, ScoredRun run)
+    // the row a whole-batch pass gives it, with the judge's verdict on it when the record was
+    // graded. The budget the batch p95 is judged against is the strictest any scored record
+    // states, and null when none states one. O(1) beyond the row.
+    private void Score(Evaluator activeEvaluator, ScoredRun run, JudgeVerdict? judgement)
     {
-        scores.Add(activeEvaluator.ScoreRecord(run));
+        RecordScore score = activeEvaluator.ScoreRecord(run);
+        scores.Add(judgement is null ? score : score.WithJudgement(judgement));
         latencyBudgetMs = Evaluator.StricterLatencyBudget(latencyBudgetMs, run);
-
-        if (keepRunsForJudge)
-        {
-            judgedRuns.Add(run);
-        }
     }
 }

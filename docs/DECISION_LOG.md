@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16, since D92 changes the model client.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Not yet run.
-Next step: merge D92's branch into the Sprint 16 branch, run the check, then the sprint PR against `dev`.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D103, which change the prompt, the links, the planner, the property facts and the scorer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-13: `.\test.ps1` passes 112 and 774 tests at 100 percent, running all four sets offline on the template composer, and each set's template run exits 0 or 2 as documented.
+Next step: merge PR #36 into `dev` after the owner's narration of one record, with the full runs of `holdout_12.jsonl` and `synthetic_v2.jsonl` reported beside it.
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -38,8 +38,7 @@ transition-day slot (D4, D21); composition, language and the call-to-action payl
 D26, D29); the evaluation contract, the scorer's label
 corrections and the judge (D6, D13, D15, D30); the twelve-record file (D9, D11); gates, replay,
 reference time and log scope (D8, D10, D14, D16); the official SDK and what bounds a model call
-(D27, D28); and the step 60 run (D31). Structure is D7, the Phase 0 restart D12. Eleven addenda
-amend them.
+(D27, D28); and the step 60 run (D31). Structure is D7, the Phase 0 restart D12.
 
 **D32 to D37, latency, proposed 2026-09-08.** Written from the step 60 run's measurements rather
 than from preference: measure one successful call before tuning anything (D32), stop retrying a
@@ -54,32 +53,31 @@ which checks a record cannot switch off (D40), what the term proxy normalizes an
 D45, D49, D50), what earns a state and what brand style is (D42), the review queue for a
 suppressed draft (D43), the vendor's retention default (D44), what an exception may say (D46,
 D51), a null inside a list the element type forbids (D47), and the composer seam carrying a
-refusal rather than destroying the draft (D48). D52 to D56 are the PR #24 review's fixes and
-three of its findings reconsidered and kept.
+refusal rather than destroying the draft (D48). D52 to D56 are PR #24's review fixes, three
+findings reconsidered and kept.
 
 **D57 to D59, Sprint 8, structure and narration (2026-09-09).** The consent gate merged into the
 channel selector, whose absence of a value answers both questions (D57); every interface without
 a second implementation deleted, leaving three seams (D58); and the design diagram renumbered to
-the executed order rather than the code reordered to the diagram (D59). Three run and debug
-facts sit with them: the sprint's own comment citations corrected in place, four review findings
-on its prose, and the one baseline test D58 forced a token change in.
+the executed order rather than the code reordered to the diagram (D59). Three run and debug facts:
+comment citations corrected, four review findings on its prose, and one baseline test D58 forced
+a token change in.
 
 **D60 to D67, Sprint 9, the Phase 6 remainder and fault injection (2026-09-09).** Phase 6's
 check is the playbook's, not this log's (D60); what latency and cost in the diagnostics mean
 (D61, D62); step 81 is the Phase 6 check run rather than a second scoring pass (D63); the
 fault-injection audit, five faults already proved and the output paths guarded (D64); the input
 paths given the same guard, with empty arguments closed in parsing (D65); and the model spend
-that vanished on exactly the records that failed (D66). D67 is open. A run and debug fact of
-2026-09-10 records five PR #26 review findings fixed.
+that vanished on exactly the records that failed (D66). D67 is open. A run and debug fact records
+five PR #26 review findings fixed.
 
 **D68, Sprint 10, the decision log trim (2026-09-10).** How this file gets under playbook step
 92's two-thousand-word cap without breaking the citations that point into it from `src/`,
 `tests/` and `docs/`: every full paragraph moves to `DECISIONS_ARCHIVE.md`, which keeps the bold
 heading a citation resolves by, one paragraph per sprint stays here, and the word cap plus a
 check that no cited number dangles move out of prose into `check-instruction-files.ps1`, which
-CI runs. Executed 2026-09-10. A run and debug fact of the same day records seven review findings
-fixed: what the check counts as a definition, the S numbers and the archive it did not scan, and
-four lines of stale prose.
+CI runs. Executed 2026-09-10. A run and debug fact records seven review findings fixed: what the check
+counts as a definition, the S numbers and archive it missed, and four lines of stale prose.
 
 **D69 to D73, Sprint 11, the Phase 7 evidence (2026-09-10).** The scorecard is committed under
 `docs/scorecards/` (D69); `--model-call-budget-ms` lets the model answer on evaluation runs
@@ -87,7 +85,7 @@ four lines of stale prose.
 reads 12 of 13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7; code then took
 the opt-out sentence and an unstated call to action (D72, D73), and refusals fell from 33 to 0.
 The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed three PR #28
-review findings, a run and debug fact.
+review findings.
 
 **D74 to D76, Sprint 12, Phase 8 documentation (2026-09-10).** The README meets step 90 and
 every command in it ran; DESIGN.md has step 91's interface table, a decision number on every
@@ -95,8 +93,7 @@ rule, nine open questions, and Phase 7's changes to seven assumptions plus A22 a
 found no secret and no personal path; the repository stays public with the assignment's text and
 data, the owner's choice (D74). Step 92's two fixes are made; D75 takes none of the step 96
 changes. Four agents ran these steps at once, a Phase First departure on record. Step 93 reviewed
-this sprint's diff, the one no PR had reviewed (D76), and found nothing; the second reviewer is
-owed.
+this sprint's diff, unreviewed by any PR (D76), and found nothing; a second reviewer is owed.
 
 **D77 and D78, Sprint 13, the release (2026-09-10).** The owner marked step 93 complete with
 its second reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`; step 97's narrative is
@@ -115,9 +112,8 @@ for each of its sixteen findings: fourteen existing steps, one new step for find
 steps that earned nothing here; D79 took none of them, and the rules stay as they are.
 
 **D80, cleanup (2026-09-10).** `TalkingPoints.md`, the Sprint 8 spoken script, deleted as a
-duplicate of `docs/NARRATION.md` (D80). The same day the narration was checked against a trace of
-one record through the code and a re-run of all three sets at the tag, a run and debug fact: eight
-statements that did not match were fixed in place.
+duplicate of `docs/NARRATION.md` (D80). The same day, a run and debug fact: the narration was
+checked against a code trace and a re-run of all three sets at the tag; eight mismatches fixed.
 
 **D81 to D87, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
 fact, read 7 of 10 and traced the eight hold-out misses to their fields. The plan: the hold-out
@@ -140,3 +136,21 @@ and PR #33's review findings were fixed, all run and debug facts.
 `v1.1.0` on `6e05adb`, and the narration's provenance moves there after a re-run matched every
 value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
 tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.
+
+**D94 to D105, Sprint 16 continued (2026-09-13).** The hold-out run of 2026-09-11 scored every
+decision 12 of 12 and failed every message body on the judge. The payload check compares the
+label's link and options (D94, D100) and the action check every stated member (D99); the judge's
+reason and tokens are kept (D95); the prompt carries the stage's facts, the link, the reply options
+and each call to action's purpose (D96, D103); resident links are built from the record (D97); a
+no-choice call keeps its retries (D98); property facts come from `--property-data` (D101), chosen per
+call to action (D104); no move date is its own branch (D102); and D105 fixes three prompt misses.
+
+**PR #36 review fixes, Sprint 16 continued (2026-09-14).** A `/code-review` and an Antigravity
+review left eighteen findings on the open PR; three declined against D101, A19 and no stated rule,
+fourteen fixed under strict TDD: two resident call to actions with no phrase in either language
+set, the documented hold-out run missing `--property-data`, a unit's dash compared raw in one
+place and folded in another, ten new inputs untracked by `DefaultedFields`, a case-sensitive
+`cancellation_reason` check, an unexcluded empty-options boundary, a cross-language weekday fold,
+a linear property scan, a judge fault that crashed the batch instead of one grade, `--diagnostics`
+missing from `--replay`'s guards, and `--judge` alone spending calls nowhere logged. 919 tests,
+100 percent coverage, both projects.

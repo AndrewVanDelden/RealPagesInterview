@@ -104,6 +104,52 @@ public class FileLoggerProviderTests
         }
     }
 
+    // A run appends to a log file that already exists, so the lines an earlier run wrote to the
+    // same --log-file path are never lost.
+    [Fact]
+    public void CreateLogger_LogFileAlreadyHasLines_KeepsThemAndAppends()
+    {
+        string path = TempFilePath();
+        try
+        {
+            File.WriteAllText(path, "earlier run" + Environment.NewLine);
+            using (var provider = new FileLoggerProvider(path))
+            {
+                provider.CreateLogger("MyCategory").LogInformation("this run");
+            }
+
+            string[] lines = File.ReadAllLines(path);
+            Assert.Equal(2, lines.Length);
+            Assert.Equal("earlier run", lines[0]);
+            Assert.EndsWith("MyCategory: this run", lines[1]);
+        }
+        finally
+        {
+            TestFiles.DeleteWithRetry(path);
+        }
+    }
+
+    // Each line reaches the file as it is logged, not when the provider is disposed, so a run
+    // killed partway still leaves every line it logged, and the file can be followed while the
+    // run is going.
+    [Fact]
+    public void CreateLogger_LogInformation_LineIsInTheFileBeforeTheProviderIsDisposed()
+    {
+        string path = TempFilePath();
+        try
+        {
+            using var provider = new FileLoggerProvider(path);
+            provider.CreateLogger("MyCategory").LogInformation("hello world");
+
+            using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            Assert.Contains("MyCategory: hello world", reader.ReadToEnd());
+        }
+        finally
+        {
+            TestFiles.DeleteWithRetry(path);
+        }
+    }
+
     [Fact]
     public void MultipleLoggersFromSameProvider_WriteConcurrentlyWithoutCorruptingTheFile()
     {

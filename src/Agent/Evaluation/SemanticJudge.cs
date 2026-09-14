@@ -14,7 +14,7 @@ namespace Agent.Evaluation;
 // given --judge, so offline runs report both as not measured. Known limitation: one vendor key
 // makes judge and composer one model family (self-preference); offline text is not model-written,
 // the label as reference mitigates the model path, and the judge model is pinned apart.
-public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<SemanticJudge>? logger = null)
+public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<SemanticJudge>? logger = null) : ISemanticJudge
 {
     private readonly ILogger<SemanticJudge> log = logger.OrNullLogger();
 
@@ -44,43 +44,51 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
 
     // One model call per scoreable record, in the order the scorecard was built: the record
     // scores and the runs come from the same pass, so position i is the same record in both.
-    // O(n) calls in the batch size, which is why this runs only when it is asked for.
+    // O(n) calls in the batch size, which is why this runs only when it is asked for. A replay
+    // grades this way, after scoring; a live run grades each record inside its own run through
+    // GradeAsync, so the verdict reaches that record's diagnostics row as the row is written.
     public async Task<Scorecard> JudgeAsync(Scorecard scorecard, IReadOnlyList<ScoredRun> runs, CancellationToken cancellationToken = default)
     {
         var judged = new List<RecordScore>(scorecard.RecordScores.Count);
+        ModelCostNotes? judgeModelCost = null;
 
         for (int index = 0; index < scorecard.RecordScores.Count; index++)
         {
-            RecordScore score = scorecard.RecordScores[index];
-            (CheckResult action, CheckResult body) = await GradeAsync(runs[index], cancellationToken);
-            judged.Add(score with { ActionSemantic = action, BodySemantic = body });
+            JudgeVerdict verdict = await GradeAsync(runs[index], cancellationToken);
+            judged.Add(scorecard.RecordScores[index].WithJudgement(verdict));
+            judgeModelCost = ModelCostNotes.Add(judgeModelCost, verdict.ModelCost);
         }
 
         // Constructed, not copied with a `with` expression: Scorecard computes its per-check
         // tallies and its p95 once at construction, and a copy would carry the unjudged
         // numbers into a report whose rows say otherwise. The per-check line is where the
         // reported numbers come from.
-        return new Scorecard(judged, scorecard.LatencyBudgetMs, scorecard.BatchLatencyMs, scorecard.BatchModelCost);
+        return new Scorecard(judged, scorecard.LatencyBudgetMs, scorecard.BatchLatencyMs, scorecard.BatchModelCost, judgeModelCost);
     }
 
-    private async Task<(CheckResult Action, CheckResult Body)> GradeAsync(ScoredRun run, CancellationToken cancellationToken)
+    // One record's grades, the reason the model gave for them, and what the call cost, in
+    // ModelCostNotes' three states: null when there is no label and so no call; a counted call with
+    // zero tokens when it failed before a completion came back; and the vendor's own counts once
+    // one did, usable or not. A completion with no choice carries its usage on the exception, so it
+    // is counted as completed with those tokens. O(size of the two messages).
+    public async Task<JudgeVerdict> GradeAsync(ScoredRun run, CancellationToken cancellationToken = default)
     {
         if (run.ProspectCase.Expected is not { } expected)
         {
-            return (CheckResult.NotMeasured, CheckResult.NotMeasured);
+            return new JudgeVerdict(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, ModelCost: null);
         }
 
         string? referenceBody = BodyOf(expected.NextMessage);
         string? candidateBody = BodyOf(run.Output.NextMessage);
 
-        string rawResponse;
+        ModelCompletion completion;
         try
         {
-            rawResponse = (await completionClient.CompleteAsync(
+            completion = await completionClient.CompleteAsync(
                 Rubric,
                 BuildUserPrompt(expected, run.Output, referenceBody, candidateBody),
                 ResponseJsonSchema,
-                cancellationToken)).Content;
+                cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -94,13 +102,16 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
                 "Judge call failed for '{JudgedTaskId}' ({JudgeFailure}); both semantic checks are not measured.",
                 run.ProspectCase.TaskId,
                 ex.ToRedactedDiagnosticString());
-            return (CheckResult.NotMeasured, CheckResult.NotMeasured);
+
+            return Unmeasured(ModelCostNotes.ForFailedCall(ex));
         }
+
+        var modelCost = new ModelCostNotes(Calls: 1, CompletedCalls: 1, completion.InputTokens, completion.OutputTokens);
 
         JudgePayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<JudgePayload>(rawResponse, AgentJsonOptions.Default);
+            payload = JsonSerializer.Deserialize<JudgePayload>(completion.Content, AgentJsonOptions.Default);
         }
         catch (JsonException ex)
         {
@@ -110,12 +121,12 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
                 "Judge response for '{JudgedTaskId}' was not valid JSON ({ResponseFailure}).",
                 run.ProspectCase.TaskId,
                 ex.ToRedactedDiagnosticString());
-            return (CheckResult.NotMeasured, CheckResult.NotMeasured);
+            return Unmeasured(modelCost);
         }
 
         if (payload?.ActionMatches is not { } actionMatches || payload.BodyMatches is not { } bodyMatches)
         {
-            return (CheckResult.NotMeasured, CheckResult.NotMeasured);
+            return Unmeasured(modelCost);
         }
 
         // A record with no message on either side has no body question to answer, so the
@@ -124,8 +135,11 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
             ? CheckResult.NotMeasured
             : Verdict(bodyMatches);
 
-        return (Verdict(actionMatches), body);
+        return new JudgeVerdict(Verdict(actionMatches), body, payload.Reason, modelCost);
     }
+
+    private static JudgeVerdict Unmeasured(ModelCostNotes modelCost) =>
+        new(CheckResult.NotMeasured, CheckResult.NotMeasured, Reason: null, modelCost);
 
     private static CheckResult Verdict(bool matches) => matches ? CheckResult.Passed : CheckResult.Failed;
 
@@ -139,12 +153,12 @@ public sealed class SemanticJudge(ICompletionClient completionClient, ILogger<Se
             "body_matches: does the candidate message make the same offer, ask for the same next step, " +
             "and state the same facts as the reference message?\n" +
             "<reference>\n" +
-            $"next_action: {expected.NextAction.Type}\n" +
+            $"next_action: {JsonSerializer.Serialize(expected.NextAction, AgentJsonOptions.Default)}\n" +
             $"subject: {Describe(expected.NextMessage?.Subject)}\n" +
             $"body: {Describe(referenceBody)}\n" +
             "</reference>\n" +
             "<candidate>\n" +
-            $"next_action: {output.NextAction.Type}\n" +
+            $"next_action: {JsonSerializer.Serialize(output.NextAction, AgentJsonOptions.Default)}\n" +
             $"subject: {Describe(output.NextMessage?.Subject)}\n" +
             $"body: {Describe(candidateBody)}\n" +
             "</candidate>";

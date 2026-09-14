@@ -3,7 +3,11 @@ namespace Agent.Domain;
 public sealed record ProspectProfile(
     string? FirstName = null,
     string? CityInterest = null,
-    IReadOnlyList<string>? AmenityInterest = null) : HasUnknownMembers
+    IReadOnlyList<string>? AmenityInterest = null,
+    decimal? BudgetMax = null,
+    int? TenureMonths = null,
+    string? LoyaltyStatus = null,
+    IReadOnlyList<string>? FeaturesEnablement = null) : HasUnknownMembers
 {
     // Normalized, always-non-null views of the two interest fields, used by every
     // composer that describes stated interest - the null/empty-vs-non-empty guard lives

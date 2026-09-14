@@ -70,8 +70,8 @@ and `synthetic_v2.jsonl`, written blind to the code, carries the honest number (
 |---|---|---|---|
 | `sample.jsonl` | 2 of 2 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
 | `holdout_12.jsonl`, fitted since D81 | 12 of 12 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
-| `synthetic_12.jsonl` | 12 of 13 | none; line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
-| `synthetic_v2.jsonl`, the honest number | 13 of 30 | channel 25 of 29, day 24 of 26, hour 19 of 26, action 17 of 29, call-to-action type 23 of 24, call-to-action payload 24 of 25; line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
+| `synthetic_12.jsonl` | 9 of 13 | action 11 of 12, call-to-action payload 8 of 10, under the checks that compare every stated action member and the label's options and link (D99, D100); line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
+| `synthetic_v2.jsonl`, the honest number | 1 of 30 | channel 25 of 29, day 24 of 26, hour 19 of 26, action 12 of 29, call-to-action type 23 of 24, call-to-action payload 8 of 25, under the same stricter checks (D99, D100); line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
 
 The hold-out is fitted, so 12 of 12 shows the rules reproduce their own evidence and says
 nothing about generalizing. The frozen set is the number that does. Of its sixteen failing

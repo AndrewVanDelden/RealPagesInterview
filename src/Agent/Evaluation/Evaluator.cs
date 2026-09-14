@@ -104,7 +104,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 
         CheckResult channel = Verdict(EffectiveChannel(expected.NextMessage) == EffectiveChannel(output.NextMessage));
         (CheckResult sendAtDay, CheckResult sendAtHour) = ScoreSendAt(expectedMessage?.SendAt, actual?.SendAt);
-        CheckResult nextActionType = Verdict(expected.NextAction.Type == output.NextAction.Type);
+        CheckResult nextActionMatch = Verdict(ActionMatches(expected.NextAction, output.NextAction));
 
         CheckResult optOut = text is null || !constraints.RequiresOptOutInstructions()
             ? CheckResult.NotMeasured
@@ -117,7 +117,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             ? CheckResult.NotMeasured
             : Verdict(actual.Cta?.Type == expectedCtaType);
 
-        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual);
+        CheckResult ctaPayload = actual is null ? CheckResult.NotMeasured : ScoreCtaPayload(actual, expectedMessage?.Cta);
 
         // Tokenized once and shared: BodyLanguage and Personalization both check words
         // drawn from the same message text.
@@ -140,7 +140,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
             Channel: channel,
             SendAtDay: sendAtDay,
             SendAtHour: sendAtHour,
-            NextActionType: nextActionType,
+            NextActionMatch: nextActionMatch,
             OptOut: optOut,
             CtaType: ctaType,
             CtaPayload: ctaPayload,
@@ -192,13 +192,36 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     }
 
     // A10: sms carries reply options, email carries a link; any other channel has no
-    // payload rule in the evidence.
-    private static CheckResult ScoreCtaPayload(NextMessage message) => message.Channel switch
+    // payload rule in the evidence. Each is compared with the label's when the label states it,
+    // since options or a link that differ from the label's are wrong facts however present they
+    // are; a label that states neither leaves presence as the one thing to measure. The whole
+    // absolute URI is compared, host included, after Uri has lowercased the scheme and the host;
+    // options are compared in order, by ReplyOptionSpelling's rule.
+    private static CheckResult ScoreCtaPayload(NextMessage message, Cta? expectedCta) => message.Channel switch
     {
-        CommunicationChannel.Sms => Verdict(message.Cta?.Options is { Count: > 0 }),
-        CommunicationChannel.Email => Verdict(message.Cta?.Link is not null),
+        CommunicationChannel.Sms => Verdict(
+            message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { Count: > 0 } expectedOptions || OptionsMatch(options, expectedOptions))),
+        CommunicationChannel.Email => Verdict(
+            message.Cta?.Link is { } link && (expectedCta?.Link is not { } expectedLink || string.Equals(link.AbsoluteUri, expectedLink.AbsoluteUri, StringComparison.Ordinal))),
         _ => CheckResult.NotMeasured,
     };
+
+    // O(k) in the number of options.
+    private static bool OptionsMatch(IReadOnlyList<string> options, IReadOnlyList<string> expectedOptions) =>
+        options.Count == expectedOptions.Count
+        && options.Zip(expectedOptions).All(pair => ReplyOptionSpelling.SameOption(pair.First, pair.Second));
+
+    // Exact against the label, member by member: every member the label states must equal the
+    // output's, and a member the label leaves out is not compared, since a label that names only a
+    // type asks only for the type. A reminder in the wrong number of days is a wrong action. O(m) in
+    // a mapping's entries.
+    private static bool ActionMatches(NextAction label, NextAction output) =>
+        label.Type == output.Type
+        && (label.Name is null || label.Name == output.Name)
+        && (label.Value is null || label.Value == output.Value)
+        && (label.Reason is null || label.Reason == output.Reason)
+        && (label.InDays is null || label.InDays == output.InDays)
+        && (label.Mapping is null || NextAction.MappingsEqual(label.Mapping, output.Mapping));
 
     // A13: not measured without a message, without a stated language, or for a
     // language the detector does not know; a body with no stop words at all fails.

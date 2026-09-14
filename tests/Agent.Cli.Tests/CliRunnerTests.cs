@@ -79,7 +79,11 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "mock"]);
 
             Assert.Equal(CliExitCodes.UsageError, exitCode);
-            Assert.Contains("Unknown composer 'mock'", errorWriter.ToString());
+
+            // A plain line of its own, not only the log entry's rendering of the exception.
+            Assert.Contains(
+                errorWriter.ToString().Split(Environment.NewLine),
+                line => line.StartsWith("ArgumentException: Unknown composer 'mock'", StringComparison.Ordinal));
         }
         finally
         {
@@ -272,7 +276,8 @@ public class CliRunnerTests
         string evalReportPath = TempFilePath(".txt");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true) + Environment.NewLine + "{bad");
         await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
-        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
 
         try
         {
@@ -282,6 +287,9 @@ public class CliRunnerTests
             string report = await File.ReadAllTextAsync(evalReportPath);
             Assert.Contains("(did not parse)", report);
             Assert.Contains("ERROR: Line 2 failed to parse", report);
+            Assert.Contains(
+                errorWriter.ToString().Split(Environment.NewLine),
+                line => line.StartsWith("Record failed to parse: Line 2 failed to parse", StringComparison.Ordinal));
             Assert.Contains("/2 passed", report);
         }
         finally
@@ -619,7 +627,12 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
 
             Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            Assert.Contains("Batch complete: 3 record(s), 1 failure(s),", await File.ReadAllTextAsync(logFilePath));
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("Batch complete: 3 record(s), 1 failure(s),", logContent);
+
+            // A failure goes to the log as well as to stderr, so a run read from its log file
+            // alone still shows which line did not parse.
+            Assert.Contains("[Error] Agent.Cli.CliRunner: Record failed to parse: Line 3", logContent);
         }
         finally
         {
@@ -771,6 +784,68 @@ public class CliRunnerTests
         }
     }
 
+    // With no record left in flight, nothing but the check before each start observes the
+    // token: t1 cancels the run and then fails, the malformed line folds t1, and the loop reaches
+    // t2 with an empty window. t2 never starts, so no line carries its TaskId.
+    [Fact]
+    public async Task RunAsync_CancelledWithNoRecordInFlight_StartsNoFurtherRecordAndThrows()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            "{not valid json",
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        using var cancellation = new CancellationTokenSource();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, new CancelsThenThrowsComposer(cancellation));
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
+
+            Assert.Contains("Record 't1' failed", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("TaskId=t2", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // A record can end the batch with a cancellation the run never asked for, as a component's
+    // own timeout does. The records still in flight are then cancelled and awaited before the
+    // exception leaves, so none is left running once RunAsync has returned: t2 is waiting on its
+    // token when t1 throws, and has let go by the time the run throws.
+    [Fact]
+    public async Task RunAsync_RecordThrowsACancellationTheRunDidNotRequest_CancelsAndAwaitsTheRecordInFlight()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(inputPath, content);
+        var composer = new UnrequestedCancellationComposer("t1");
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            Assert.True(composer.OtherRecordReleasedOnCancellation, "t2 was not cancelled and awaited before the run threw.");
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     // The run's reference time comes from --now, never a clock; the send day follows it (A4).
     [Fact]
     public async Task RunAsync_NowFlagProvided_SendAtFollowsTheReferenceDay()
@@ -778,7 +853,8 @@ public class CliRunnerTests
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
-        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
 
         try
         {
@@ -788,6 +864,10 @@ public class CliRunnerTests
             using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
             string sendAt = output.RootElement[0].GetProperty("next_message").GetProperty("send_at").GetString()!;
             Assert.StartsWith("2025-12-20T09:00:00-06:00", sendAt);
+
+            // The log states the reference time the run used, in the round-trip form and in the
+            // offset it was given, so a run can be reproduced from its log.
+            Assert.Contains("Reference time for this run: 2025-12-20T00:00:00.0000000-06:00.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -828,7 +908,7 @@ public class CliRunnerTests
         string outputPath = TempFilePath();
         string diagnosticsPath = TempFilePath(".json");
         string line = RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")
-            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"source\":\"web\"")
             .Replace("\"persona\":\"prospect\",", string.Empty);
         await File.WriteAllTextAsync(inputPath, line);
         var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
@@ -840,7 +920,7 @@ public class CliRunnerTests
             Assert.Equal(CliExitCodes.Success, exitCode);
             using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
             JsonElement notes = diagnostics.RootElement[0].GetProperty("ingest_notes");
-            Assert.Equal("input.unit", notes.GetProperty("unknown_members")[0].GetString());
+            Assert.Equal("input.source", notes.GetProperty("unknown_members")[0].GetString());
             Assert.Equal("persona", notes.GetProperty("defaulted_fields")[0].GetString());
         }
         finally
@@ -1161,6 +1241,16 @@ public class CliRunnerTests
             // One scope owner, CliRunner. Two scopes pushing the same key rendered every agent
             // line as "TaskId=t1 TaskId=t1".
             Assert.DoesNotContain("TaskId=t1 TaskId=t1", logContent);
+
+            // The ingest line names each defaulted field as its own list entry: this record
+            // states no unit, dates, offer, cancellation reason, city interest, amenity
+            // interest, or the resident-stage profile facts.
+            Assert.Contains(
+                "Ingest: defaulted=[input.unit, input.move_in_date, input.lease_end_date, input.renewal_offer_id, " +
+                "input.missed_tour_time, input.cancellation_reason, input.profile.city_interest, " +
+                "input.profile.amenity_interest, input.profile.budget_max, input.profile.tenure_months, " +
+                "input.profile.loyalty_status, input.profile.features_enablement] unknown=0 member(s). TaskId=t1",
+                logContent);
         }
         finally
         {
@@ -1189,7 +1279,7 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
 
             Assert.Equal(CliExitCodes.UsageError, exitCode);
-            Assert.Contains(logFilePath, errorWriter.ToString());
+            Assert.Contains($"Could not open --log-file '{logFilePath}'", errorWriter.ToString());
         }
         finally
         {
@@ -1386,6 +1476,31 @@ public class CliRunnerTests
         finally
         {
             File.Delete(inputPath);
+        }
+    }
+
+    // A replay opens --input through the same guard, under its own flag: a replay whose input
+    // will not open is one stderr line with no stack trace and exit 1.
+    [Fact]
+    public async Task RunAsync_ReplayInputPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "in.jsonl");
+        string replayPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(replayPath, "[]");
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --input '{inputPath}'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("   at ", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(replayPath);
         }
     }
 
@@ -1591,6 +1706,7 @@ public class CliRunnerTests
 
             Assert.Equal(CliExitCodes.Success, exitCode);
             Assert.Contains("Overall: 0/1 passed", outputWriter.ToString());
+            Assert.Contains("Replay: scoring 1 output(s) from the file; safety and latency are not measured.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1662,6 +1778,20 @@ public class CliRunnerTests
 
         Assert.Equal(CliExitCodes.UsageError, exitCode);
         Assert.Contains("--replay", errorWriter.ToString());
+    }
+
+    // A flag given as the last argument has no value after it, so it counts as not given: the
+    // run is refused with the usage line rather than reading past the end of the arguments.
+    [Fact]
+    public async Task RunAsync_OutputFlagIsTheLastArgument_WritesUsageAndReturnsUsageError()
+    {
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        int exitCode = await runner.RunAsync(["--input", "anything.jsonl", "--output"]);
+
+        Assert.Equal(CliExitCodes.UsageError, exitCode);
+        Assert.Contains("Usage:", errorWriter.ToString(), StringComparison.Ordinal);
     }
 
     // --output and --replay select mutually exclusive modes; passing both used to
@@ -1770,15 +1900,52 @@ public class CliRunnerTests
 
         try
         {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--judge"]);
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", TempFilePath(".txt"), "--judge"]);
 
             Assert.Equal(CliExitCodes.UsageError, exitCode);
-            Assert.Contains("--judge needs OpenAI:ApiKey", errorWriter.ToString());
+
+            // One failure, two channels: the log entry names the step that failed, and stderr
+            // gets the exception as one plain line with no stack trace, beside the log entry's
+            // own rendering of the whole exception.
+            string[] lines = errorWriter.ToString().Split(Environment.NewLine);
+            Assert.Contains(lines, line => line.EndsWith("[Error] Agent.Cli.CliRunner: Judge selection failed.", StringComparison.Ordinal));
+            Assert.Contains(lines, line => line.StartsWith("InvalidOperationException: --judge needs OpenAI:ApiKey", StringComparison.Ordinal));
         }
         finally
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+        }
+    }
+
+    // A live run's judge verdicts reach only the eval report and the diagnostics row; with
+    // neither flag there is nowhere for them to land, so --judge alone would spend real tokens
+    // on every record and discard the verdicts unread. Refused before the judge is built, the
+    // way a bad composer name is, so no call is ever made. A replay is exempt: it prints its
+    // report to the console regardless of --eval-report, so its judge calls are never wasted.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithoutEvalReportOrDiagnostics_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains(
+                "--judge needs --eval-report or --diagnostics: without either, its verdicts are never written anywhere.",
+                errorWriter.ToString(),
+                StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
         }
     }
 
@@ -1810,6 +1977,131 @@ public class CliRunnerTests
             string report = await File.ReadAllTextAsync(reportPath);
             Assert.Contains("ActionSem 1/1", report);
             Assert.Contains("BodySem 1/1", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
+    // The judge grades each record inside its run, so its verdict, its reason and what its call
+    // cost reach the diagnostics row as the row is written, and the report prints the reason and
+    // the judge's own token line. Batch model cost stays the product's spend: the template
+    // composer made no call, so that line reads none while the judge's reads its call.
+    [Fact]
+    public async Task RunAsync_JudgeRequestedWithDiagnostics_TheRowAndTheReportCarryTheReasonAndTheJudgesCost()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        string diagnosticsPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var fakeJudgeClient = new FixedJudgeCompletionClient(
+            """{"action_matches":true,"body_matches":false,"reason":"the candidate never names the week"}""", inputTokens: 5, outputTokens: 3);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: new SemanticJudge(fakeJudgeClient));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", reportPath, "--diagnostics", diagnosticsPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement judge = diagnostics.RootElement[0].GetProperty("judge");
+            Assert.Equal("passed", judge.GetProperty("action_semantic").GetString());
+            Assert.Equal("failed", judge.GetProperty("body_semantic").GetString());
+            Assert.Equal("the candidate never names the week", judge.GetProperty("reason").GetString());
+            Assert.Equal(1, judge.GetProperty("model_cost").GetProperty("completed_calls").GetInt32());
+            Assert.Equal(5, judge.GetProperty("model_cost").GetProperty("input_tokens").GetInt32());
+            Assert.Equal(3, judge.GetProperty("model_cost").GetProperty("output_tokens").GetInt32());
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("BodySem 0/1", report);
+            Assert.Contains("Batch model cost: none", report);
+            Assert.Contains("Judge model cost: 1 call(s), 1 completed, 5 input + 3 output token(s)", report);
+            Assert.Contains("t1: the candidate never names the week", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
+    // A bug in the judge is not evidence about the record's own output: the compose-schedule-
+    // validate pipeline already produced a real message for t1 before the judge ever runs, so a
+    // throw from GradeAsync must not turn that into a failed record, and it must not stop t2 from
+    // processing behind it. SemanticJudge.GradeAsync already catches everything a real completion
+    // client can raise, so ThrowingJudge bypasses it to prove CliRunner's own boundary around the
+    // call, the same per-record isolation RunRecordAsync's catch already gives agent.RunAsync.
+    [Fact]
+    public async Task RunAsync_JudgeThrows_TheRecordsOwnOutputSurvivesAndLaterRecordsStillRun()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, judgeOverride: new ThrowingJudge());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(2, output.RootElement.GetArrayLength());
+            Assert.False(output.RootElement[0].GetProperty("next_message").ValueKind is JsonValueKind.Null);
+            Assert.False(output.RootElement[1].GetProperty("next_message").ValueKind is JsonValueKind.Null);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("t1", diagnostics.RootElement[0].GetProperty("task_id").GetString());
+            Assert.Equal("t2", diagnostics.RootElement[1].GetProperty("task_id").GetString());
+            Assert.Equal(JsonValueKind.Null, diagnostics.RootElement[0].GetProperty("judge").ValueKind);
+            Assert.Equal(JsonValueKind.Null, diagnostics.RootElement[1].GetProperty("judge").ValueKind);
+
+            Assert.Contains("Injected judge fault for 't1'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Injected judge fault for 't2'", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
+    // A replay has no record runs to grade inside, so it grades the scored rows after the fact
+    // through the same per-record call and prints the same reason and cost lines.
+    [Fact]
+    public async Task RunAsync_ReplayWithJudge_GradesEveryReplayedRow()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var writingRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var fakeJudgeClient = new FixedJudgeCompletionClient("""{"action_matches":true,"body_matches":true,"reason":"same offer"}""", inputTokens: 5, outputTokens: 3);
+        var replayRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: new SemanticJudge(fakeJudgeClient));
+
+        try
+        {
+            Assert.Equal(CliExitCodes.Success, await writingRunner.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            int exitCode = await replayRunner.RunAsync(["--input", inputPath, "--replay", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(1, fakeJudgeClient.CallCount);
+            string report = await File.ReadAllTextAsync(reportPath);
+            Assert.Contains("BodySem 1/1", report);
+            Assert.Contains("Judge model cost: 1 call(s), 1 completed, 5 input + 3 output token(s)", report);
+            Assert.Contains("t1: same offer", report);
         }
         finally
         {
@@ -2304,6 +2596,7 @@ public class CliRunnerTests
                             ? new NextAction(ActionTypes.StartCadence, cadenceName)
                             : StatedOrNull(row.ShortHorizonAction),
                         LongHorizonAction = StatedOrNull(row.LongHorizonAction),
+                        NoMoveDateAction = StatedOrNull(row.NoMoveDateAction),
                     }),
                 },
                 SendSlots = SendSlotTable.Default.Rows.Select(row => new
@@ -2318,6 +2611,156 @@ public class CliRunnerTests
             AgentJsonOptions.Default);
 
     private static NextAction? StatedOrNull(Option<NextAction> action) => action.HasValue ? action.Value : null;
+
+    private const string OakRidgePropertyDataJson = """
+        { "properties": [ { "property_name": "Oak Ridge", "renewal_offers": [ { "unit": "A-204", "price_hold_days": 10 } ] } ] }
+        """;
+
+    private static string RenewalRecordJson(string taskId) =>
+        RecordJson(taskId, "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"language\":\"en\"", "\"language\":\"en\",\"unit\":\"A-204\"")
+            .Replace("\"required_states\":[]", "\"required_states\":[\"renewal_offer_loaded\"]");
+
+    // The property data file stands in for the property management system: a record whose
+    // renewal offer it holds has that offer loaded, and the diagnostics row says so.
+    [Fact]
+    public async Task RunAsync_PropertyDataHoldsTheRecordsOffer_DiagnosticsRecordTheOfferLoaded()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RenewalRecordJson("t1"));
+        await File.WriteAllTextAsync(propertyDataPath, OakRidgePropertyDataJson);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("earned", diagnostics.RootElement[0].GetProperty("diagnostics").GetProperty("required_states").GetProperty("renewal_offer_loaded").GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(propertyDataPath);
+        }
+    }
+
+    // A replay runs no agent, so it has no per-record AgentDiagnostics or IngestNotes to write:
+    // ReplayAsync takes no diagnostics stream at all. Accepting the flag and silently never
+    // opening the file would discard the caller's explicit request without saying so.
+    [Fact]
+    public async Task RunAsync_DiagnosticsWithReplay_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--diagnostics", diagnosticsPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--diagnostics needs a run that produces per-record diagnostics: it cannot be combined with --replay.", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(diagnosticsPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+        }
+    }
+
+    // A replay composes nothing, so property data would change nothing it reports.
+    [Fact]
+    public async Task RunAsync_PropertyDataWithReplay_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string replayPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(replayPath, "[]");
+        await File.WriteAllTextAsync(propertyDataPath, OakRidgePropertyDataJson);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--replay", replayPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--property-data needs a run that composes: it cannot be combined with --replay.", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(replayPath);
+            File.Delete(propertyDataPath);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PropertyDataPathDoesNotExist_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string propertyDataPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "property.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --property-data '{propertyDataPath}'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
+    // A refused property data file costs nothing: it is loaded before any composer or output file,
+    // and every bad property is its own line, worded as the loader words it.
+    [Fact]
+    public async Task RunAsync_PropertyDataFileRefused_NamesTheFlagAndThePropertyAndWritesNoOutput()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string propertyDataPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(propertyDataPath, """{ "properties": [ { "property_name": " " } ] }""");
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--property-data", propertyDataPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            string[] errorLines = errorWriter.ToString().Split(Environment.NewLine);
+            Assert.Contains($"Could not load --property-data '{propertyDataPath}':", errorLines);
+            Assert.Contains("Property 1: property_name is blank.", errorLines);
+            Assert.False(File.Exists(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(propertyDataPath);
+        }
+    }
 
     // A replay runs no agent, so a rules file would change nothing it reports. Refused rather
     // than ignored, so a replay never reads as scored under rules it did not use.

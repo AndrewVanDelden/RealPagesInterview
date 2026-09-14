@@ -17,7 +17,7 @@ internal static class RealAgentFactory
     // and the agent's final gate. sharedValidator replaces that instance in both places;
     // finalValidator replaces it at the final gate only, which makes the two different
     // validators on purpose.
-    public static LeasingMessageAgent BuildRealAgent(ISafetyValidator? finalValidator = null, ISafetyValidator? sharedValidator = null)
+    public static LeasingMessageAgent BuildRealAgent(ISafetyValidator? finalValidator = null, ISafetyValidator? sharedValidator = null, PropertyData? propertyData = null)
     {
         ISafetyValidator loopValidator = sharedValidator ?? new SafetyValidator();
         var templateComposer = new TemplateMessageComposer();
@@ -28,7 +28,8 @@ internal static class RealAgentFactory
             validatingComposer,
             finalValidator ?? loopValidator,
             new SendScheduler(),
-            new NextActionPlanner());
+            new NextActionPlanner(),
+            propertyData: propertyData);
     }
 
     // Explicitly configured (even though this is just NullLoggerFactory) rather than left

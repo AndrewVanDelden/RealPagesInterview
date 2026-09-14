@@ -11,8 +11,9 @@ public class RequiredStateMapTests
         IReadOnlyList<string>? requiredStates,
         RequiredStateVerdict consentVerified = RequiredStateVerdict.Earned,
         RequiredStateVerdict fairHousingCheckPassed = RequiredStateVerdict.Earned,
-        RequiredStateVerdict brandStyleApplied = RequiredStateVerdict.Earned) =>
-        RequiredStateMap.For(requiredStates, consentVerified, fairHousingCheckPassed, brandStyleApplied);
+        RequiredStateVerdict brandStyleApplied = RequiredStateVerdict.Earned,
+        RequiredStateVerdict renewalOfferLoaded = RequiredStateVerdict.Earned) =>
+        RequiredStateMap.For(requiredStates, consentVerified, fairHousingCheckPassed, brandStyleApplied, renewalOfferLoaded);
 
     // The three names both samples assert, each answered by its own source: the channel
     // selector's read of consent, the FairHousing check alone rather than every check, and the
@@ -31,17 +32,25 @@ public class RequiredStateMapTests
         Assert.Equal(RequiredStateVerdict.NotEvaluated, map["brand_style_applied"]);
     }
 
-    // docs/CODE_REVIEW.md: the hold-out names renewal_offer_loaded and some of those
-    // records carry a renewal_offer_id a rule could obviously be fitted to, which is exactly
-    // why no rule is written for it: the hold-out is an evaluation set (A19). Not earned is the
-    // honest answer, and the verdict says why it is not earned: no check exists for the name.
+    // A name this program has no check for is not earned, and the verdict says why: no check
+    // exists for the name.
     [Fact]
     public void For_AStateWithNoCheck_RecordsItByNameAsNoCheckDefined()
     {
-        IReadOnlyDictionary<string, RequiredStateVerdict> map = For(["consent_verified", "renewal_offer_loaded"]);
+        IReadOnlyDictionary<string, RequiredStateVerdict> map = For(["consent_verified", "lease_signed"]);
 
-        Assert.Equal(RequiredStateVerdict.NoCheckDefined, map["renewal_offer_loaded"]);
+        Assert.Equal(RequiredStateVerdict.NoCheckDefined, map["lease_signed"]);
         Assert.Equal(RequiredStateVerdict.Earned, map["consent_verified"]);
+    }
+
+    // renewal_offer_loaded is answered by the lookup that loads the record's offer from the
+    // property data.
+    [Fact]
+    public void For_RenewalOfferLoaded_AnswersFromTheOfferLookup()
+    {
+        IReadOnlyDictionary<string, RequiredStateVerdict> map = For(["renewal_offer_loaded"], renewalOfferLoaded: RequiredStateVerdict.NotEarned);
+
+        Assert.Equal(RequiredStateVerdict.NotEarned, map["renewal_offer_loaded"]);
     }
 
     // A record that asserts nothing has asked no question, so the map is the complete answer

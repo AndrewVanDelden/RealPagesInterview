@@ -42,6 +42,42 @@ public class LeasingMessageAgentTests
         return minimal with { Assertions = new CaseAssertions(requiredStates, minimal.ConstraintsOrEmpty) };
     }
 
+    // renewal_offer_loaded is earned by finding the record's renewal offer in the property data,
+    // the stand-in for the property management system, and not earned when the offer is not there
+    // or no property data was given.
+    [Theory]
+    [InlineData(true, "A‑204", RequiredStateVerdict.Earned)]
+    [InlineData(true, "Z-999", RequiredStateVerdict.NotEarned)]
+    [InlineData(false, "A‑204", RequiredStateVerdict.NotEarned)]
+    public async Task RunAsync_RecordAssertsRenewalOfferLoaded_EarnedOnlyWhenItsOfferIsFound(bool withPropertyData, string unit, RequiredStateVerdict expected)
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(propertyData: withPropertyData ? SamplePropertyData.OakRidge() : null);
+        ProspectCase asserting = Asserting("renewal_offer_loaded");
+        ProspectCase prospectCase = asserting with { Input = asserting.ContextOrEmpty with { Unit = unit } };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Equal(expected, result.Diagnostics.RequiredStates["renewal_offer_loaded"]);
+    }
+
+    // A record with no consented channel reaches no step past the channel selection, so the offer
+    // was never looked up and the state is not evaluated.
+    [Fact]
+    public async Task RunAsync_NoConsentedChannelAndRenewalOfferLoadedAsserted_IsNotEvaluated()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(propertyData: SamplePropertyData.OakRidge());
+        ProspectCase asserting = Asserting("renewal_offer_loaded");
+        ProspectCase prospectCase = asserting with
+        {
+            Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
+            Input = asserting.ContextOrEmpty with { Unit = "A‑204" },
+        };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Equal(RequiredStateVerdict.NotEvaluated, result.Diagnostics.RequiredStates["renewal_offer_loaded"]);
+    }
+
     [Fact]
     public async Task RunAsync_Sample1_ProducesSmsAndStartCadence()
     {
@@ -144,7 +180,7 @@ public class LeasingMessageAgentTests
 
         AgentRunResult result = await agent.RunAsync(unclassifiable, ReferenceTime);
 
-        Assert.Equal(new ActionPlanNotes(HorizonBranch.Long, null, ActionSource.GenericRowNoMatch), result.Diagnostics.ActionPlan);
+        Assert.Equal(new ActionPlanNotes(HorizonBranch.NoMoveDate, null, ActionSource.GenericRowNoMatch), result.Diagnostics.ActionPlan);
         Assert.Equal(ActionTypes.FollowUpInDays, result.Output.NextAction.Type);
     }
 
@@ -430,13 +466,11 @@ public class LeasingMessageAgentTests
         Assert.Empty(result.Diagnostics.RequiredStates);
     }
 
-    // docs/CODE_REVIEW.md, against the record that actually asserts it: hold-out 6
-    // names renewal_offer_loaded and carries a renewal_offer_id a rule could obviously be
-    // fitted to. No rule is written for it, because the hold-out is an evaluation set and
-    // nothing is fitted to it (A19). The name is recorded, by name, as one this program
-    // has no check for, and the two states that do have checks are answered beside it.
+    // The hold-out record that asserts renewal_offer_loaded, run with no property data: the
+    // lookup that loads an offer found none, so the state is not earned, and the two states with
+    // their own checks are answered beside it.
     [Fact]
-    public async Task RunAsync_RecordAssertingAStateWithNoCheck_RecordsItByNameAsNotEarned()
+    public async Task RunAsync_HoldoutRecordAssertingRenewalOfferLoadedWithNoPropertyData_RecordsItNotEarned()
     {
         LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
         ProspectCase renewalCase = RealAgentFactory.ReadCases("holdout_12.jsonl")
@@ -449,7 +483,7 @@ public class LeasingMessageAgentTests
             {
                 ["consent_verified"] = RequiredStateVerdict.Earned,
                 ["fair_housing_check_passed"] = RequiredStateVerdict.Earned,
-                ["renewal_offer_loaded"] = RequiredStateVerdict.NoCheckDefined,
+                ["renewal_offer_loaded"] = RequiredStateVerdict.NotEarned,
             },
             result.Diagnostics.RequiredStates);
     }
