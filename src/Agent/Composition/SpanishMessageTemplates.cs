@@ -45,5 +45,6 @@ internal static class SpanishMessageTemplates
             ["reschedule"] = ["hoy", "mañana"],
             ["intent_capture"] = ["sí", "no", "detalles"],
         }.ToFrozenDictionary(StringComparer.Ordinal),
-        GenericSmsOptions: ["una pregunta", "una visita"]);
+        GenericSmsOptions: ["una pregunta", "una visita"],
+        GenericSmsOptionsWithoutTour: ["una pregunta"]);
 }

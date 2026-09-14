@@ -47,5 +47,6 @@ internal static class EnglishMessageTemplates
             ["reschedule"] = ["today", "tomorrow"],
             ["intent_capture"] = ["yes", "no", "details"],
         }.ToFrozenDictionary(StringComparer.Ordinal),
-        GenericSmsOptions: ["a question", "a tour"]);
+        GenericSmsOptions: ["a question", "a tour"],
+        GenericSmsOptionsWithoutTour: ["a question"]);
 }

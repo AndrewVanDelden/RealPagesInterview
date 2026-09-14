@@ -196,23 +196,26 @@ public sealed class ActionCatalog
     {
         if (persona is null || lifecycleStage is null)
         {
-            return GenericMatch(branch, ActionSource.GenericRowNoMatch);
+            return GenericMatch(persona, branch, ActionSource.GenericRowNoMatch);
         }
 
         if (!_rowsByKey.TryGetValue(KeyOf(persona, lifecycleStage), out ActionCatalogRow? row))
         {
-            return GenericMatch(branch, ActionSource.GenericRowNoMatch);
+            return GenericMatch(persona, branch, ActionSource.GenericRowNoMatch);
         }
 
         Option<NextAction> action = row.ActionFor(branch);
 
         return action.HasValue
             ? new ActionCatalogMatch(action.Value, ActionSource.CatalogRow)
-            : GenericMatch(branch, ActionSource.GenericRowNoBranch);
+            : GenericMatch(persona, branch, ActionSource.GenericRowNoBranch);
     }
 
-    private ActionCatalogMatch GenericMatch(HorizonBranch branch, ActionSource source) =>
-        new(GenericRow.ActionFor(branch), source);
+    // The generic row's short action names a prospect cadence, and no evidence shows a cadence for
+    // anyone else, so a record whose persona is not a prospect, an absent one included, takes the
+    // generic row's long action on every branch.
+    private ActionCatalogMatch GenericMatch(string? persona, HorizonBranch branch, ActionSource source) =>
+        new(Personas.IsProspect(persona) ? GenericRow.ActionFor(branch) : GenericRow.LongHorizonAction, source);
 
     private static (string Persona, string LifecycleStage) KeyOf(string persona, string lifecycleStage) =>
         (persona.Trim().ToLowerInvariant(), lifecycleStage.Trim().ToLowerInvariant());

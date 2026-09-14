@@ -3,17 +3,19 @@ using Agent.Common;
 
 namespace Agent.Composition;
 
-// One call to action: the type that goes on the wire, the path an email link ends in (A9, A21),
+// One call to action: the type that goes on the wire, the path an email link ends in (A9, A21), null
+// for a call to action the table does not recognize, since no evidence shows which page it is for,
 // the purpose the model is told the message serves, a decision code owns like the type and null
 // for a call to action no label shows, and the kinds of property fact that serve it, null when none
 // does. The sms reply options are not here: they are prose, so they live in the language sets with
 // the rest of the words a person reads, and one list in one place is the point of a table.
-internal sealed record CallToAction(string Type, string LinkPath, string? Purpose = null, FrozenSet<PropertyFactKind>? FactKinds = null);
+internal sealed record CallToAction(string Type, string? LinkPath, string? Purpose = null, FrozenSet<PropertyFactKind>? FactKinds = null);
 
 // Playbook step 42: the call-to-action vocabulary in one table. Nothing else in the
 // program spells a call-to-action type or a link path. The payload shape stays the channel's
-// rule (A10), which is why an unrecognized call to action still gets a payload; its wording
-// comes from the record's language set.
+// rule (A10), which is why an unrecognized call to action still gets sms options from the record's
+// language set; its email gets no link, because a link to a page no evidence shows is an invented
+// fact.
 internal static class CallToActionCatalog
 {
     // A9: the call to action a record with no primary_cta gets when its persona and stage
@@ -78,14 +80,14 @@ internal static class CallToActionCatalog
         }.ToFrozenDictionary();
 
     // O(1): at most one hash lookup. A stated primary_cta wins: the table's row, or the value
-    // passed through unchanged with the generic payload (A9). An absent or blank one takes the
+    // passed through unchanged with no link path (A9, A21). An absent or blank one takes the
     // stage default, and the generic row when the stage has none or the record states no
     // persona or stage.
     public static CallToAction Resolve(string? primaryCta, string? persona, string? lifecycleStage)
     {
         if (!Presence.IsAbsent(primaryCta))
         {
-            return ByPrimaryCta.TryGetValue(primaryCta!, out CallToAction? cta) ? cta : Generic with { Type = primaryCta! };
+            return ByPrimaryCta.TryGetValue(primaryCta!, out CallToAction? cta) ? cta : Generic with { Type = primaryCta!, LinkPath = null };
         }
 
         return persona is not null

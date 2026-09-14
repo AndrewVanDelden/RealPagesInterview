@@ -1174,6 +1174,24 @@ public class OpenAiMessageComposerTests
         Assert.Equal(["una pregunta", "una visita"], result.Message.Cta!.Options);
     }
 
+    // The generic fallback leaves out the tour for a record whose persona is not a prospect, and an
+    // unrecognized email call to action gets no link, so the model is told not to write one.
+    [Fact]
+    public async Task ComposeAsync_ResidentsUnknownCallToAction_GetsNoTourOptionAndNoLink()
+    {
+        const string smsJson = """{"subject":null,"body":"hi","cta_type":"confirm_move_in","cta_options":null}""";
+        const string emailJson = """{"subject":"Hello","body":"hi","cta_type":"confirm_move_in","cta_options":null}""";
+        var emailClient = new FakeCompletionClient(emailJson);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: "resident", lifecycleStage: "move_in");
+
+        ComposeOutcome sms = await new OpenAiMessageComposer(new FakeCompletionClient(smsJson)).ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome email = await new OpenAiMessageComposer(emailClient).ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Equal(["a question"], ComposedOf(sms).Message.Cta!.Options);
+        Assert.Null(ComposedOf(email).Message.Cta!.Link);
+        Assert.Contains("This is email: return a subject line and no reply options. Do not write a link.", emailClient.LastUserPrompt);
+    }
+
     [Fact]
     public async Task ComposeAsync_TourSmsWithEmptySlotsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsGenericPair()
     {

@@ -249,6 +249,35 @@ public class TemplateMessageComposerTests
         Assert.Equal(["a question", "a tour"], cta.Options);
     }
 
+    // The generic reply list offers a tour, which only a prospect is shopping for, so a record whose
+    // persona is not a prospect gets the list without it, in its own language.
+    [Theory]
+    [InlineData("resident", "en", new[] { "a question" })]
+    [InlineData(null, "es", new[] { "una pregunta" })]
+    public async Task ComposeAsync_GenericOptionsForAPersonaThatIsNotAProspect_LeaveOutTheTour(string? persona, string language, string[] expected)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: persona, lifecycleStage: "move_in", language: language);
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(expected, ComposedOf(outcome).Message.Cta!.Options);
+    }
+
+    // A call to action the table does not recognize names no page any evidence shows, so its email
+    // carries no link, the rule an absent property name already follows.
+    [Fact]
+    public async Task ComposeAsync_UnknownPrimaryCtaOnEmail_CarriesNoLink()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "submit_maintenance_request", persona: "resident", lifecycleStage: "active");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.Equal("submit_maintenance_request", result.Message.Cta!.Type);
+        Assert.Null(result.Message.Cta.Link);
+        Assert.DoesNotContain("https://", result.Message.Body);
+    }
+
     // A9: no primary_cta, at a persona and stage with no default call to action, means the
     // generic reply call to action and its own payload.
     [Fact]

@@ -228,7 +228,7 @@ public sealed class OpenAiMessageComposer(
             ? null
             : namedOptions ?? (payload.CtaOptions is { Count: > 0 } modelOptions
                 ? modelOptions
-                : templates.SmsOptions(payload.CtaType));
+                : templates.SmsOptions(payload.CtaType, Personas.IsProspect(prospectCase.Persona)));
 
         // The link in the body is code's the way the link itself is: a draft that left it out gets
         // the language set's link line, the one the template writes, and a draft that carries it is
@@ -328,7 +328,7 @@ public sealed class OpenAiMessageComposer(
         // timeline a person would say and tells the model to mention it. An sms carries its call to
         // action and its reply options and nothing more, since every character past one segment is
         // a second billed segment, so there the date stays data, as a resident's dates do.
-        string timelineInstruction = channel == CommunicationChannel.Email && IsProspect(prospectCase.Persona) && context.MoveDateTarget is { } moveDate
+        string timelineInstruction = channel == CommunicationChannel.Email && Personas.IsProspect(prospectCase.Persona) && context.MoveDateTarget is { } moveDate
             ? $"Mention the prospect's move timeline: {MoveTimeline(moveDate)}.\n"
             : string.Empty;
 
@@ -450,9 +450,6 @@ public sealed class OpenAiMessageComposer(
 
         return body.Insert(lineStart, $"{sentence}\n");
     }
-
-    private static bool IsProspect(string? persona) =>
-        persona is not null && string.Equals(persona.Trim(), "prospect", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsScheduleConflict(string? cancellationReason) =>
         cancellationReason is not null && string.Equals(cancellationReason.Trim(), ScheduleConflict, StringComparison.OrdinalIgnoreCase);

@@ -43,7 +43,8 @@ public sealed class TemplateMessageComposer : IMessageComposer
         // from. Only the content comes from the catalog and the language set.
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail ? PropertyLink.For(propertyName, callToAction.LinkPath, context.Unit) : null;
-        IReadOnlyList<string> optionTexts = TourSlotText.OptionsFor(callToAction.Type, tourSlots) ?? templates.SmsOptions(callToAction.Type);
+        IReadOnlyList<string> optionTexts = TourSlotText.OptionsFor(callToAction.Type, tourSlots)
+            ?? templates.SmsOptions(callToAction.Type, Personas.IsProspect(prospectCase.Persona));
 
         string body = isEmail
             ? EmailBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, link)

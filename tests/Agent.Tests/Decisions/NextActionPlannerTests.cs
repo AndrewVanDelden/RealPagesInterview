@@ -106,9 +106,20 @@ public class NextActionPlannerTests
     [Fact]
     public void Plan_PersonaWithNoRow_UsesTheGenericRowAndRecordsIt()
     {
-        PlannedAction planned = Planner.Plan("resident", "renewal", new DateOnly(2026, 1, 10), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "toured", new DateOnly(2026, 1, 10), ReferenceDate);
 
         Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
+        Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
+    }
+
+    // A resident is never put on the generic row's prospect cadence, even on a short horizon.
+    [Fact]
+    public void Plan_ResidentWithNoRowOnAShortHorizon_UsesTheGenericRowsLongAction()
+    {
+        PlannedAction planned = Planner.Plan("resident", "move_in", new DateOnly(2026, 1, 10), ReferenceDate);
+
+        Assert.Equal(new NextAction(ActionTypes.FollowUpInDays, Value: 3), planned.Action);
+        Assert.Equal(HorizonBranch.Short, planned.Branch);
         Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
     }
 

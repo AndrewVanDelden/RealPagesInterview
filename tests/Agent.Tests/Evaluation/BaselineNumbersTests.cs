@@ -18,7 +18,11 @@ namespace Agent.Tests.Evaluation;
 // numbers of stricter checks, re-pinned deliberately, not regressions. A tour invitation now offers
 // dated slots from two days after its send date, so synthetic_12.jsonl's Saturday sends offer Monday
 // and Tuesday where its labels, written by this project under the old fixed Thursday and Friday pair,
-// say Thursday and Friday: its payload tally is re-pinned lower for that reason.
+// say Thursday and Friday: its payload tally is re-pinned lower for that reason. A record whose
+// persona is not a prospect no longer takes the generic row's prospect cadence, and a call to action
+// the table does not recognize gets no email link, so synthetic_v2.jsonl's action tally rises by the
+// resident its label follows up in three days and its payload tally falls by the record whose label
+// sends nothing and whose unrecognized email now carries no link.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -40,7 +44,7 @@ public class BaselineNumbersTests
     [InlineData(
         "synthetic_v2.jsonl",
         "2026-10-24T22:00:00Z",
-        "Checks: Channel 25/29, Day 24/26, Hour 19/26, Action 12/29, OptOut 26/26, CTA 23/24, Payload 8/25, Lang 23/23, Safety 29/29, Personalization 26/26",
+        "Checks: Channel 25/29, Day 24/26, Hour 19/26, Action 13/29, OptOut 26/26, CTA 23/24, Payload 7/25, Lang 23/23, Safety 29/29, Personalization 26/26",
         "Overall: 1/30 passed")]
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {

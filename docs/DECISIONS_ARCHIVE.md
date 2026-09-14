@@ -3542,5 +3542,33 @@ percent line, branch and method coverage. Template runs of all four sets: `sampl
 and 28 where its labels name Mon and Tue. The committed `synthetic_12` scorecard was refreshed; the
 `synthetic_v2` one was left as it was, since only its latency figures moved. Numbered sms options are
 now joined with a semicolon on every call to action. The README diagram and the narration's rehearsal
-now schedule at step 3 and compose at step 4. No model run was made. The
+now schedule at step 3 and compose at step 4. No model run was made.
+
+**D109 addendum, taken: option (a) (2026-09-14).** The owner took (a). A record whose persona is not
+`prospect`, an absent persona included, that the generic action row answers takes the generic row's
+long-horizon action on every branch, since the short action names a prospect cadence no evidence
+shows for anyone else; the language sets gain a generic reply list for such a record that leaves out
+the tour; and a `primary_cta` the call-to-action table does not recognize keeps its type but gets no
+link path, so its email carries no link, the rule A21 already applies to an absent property name. The
+persona test becomes one shared rule, trimmed and without regard to case, since the action catalog,
+both composers and the model composer's timeline instruction all ask it. A generic answer is still
+sent and still queued for review. Scopes: `ActionCatalog`, `CallToActionCatalog`, `PropertyLink`, both
+composers, both language sets, `MessageTemplates`, A8, A9, A21 and OPERATIONS.md if it names the
+generic answers. Evidence: D107's classification and the run and debug fact that re-read D109 against
+send dates. Assumptions: A8, A9, A21. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D109 built (2026-09-14).** On `sprint-17`, test first. The shared persona rule's
+test failed to compile until `Personas` existed; with it, 9 cases failed at runtime for the intended
+reasons: 4 catalog branches and the planner's short-horizon resident still took the prospect cadence,
+2 template cases still offered a tour to a record that is not a prospect, and the template and model
+composers still linked an unrecognized email call to action to `/reply`. All passed with the
+implementation. The first full gate failed on exactly the `synthetic_v2.jsonl` baseline: a per-record
+diff of its template scorecard before and after showed two flipped checks and no other,
+`v2_resident_notice_given` action from FAIL to OK (follow up in 3 days, as labeled) and
+`v2_unusual_persona_stage` payload from OK to FAIL (its label sends nothing, and its unrecognized email
+now carries no link, so the presence rule fails). It was re-pinned at action 13 of 29 and payload 7 of
+25, overall still 1 of 30, with the reason in the test, and its committed scorecard refreshed. The
+residents `v2_resident_move_in` and `v2_resident_notice_given` now offer "a question" alone, and no
+unrecognized email links to `/reply`. `sample.jsonl`, `holdout_12.jsonl` and `synthetic_12.jsonl`
+are unchanged. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.
