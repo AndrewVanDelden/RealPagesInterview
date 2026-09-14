@@ -3202,6 +3202,21 @@ stages no catalog row covers (`resident_move_in_prep`, follow-up in 7). None of 
 D101 and D103 tests were written in the same step as their implementation and first run with it,
 not run red first, against the repository's test-first rule.
 
+**Run and debug fact, the full runs after D103 (2026-09-13).** At `42ec311`, `--composer openai
+--model-call-budget-ms 30000 --judge` with every output flag. `holdout_12.jsonl` with
+`--property-data holdout_12_property_data.json`: exit 0; every deterministic check full; Overall 12 of
+12; ActionSem 12 of 12; BodySem 5 of 11 (4 of 11 on the run before D98 to D103, 0 of 11 on
+2026-09-11); review queue empty; p95 3551 ms against 2000 ms. The judge's reasons for the six body
+failures: four bodies state property facts their label does not use (tour times, the studio price),
+since the property data holds facts per property and nothing says which facts serve which call to
+action; two leave out a fact they were given (the mid-February move, the 10-day price hold); and
+`resident_welcome_day0` states the move-in date under D103's timeline rule, which its label omits.
+One judge reason is wrong on its own evidence: `prospect_welcome_day0`'s body offers Thu or Fri, and
+the reason says it names no days. `synthetic_v2.jsonl` with no property data: exit 2, its malformed
+line 15 as designed; Overall 1 of 30; ActionSem 13 of 29; BodySem 0 of 24; review queue 11 rows.
+Results are in `holdout_12_run_2026-09-13_final` and `synthetic_v2_run_2026-09-13` on the owner's
+desktop. Not decided: a table of which property facts serve which call to action.
+
 **D102 addendum, the long cadence stays on the long branch (2026-09-13).** Moving every no-date
 record's evidence to the new branch left prospect/new with no long action, so a prospect dated
 more than 45 days out took the generic `follow_up_in_days` 3 instead of
