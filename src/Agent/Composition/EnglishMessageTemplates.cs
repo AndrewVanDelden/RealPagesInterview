@@ -27,6 +27,9 @@ internal static class EnglishMessageTemplates
         EmailOptOut: "To opt out of emails, reply STOP.",
         EmailSubjectForProperty: "Tour {0}",
         EmailSubjectGeneric: "Your next step",
+        // The renewal offer's terms in the hold-out label's own words, resident_renewal_90day_notice.
+        RenewalPriceHoldSentence: "We've reserved current pricing for {0} days.",
+        RenewalTextRemindersSentence: "If you prefer text, reply YES to get reminders by SMS.",
         CtaPhraseByType: new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["schedule_tour"] = "book a tour",

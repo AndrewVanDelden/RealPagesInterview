@@ -13,10 +13,10 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D103, which change the prompt, the links, the planner, the property facts and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-13: `.\test.ps1` passes 112 and 774 tests at 100 percent, running all four sets offline on the template composer, and each set's template run exits 0 or 2 as documented.
-Next step: merge PR #36 into `dev` after the owner's narration of one record, with the full runs of `holdout_12.jsonl` and `synthetic_v2.jsonl` reported beside it.
-Open decisions: none.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are all to the model composer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 810 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the owner takes or declines D108 and D109, then names the full run that measures D110 to D112.
+Open decisions: D108, D109.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -40,21 +40,17 @@ corrections and the judge (D6, D13, D15, D30); the twelve-record file (D9, D11);
 reference time and log scope (D8, D10, D14, D16); the official SDK and what bounds a model call
 (D27, D28); and the step 60 run (D31). Structure is D7, the Phase 0 restart D12.
 
-**D32 to D37, latency, proposed 2026-09-08.** Written from the step 60 run's measurements rather
-than from preference: measure one successful call before tuning anything (D32), stop retrying a
-timeout (D33), retry only a safety rejection in the compose-validate loop (D34), what one
-attempt may take (D35), what `p95_latency_ms` is (D36), and batch concurrency (D37). D35 and D36
-take no recommendation, and prompt caching is recorded there as not a lever. All six were
-settled in Sprint 11: D32 measured, D33 to D35 and D37 taken, D36 closed by D70.
+**D32 to D37, latency (proposed 2026-09-08, settled in Sprint 11).** From the step 60 run's
+measurements: measure one call before tuning (D32), stop retrying a timeout (D33), retry only a
+safety rejection (D34), bound one attempt (D35), define `p95_latency_ms` (D36, closed by D70), and
+batch concurrency (D37).
 
-**D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check
-rather than one boolean (D38), all four checks hard gates and brand style a diagnostic (D39),
-which checks a record cannot switch off (D40), what the term proxy normalizes and exempts (D41,
-D45, D49, D50), what earns a state and what brand style is (D42), the review queue for a
-suppressed draft (D43), the vendor's retention default (D44), what an exception may say (D46,
-D51), a null inside a list the element type forbids (D47), and the composer seam carrying a
-refusal rather than destroying the draft (D48). D52 to D56 are PR #24's review fixes, three
-findings reconsidered and kept.
+**D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check (D38),
+all four checks hard gates and brand style a diagnostic (D39), which checks a record cannot switch
+off (D40), what the term proxy normalizes and exempts (D41, D45, D49, D50), what earns a state
+(D42), the review queue (D43), vendor retention (D44), what an exception may say (D46, D51), a null
+inside a list (D47), and a refusal carried through the composer seam (D48). D52 to D56 are PR #24's
+review fixes.
 
 **D57 to D59, Sprint 8, structure and narration (2026-09-09).** The consent gate merged into the
 channel selector, whose absence of a value answers both questions (D57); every interface without
@@ -145,12 +141,15 @@ and each call to action's purpose (D96, D103); resident links are built from the
 no-choice call keeps its retries (D98); property facts come from `--property-data` (D101), chosen per
 call to action (D104); no move date is its own branch (D102); and D105 fixes three prompt misses.
 
-**PR #36 review fixes, Sprint 16 continued (2026-09-14).** A `/code-review` and an Antigravity
-review left eighteen findings on the open PR; three declined against D101, A19 and no stated rule,
-fourteen fixed under strict TDD: two resident call to actions with no phrase in either language
-set, the documented hold-out run missing `--property-data`, a unit's dash compared raw in one
-place and folded in another, ten new inputs untracked by `DefaultedFields`, a case-sensitive
-`cancellation_reason` check, an unexcluded empty-options boundary, a cross-language weekday fold,
-a linear property scan, a judge fault that crashed the batch instead of one grade, `--diagnostics`
-missing from `--replay`'s guards, and `--judge` alone spending calls nowhere logged. 919 tests,
-100 percent coverage, both projects.
+**PR #36 review fixes, Sprint 16 closed (2026-09-14).** A `/code-review` and an Antigravity review
+left eighteen findings: three declined against D101, A19 and no stated rule, fourteen fixed test
+first, among them a judge fault that crashed the batch and a linear property scan; 919 tests at 100
+percent, run and debug facts. PR #36 merged into `dev` as `b3f9036`, closing the sprint (D106).
+
+**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 checks that failed under the stricter
+scorer are read record by record and not fitted: 19 are product gaps, 5 the label author's choices,
+and no label or tally moves (D107). Two gaps are the owner's to decide: tour reply days fixed as Thu
+and Fri whatever the send date (D108), and a record nothing covers answered as a prospect (D109). The
+three hold-out bodies the judge failed: the move timeline goes on email only (D110), tour availability
+only to an invitation the record names (D111), and code writes a renewal offer's terms while the lease
+end date leaves the prompt (D112). No model run has measured them.

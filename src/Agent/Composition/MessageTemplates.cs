@@ -25,6 +25,8 @@ internal sealed record MessageTemplates(
     string EmailOptOut,
     string EmailSubjectForProperty,
     string EmailSubjectGeneric,
+    string RenewalPriceHoldSentence,
+    string RenewalTextRemindersSentence,
     FrozenDictionary<string, string> CtaPhraseByType,
     FrozenDictionary<string, IReadOnlyList<string>> SmsOptionsByCtaType,
     IReadOnlyList<string> GenericSmsOptions)

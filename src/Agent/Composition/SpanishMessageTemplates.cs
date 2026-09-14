@@ -27,6 +27,8 @@ internal static class SpanishMessageTemplates
         EmailOptOut: "Para cancelar los correos, responde STOP.",
         EmailSubjectForProperty: "Visita {0}",
         EmailSubjectGeneric: "Tu siguiente paso",
+        RenewalPriceHoldSentence: "Reservamos el precio actual por {0} días.",
+        RenewalTextRemindersSentence: "Si prefieres mensajes de texto, responde SÍ para recibir recordatorios por SMS.",
         CtaPhraseByType: new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["schedule_tour"] = "agendar una visita",
