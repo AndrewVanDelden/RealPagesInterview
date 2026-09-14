@@ -3640,5 +3640,39 @@ private method of the template composer to `MessageTemplates`, so both composers
 A body the model wrote with its own opt-out now gets the options after it, because code cannot tell
 where in the draft that sentence sits; the model is told the system appends both. `.\test.ps1` passed
 115 and 862 tests at 100 percent line, branch and method coverage, with every pinned template baseline
-unchanged, since the template composer's output did not change. The
+unchanged, since the template composer's output did not change.
+
+**Run and debug fact, the full runs after D114 (2026-09-14).** At `bfab7fa`, the same flags as the runs
+after D112, one run per file, one after the other. `holdout_12.jsonl`: exit 0; every deterministic check
+full; Overall 12 of 12; ActionSem 12 of 12; BodySem 8 of 11, from 7; review queue empty; p95 3550 ms
+against 2000 ms, FAIL, attempts 1 on every record. Moved: `prospect_welcome_day0` FAIL to OK, the judge
+reading Dec 11 and 12, 2025 as Thursday and Friday, which they are (D113); `prospect_no_show_reengage`
+FAIL to OK, its body ending with code's "Reply 1 for today; 2 for tomorrow." (D114);
+`resident_welcome_day0` OK to FAIL on wording nearly the same as the run before ("complete the features
+enablement" in both), a judge flip no code change reached, and a sign the purpose sentence's field name,
+`features_enablement`, is echoed into the prose. Still failing: `prospect_spanish_locale`, its body now
+carrying code's options, failed for its stated `amenity_interest` (estacionamiento, lavandería), which
+the label leaves out, and for the times; `resident_renewal_90day_notice`, again for the code-appended
+email opt-out. `synthetic_v2.jsonl`: exit 2 on its malformed line; Overall 1 of 30; Action 13 of 29;
+Payload 7 of 25; ActionSem 14 of 29; BodySem 4 of 24, from 2; review queue 11 rows; p95 2208 ms against
+2000 ms, FAIL. The two new body passes are false: the judge graded `v2_missing_first_name` and
+`v2_empty_profile` as matching because Oct 27 and 28, 2026 "correspond to Monday and Tuesday" after the
+Sunday send date, and they are Tuesday and Wednesday, checked against the calendar; in the same run it
+counted the same dates correctly for `v2_spanish_locale` and failed it. The judge's own date arithmetic
+is unreliable in both directions (D115). Each figure is one call per record. Results are in
+`holdout_12_run_2026-09-14_d114` and `synthetic_v2_run_2026-09-14_d114` on the owner's desktop.
+
+**D115. Code resolves each reply option's day for the judge (proposed 2026-09-14).** Question: D113
+gave the judge each side's send time and weekday and a rubric rule for reading a date against a weekday,
+and the run after D114 shows the judge applying that rule with wrong arithmetic: two blind-set bodies
+passed on dates it miscounted as Monday and Tuesday. Options: (a) each block of the judge's prompt lists
+the message's reply options with the day code resolves for each: a dated option with its weekday, and a
+weekday option with the date the D108 rule gives from that side's send date, and the rubric compares
+those resolved days rather than asking the judge to count; (b) take the reply options out of the judge's
+body question, since the deterministic payload check already compares them by the D108 rule; (c) leave
+the judge as D113 built it. Recommendation: (a): the judge keeps grading whether the offer is the same,
+and no calendar fact is left for a model to compute. (b) hides a body that offers different days behind
+a payload check the judge never sees. Scopes: `SemanticJudge`, a shared day resolution with
+`ReplyOptionSpelling`, the golden prompt and rubric. Evidence: that run's judge reasons and the
+calendar. Assumptions: none. Open. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

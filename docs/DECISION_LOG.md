@@ -15,8 +15,8 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
 Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 862 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the full runs after D114 are read against the runs after D112.
-Open decisions: none.
+Next step: the owner takes or declines D115, which the full runs after D114 raised.
+Open decisions: D115.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -148,9 +148,9 @@ D109 is taken: a record that is not a prospect gets no prospect cadence or tour 
 call to action no link. The move timeline goes on email only (D110), tour availability only to a
 named invitation (D111), and code writes renewal terms (D112). Run and debug facts hold the evidence.
 
-**D113 and D114, the full runs after D112, Sprint 17 (2026-09-14).** One model run of each file, a
-run and debug fact. The hold-out keeps every deterministic check, and bodies read 7 of 11 from 8: the
-welcome email with no named call to action now passes, and two bodies that passed now fail. The blind
-set's bodies read 2 of 24 from 0. p95 latency failed both. Both proposals were taken: the judge sees
-each side's send time and weekday (D113), and code writes the sms reply options sentence (D114). A
-second pair of runs measures them.
+**D113 to D115, the full runs after D112 and D114, Sprint 17 (2026-09-14).** Run and debug facts.
+After D112 the hold-out's bodies read 7 of 11 and the blind set's 2 of 24. D113 gave the judge each
+side's send time and weekday, and D114 had code write the sms options sentence. After D114 the hold-out
+reads 8 of 11: the welcome and no-show texts now pass, and one email flipped on unchanged wording. The
+blind set reads 4 of 24, but its two new passes are the judge miscounting weekdays. p95 latency still
+fails. D115 proposes that code, not the judge, resolve each option's day.
