@@ -46,6 +46,12 @@ public sealed class ActionCatalog
 
     public IReadOnlyList<ActionCatalogRow> Rows { get; }
 
+    // Declared before Default, which reads them: static members initialize in the order they are
+    // written, and a later field would still be empty while Default is built.
+    private static readonly Option<NextAction> LeadClosed = Option<NextAction>.Some(new NextAction(ActionTypes.NoOp, Reason: "lead_closed"));
+
+    private static readonly Option<NextAction> PersonaStageMismatch = Option<NextAction>.Some(new NextAction(ActionTypes.NoOp, Reason: "persona_stage_mismatch"));
+
     // The rows the labeled records have evidence for, plus the generic row of A8. A row states
     // only the branches its records showed; any other branch falls to the generic row. Every
     // hold-out record below states no move date, so each sets its row's no-move-date branch (A7).
@@ -67,11 +73,12 @@ public sealed class ActionCatalog
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "prospect_welcome_long_horizon"))),
 
             // Long: sample 2, 68 days out. No move date: hold-out prospect_spanish_locale, followed
-            // up sooner because the timeline is not yet qualified.
+            // up sooner because the timeline is not yet qualified. Short: synthetic_v2 v2_voice_channel,
+            // 35 days out, the same 2 days.
             new ActionCatalogRow(
                 "prospect",
                 "open",
-                Option<NextAction>.None(),
+                Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2)),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 3)),
                 Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))),
 
@@ -137,6 +144,26 @@ public sealed class ActionCatalog
                 Option<NextAction>.None(),
                 Option<NextAction>.None(),
                 Option<NextAction>.Some(new NextAction(ActionTypes.StartEsignFlow))),
+
+            // synthetic_v2 v2_prospect_toured, v2_prospect_applied and v2_prospect_approved, each
+            // 21 to 38 days out: follow up in 2 on the short branch.
+            new ActionCatalogRow("prospect", "toured", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2)), Option<NextAction>.None(), Option<NextAction>.None()),
+            new ActionCatalogRow("prospect", "applied", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2)), Option<NextAction>.None(), Option<NextAction>.None()),
+            new ActionCatalogRow("prospect", "approved", Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2)), Option<NextAction>.None(), Option<NextAction>.None()),
+
+            // synthetic_v2 v2_prospect_lost and v2_unusual_persona_stage: a closed lead and a prospect
+            // at a resident's stage are sent nothing on every branch, since neither is a matter of
+            // horizon.
+            new ActionCatalogRow("prospect", "lost", LeadClosed, LeadClosed, LeadClosed),
+            new ActionCatalogRow("prospect", "renewal", PersonaStageMismatch, PersonaStageMismatch, PersonaStageMismatch),
+
+            // synthetic_v2 v2_resident_move_in, 6 days out.
+            new ActionCatalogRow("resident", "move_in", Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "resident_move_in_prep")), Option<NextAction>.None(), Option<NextAction>.None()),
+
+            // synthetic_v2 v2_resident_active_checkin, whose move date is past, and v2_resident_renewal,
+            // which states none.
+            new ActionCatalogRow("resident", "active", Option<NextAction>.None(), Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 7))),
+            new ActionCatalogRow("resident", "renewal", Option<NextAction>.None(), Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.StartCadence, "resident_renewal"))),
         ]).Value;
 
     // O(n) time and space in the number of rows. Rows are numbered from 1 in the order given.

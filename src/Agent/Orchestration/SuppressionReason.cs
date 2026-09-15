@@ -13,6 +13,10 @@ public enum SuppressionReason
     NoContactConsent,
     CompositionFailed,
     SafetyViolation,
+
+    // The planned action is no_op: a closed lead or a record whose persona and stage contradict each
+    // other is sent nothing, and next_action.reason says which.
+    NoOpAction,
 }
 
 public static class SuppressionReasonExtensions

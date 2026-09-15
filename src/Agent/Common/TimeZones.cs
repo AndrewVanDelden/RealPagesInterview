@@ -1,9 +1,52 @@
+using System.Collections.Frozen;
+using System.Text.RegularExpressions;
+
 namespace Agent.Common;
 
 // A6: an absent or unrecognized timezone id resolves as UTC. The ingest notes name the
 // field, so the default is visible per record rather than silent.
-public static class TimeZones
+public static partial class TimeZones
 {
+    // Each US state and DC with the IANA zone most of its population lives in, the fallback for a
+    // record whose timezone id the runtime does not know but whose city_interest names a state.
+    public static readonly FrozenDictionary<string, string> StateZoneIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AL"] = "America/Chicago", ["AK"] = "America/Anchorage", ["AZ"] = "America/Phoenix", ["AR"] = "America/Chicago",
+        ["CA"] = "America/Los_Angeles", ["CO"] = "America/Denver", ["CT"] = "America/New_York", ["DE"] = "America/New_York",
+        ["DC"] = "America/New_York", ["FL"] = "America/New_York", ["GA"] = "America/New_York", ["HI"] = "Pacific/Honolulu",
+        ["ID"] = "America/Boise", ["IL"] = "America/Chicago", ["IN"] = "America/Indiana/Indianapolis", ["IA"] = "America/Chicago",
+        ["KS"] = "America/Chicago", ["KY"] = "America/New_York", ["LA"] = "America/Chicago", ["ME"] = "America/New_York",
+        ["MD"] = "America/New_York", ["MA"] = "America/New_York", ["MI"] = "America/Detroit", ["MN"] = "America/Chicago",
+        ["MS"] = "America/Chicago", ["MO"] = "America/Chicago", ["MT"] = "America/Denver", ["NE"] = "America/Chicago",
+        ["NV"] = "America/Los_Angeles", ["NH"] = "America/New_York", ["NJ"] = "America/New_York", ["NM"] = "America/Denver",
+        ["NY"] = "America/New_York", ["NC"] = "America/New_York", ["ND"] = "America/Chicago", ["OH"] = "America/New_York",
+        ["OK"] = "America/Chicago", ["OR"] = "America/Los_Angeles", ["PA"] = "America/New_York", ["RI"] = "America/New_York",
+        ["SC"] = "America/New_York", ["SD"] = "America/Chicago", ["TN"] = "America/Chicago", ["TX"] = "America/Chicago",
+        ["UT"] = "America/Denver", ["VT"] = "America/New_York", ["VA"] = "America/New_York", ["WA"] = "America/Los_Angeles",
+        ["WV"] = "America/New_York", ["WI"] = "America/Chicago", ["WY"] = "America/Denver",
+    }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
+    // The zone id a record is scheduled in: its own when the runtime knows it; otherwise the zone of the
+    // state its city_interest ends with ("Dallas, TX"), since synthetic_v2's unknown "America/Dallas"
+    // with "Dallas, TX" is labeled Central time; otherwise its own id, which resolves as UTC downstream.
+    // O(n) in the city_interest's length: one anchored match and one lookup.
+    public static string? EffectiveZoneId(string? timeZoneId, string? cityInterest)
+    {
+        if (TryResolve(timeZoneId, out _))
+        {
+            return timeZoneId;
+        }
+
+        return cityInterest is not null
+            && StateSuffix().Match(cityInterest) is { Success: true } state
+            && StateZoneIds.TryGetValue(state.Groups[1].Value, out string? zoneId)
+                ? zoneId
+                : timeZoneId;
+    }
+
+    [GeneratedRegex(@",\s*([A-Za-z]{2})\s*$")]
+    private static partial Regex StateSuffix();
+
     public static bool TryResolve(string? timeZoneId, out TimeZoneInfo timeZone)
     {
         if (timeZoneId is not null && TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out TimeZoneInfo? found))

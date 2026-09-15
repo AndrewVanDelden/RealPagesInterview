@@ -3674,5 +3674,99 @@ the judge as D113 built it. Recommendation: (a): the judge keeps grading whether
 and no calendar fact is left for a model to compute. (b) hides a body that offers different days behind
 a payload check the judge never sees. Scopes: `SemanticJudge`, a shared day resolution with
 `ReplyOptionSpelling`, the golden prompt and rubric. Evidence: that run's judge reasons and the
-calendar. Assumptions: none. Open. The
+calendar. Assumptions: none. Open.
+
+**D116. `synthetic_v2.jsonl` becomes training data (taken 2026-09-14).** Question: after D108 to D114
+the blind set still reads 1 of 30 overall, and the judge's two checks, where most of Sprint 17's work
+landed, are excluded from a record's pass or fail by design. A measurement with a 1-day tour lead time
+read 8 of 30, but choosing that value from the blind labels fits the set D81 kept blind. The owner will
+bring a larger dataset. Options: (a) `synthetic_v2.jsonl` joins `sample.jsonl` and `holdout_12.jsonl`
+as evidence rules are fitted to, the honest number moves to the owner's larger dataset, which stays
+unseen until the rules are done and is then run once, and the model prose and judge work stops, so D115
+is not taken; (b) keep the set blind and write rules from the fitted sets and research only; (c) write a
+new blind set now. Recommendation: (a), the owner's choice. The blind set's failures are rules its
+stages and inputs need and the fitted twelve records never show, so they are fitted from their own
+labels, each rule citing the records that set it; a label this project judges wrong is recorded as
+declined rather than fitted. Scopes: D81's frame for this file, AGENTS.md, README.md, DESIGN.md
+section 7, `BaselineNumbersTests`, and one decision per rule. Assumptions: A7 to A10, A21. Taken on the
+owner's instruction of 2026-09-14; D115 is declined with it.
+
+**D117. The rules `synthetic_v2.jsonl` sets as training data (taken 2026-09-14).** Question: under
+D116, which rules does each failing record set, and where its label collides with a hold-out label,
+which input separates the two? Every record was read against its label from a template run at
+`d2e2643`. Options: (a) fit the rules below, each keyed on an input the record states, every collision
+separated by an input that differs between the colliding records and recorded with the other inputs
+that fit equally, and the labels that cannot be fitted without breaking a hold-out label declined;
+(b) fit only the rules that collide with nothing. Recommendation: (a), since (b) leaves the stages the
+larger dataset will certainly carry. The rules:
+1. Tour slots count from the run's reference date in the record's zone, not the send date: the first
+   slot is at least two days after that date and after the send date. Hold-out, reference Tuesday
+   2025-12-09, labels Thursday and Friday; the eleven `synthetic_v2.jsonl` tour records, reference
+   Saturday 2026-10-24 17:00 in Chicago and sent Sunday, label Monday and Tuesday. A lead time counted
+   from the send date fits one set or the other, never both.
+2. The short horizon is at most 60 days: `v2_horizon_boundary_60_days` short, `_61_days` long; sample
+   1 (32 short) and sample 2 (68 long) agree.
+3. A past move date takes the no-move-date branch: `v2_move_date_in_past` (prospect/open, 23 days past)
+   follows up in 2, the row's no-date action; a timeline already passed is unqualified again.
+   `synthetic_12_13_past_move_date`, a label this project wrote under the old A7, no longer matches.
+4. A record with no move date whose `primary_cta` is stated takes its row's short action where the row
+   states one: `v2_missing_move_date` and `v2_no_data_to_personalize` (prospect/new, `book_tour`) are
+   labeled the short cadence, and the hold-out's `prospect_consent_block_sms_fallback_email`
+   (prospect/new, no `primary_cta`) the long one. A stated `last_interaction` also separates them.
+5. Catalog rows: prospect/toured, prospect/applied and prospect/approved follow up in 2 on the short
+   branch; resident/move_in starts `resident_move_in_prep` on the short branch; resident/active follows
+   up in 7 with no move date (its date is past); resident/renewal starts `resident_renewal` with no
+   move date; prospect/open follows up in 2 on the short branch (`v2_voice_channel`); prospect/lost is
+   `no_op` `lead_closed` and prospect/renewal `no_op` `persona_stage_mismatch` on every branch, since a
+   closed lead or a contradictory record is not a matter of horizon.
+6. A `no_op` action suppresses the message: channel none, the action's reason on the wire, suppression
+   reason `no_op_action`. `v2_prospect_lost` and `v2_unusual_persona_stage`.
+7. Calls to action: `start_application` path `apply`, `complete_application` path `portal`, `sign_lease`
+   path `lease`, `submit_maintenance_request` path `maintenance`, `renew_lease` sent as
+   `review_renewal_offer` with path `renew`, and `confirm_move_in` offering 9 AM and 1 PM in English.
+8. `flats` is not a trailing property-type word: `v2_resident_active_checkin` links to
+   `saguaroflats.example`.
+9. Voice sends at 10:00: `v2_voice_channel`.
+10. A send slot row may name the horizon branch it applies to, and prospect/new email at 09:05 applies
+    only with no move date: every `synthetic_v2.jsonl` prospect/new email states a move date and is
+    labeled 10:00 (`v2_prospect_new_long_email`, `v2_dst_fall_back_london`,
+    `v2_missing_property_name`, `v2_empty_channel_preferences`, `v2_consent_only_non_preferred`).
+11. An unknown timezone falls back to the zone of the state named in `city_interest` before UTC:
+    `v2_unknown_timezone` (`America/Dallas`, "Dallas, TX") is labeled Central time. Each state takes
+    its IANA zone for most of its population.
+12. When no preferred channel is consented, a consented channel outside the preferences is used, email
+    before sms before voice: `v2_empty_channel_preferences` and `v2_consent_only_non_preferred` are
+    labeled email; consent is the permission, and a preference list is an ordering.
+Declined: `v2_no_consent_for_preferred` spells the reason `no_consented_channel` where the hold-out's
+`resident_opt_out_respected`, the same situation, spells it `no_contact_consent`; `v2_missing_property_name`
+labels an email with reply options and no link, which the payload rule cannot pass without dropping
+the link check; `v2_resident_notice_given` labels two inspection dates from one example, whose rule (13
+and 14 days before the move date, or another) one record cannot fix. Expected template result:
+`synthetic_v2.jsonl` 26 of 30 with `sample.jsonl` and `holdout_12.jsonl` unchanged, a projection
+checked only by the build. Scopes: `TourSlots`, `NextActionPlanner`, `ActionCatalog`, `SendSlotTable`,
+`SendSlotRow`, the rules file, `SendScheduler`, `TimeZones`, `ChannelSelector`, `LeasingMessageAgent`,
+`CallToActionCatalog`, `PropertyLink`, the English language set, the baselines, A3 to A10, A19 to A21.
+Assumptions: A3 to A10, A19 to A21. Taken under D116.
+
+**Run and debug fact, D117 built (2026-09-14).** On `sprint-17`, test first: the new and changed tests
+across tour slots, the planner, the catalog, the slot table, the scheduler, timezones, the channel
+selector, the agent, the template composer and the suppression reason failed to build on the new
+members, then passed with the implementation. One implementation bug was caught before any run: the
+catalog's two shared no-op actions were first declared below `Default`, which static initialization
+order would have built with them still empty; they now sit above it, with the reason in a comment.
+The first full gate failed on exactly three tests: a planner fixture that used prospect/toured, now a
+row, moved to a stage with none, and the two synthetic baselines. Template runs at the reference times
+as documented: `synthetic_v2.jsonl` 26 of 30 from 1, every check full but action 28 of 29 and payload 23
+of 25, its failures exactly the three declined labels (`v2_no_consent_for_preferred`,
+`v2_missing_property_name`, `v2_resident_notice_given`) and its malformed line; `synthetic_12.jsonl`
+5 of 13, action 9 of 12 from 11, `synthetic_12_unseen_cta_vocabulary` and `synthetic_13_past_move_date`
+now failing their actions against labels this project wrote under the replaced past-date and
+short-branch rules; `sample.jsonl` 2 of 2 and `holdout_12.jsonl` 12 of 12 unchanged. Both synthetic
+baselines and committed scorecards were re-pinned with the reason. The next gate failed on branch
+coverage alone, 99.88 percent: the email payload check's branch for a label with no call to action at
+all had been reached only by `v2_unusual_persona_stage`, which is now suppressed, so a unit test pins
+that real case, a label that sends nothing against an email the agent sent. `.\test.ps1` then passed
+115 and 908 tests at 100 percent line, branch and method coverage. The review queue now holds one row
+on each synthetic set and none on the samples or the hold-out. The check caught a decision number in a
+test comment, rewritten as the rule. No model run was made. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

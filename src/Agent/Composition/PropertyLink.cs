@@ -21,7 +21,6 @@ internal static partial class PropertyLink
     {
         "apartment",
         "apartments",
-        "flats",
         "homes",
         "lofts",
         "place",

@@ -182,6 +182,41 @@ public class LeasingMessageAgentTests
         Assert.Null(result.Diagnostics.Schedule);
     }
 
+    // A stage whose action is no_op, a closed lead or a prospect at a resident's stage, is sent
+    // nothing: channel none, the action's own reason on the wire, and the suppression named, with the
+    // plan that chose it and no schedule.
+    [Theory]
+    [InlineData("lost", "lead_closed")]
+    [InlineData("renewal", "persona_stage_mismatch")]
+    public async Task RunAsync_StageWhoseActionIsNoOp_SuppressesTheMessage(string stage, string reason)
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(lifecycleStage: stage), ReferenceTime);
+
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Null(result.Output.NextMessage.Body);
+        Assert.Equal(new NextAction(ActionTypes.NoOp, Reason: reason), result.Output.NextAction);
+        Assert.Equal(SuppressionReason.NoOpAction, result.Diagnostics.SuppressionReason);
+        Assert.NotNull(result.Diagnostics.ActionPlan);
+        Assert.Null(result.Diagnostics.Schedule);
+    }
+
+    // A timezone id the runtime does not know falls back to the zone of the state the record's
+    // city_interest names before UTC: "America/Dallas" with "Dallas, TX" is scheduled in Central time.
+    [Fact]
+    public async Task RunAsync_UnknownTimeZoneWithAStateInCityInterest_SchedulesInThatStatesZone()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase minimal = SampleProspectCases.Minimal(cityInterest: "Dallas, TX");
+        ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { TimeZoneId = "America/Dallas" } };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage!.SendAt);
+        Assert.Equal("America/Chicago", result.Diagnostics.Schedule!.TimeZoneId);
+    }
+
     // A8 through the whole agent: a record that states no persona and no lifecycle stage has
     // no catalog row, so the generic row answers and the fallback is recorded rather than
     // passed off as a row's decision (playbook step 43). With no move date the horizon is

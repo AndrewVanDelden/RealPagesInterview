@@ -65,24 +65,23 @@ measured, never a pass) per check, a per-check tally, the batch p95 against the 
 budget, and the overall count. `--replay` re-scores an output file without running the agent
 (D14); `--judge` adds two model-graded checks and needs the key (D30). `sample.jsonl` and, since D81,
 `holdout_12.jsonl` are the evidence rules are fitted to; `synthetic_12.jsonl` is a regression set,
-and `synthetic_v2.jsonl`, written blind to the code, carries the honest number (D81).
+and `synthetic_v2.jsonl`, written blind to the code, carried the honest number until D116 made it
+training data too; the owner's larger dataset, unseen until it is run once, carries it next.
 
 | Set, template composer | Overall | Checks below full | Source |
 |---|---|---|---|
 | `sample.jsonl` | 2 of 2 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
 | `holdout_12.jsonl`, fitted since D81 | 12 of 12 | none | [docs/DESIGN.md](docs/DESIGN.md) section 3 |
-| `synthetic_12.jsonl` | 5 of 13 | action 11 of 12, call-to-action payload 3 of 10, under the checks that compare every stated action member and the label's options and link (D99, D100); its tour labels say Thursday and Friday on a Saturday send, written under the fixed pair that dated tour slots replaced (D108); line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
-| `synthetic_v2.jsonl`, the honest number | 1 of 30 | channel 25 of 29, day 24 of 26, hour 19 of 26, action 13 of 29, call-to-action type 23 of 24, call-to-action payload 7 of 25, under the same stricter checks (D99, D100) and after records nothing covers stopped being answered as prospects (D109); line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
+| `synthetic_12.jsonl` | 5 of 13 | action 9 of 12, two of its labels written under the past-date and horizon rules D117 replaced; call-to-action payload 3 of 10, under the checks that compare every stated action member and the label's options and link (D99, D100); its tour labels say Thursday and Friday on a Saturday send, written under the fixed pair that dated tour slots replaced (D108); line 11 is malformed by design, an `ERROR` row (D71), exit 2 | [docs/scorecards/synthetic_12_template.txt](docs/scorecards/synthetic_12_template.txt) |
+| `synthetic_v2.jsonl`, fitted since D116 | 26 of 30 | action 28 of 29, call-to-action payload 23 of 25: the three labels the fit declined (a reason spelled differently from the hold-out's, an email labeled with options and no link, two inspection dates one record cannot fix a rule for) (D117); line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
 
-The hold-out is fitted, so 12 of 12 shows the rules reproduce their own evidence and says
-nothing about generalizing. The frozen set is the number that does. Of its sixteen failing
-records, eight are stages no rule covers, answered by the generic row; three are its author's
-judgment against a stated assumption (consent and preference, A1 and A3; an unknown zone, A6);
-two are the voice hour and a past move date; and three are one send slot where two rules fit
-the hold-out and the frozen set disagrees with the one chosen, which is recorded and not refitted
-(DESIGN.md section 3). Every set records zero safety violations. The review queue is empty on
-the samples and the hold-out and holds 3 rows on `synthetic_12.jsonl` and 11 on
-`synthetic_v2.jsonl`, one per record the generic row answered (D83).
+Every labeled set except `synthetic_12.jsonl` is fitted, so 2 of 2, 12 of 12 and 26 of 30 show the
+rules reproduce their own evidence and say nothing about generalizing; the owner's larger dataset,
+run once and unseen, is the number that does (D116). Where a `synthetic_v2.jsonl` label collided with
+a hold-out label, the rule keys on an input that separates the two records, and the labels that could
+not be fitted without breaking the hold-out are declined and still fail (D117). Every set records zero
+safety violations. The review queue is empty on the samples and the hold-out and holds one row on each
+synthetic set, the record the generic row answered (D83).
 `BaselineNumbersTests` pins every tally, so a drop fails the build.
 
 The model path, `--composer openai --model-call-budget-ms 30000` (D70) on `synthetic_12.jsonl`,

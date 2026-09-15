@@ -14,9 +14,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 862 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner takes or declines D115, which the full runs after D114 raised.
-Open decisions: D115.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 908 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the owner's larger dataset is run once, unseen, as the honest number.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -60,12 +60,9 @@ comment citations corrected, four review findings on its prose, and one baseline
 a token change in.
 
 **D60 to D67, Sprint 9, the Phase 6 remainder and fault injection (2026-09-09).** Phase 6's
-check is the playbook's, not this log's (D60); what latency and cost in the diagnostics mean
-(D61, D62); step 81 is the Phase 6 check run rather than a second scoring pass (D63); the
-fault-injection audit, five faults already proved and the output paths guarded (D64); the input
-paths given the same guard, with empty arguments closed in parsing (D65); and the model spend
-that vanished on exactly the records that failed (D66). D67 is open. A run and debug fact records
-five PR #26 review findings fixed.
+check is the playbook's (D60); latency and cost defined (D61, D62); step 81 is the Phase 6 check run
+(D63); the fault-injection audit and the guarded output and input paths (D64, D65); and model spend kept
+on failed records (D66). D67 was left open. A run and debug fact records five PR #26 findings fixed.
 
 **D68, Sprint 10, the decision log trim (2026-09-10).** How this file gets under playbook step
 92's two-thousand-word cap without breaking the citations that point into it from `src/`,
@@ -149,8 +146,14 @@ call to action no link. The move timeline goes on email only (D110), tour availa
 named invitation (D111), and code writes renewal terms (D112). Run and debug facts hold the evidence.
 
 **D113 to D115, the full runs after D112 and D114, Sprint 17 (2026-09-14).** Run and debug facts.
-After D112 the hold-out's bodies read 7 of 11 and the blind set's 2 of 24. D113 gave the judge each
-side's send time and weekday, and D114 had code write the sms options sentence. After D114 the hold-out
-reads 8 of 11: the welcome and no-show texts now pass, and one email flipped on unchanged wording. The
-blind set reads 4 of 24, but its two new passes are the judge miscounting weekdays. p95 latency still
-fails. D115 proposes that code, not the judge, resolve each option's day.
+The judge was given send times (D113) and code the sms options sentence (D114); hold-out bodies went
+from 7 to 8 of 11, and the blind set's two new body passes were the judge miscounting weekdays. D115
+proposed code-resolved days and D116 declined it.
+
+**D116 and D117, the blind set becomes training data, Sprint 17 (2026-09-14).** The owner took D116:
+`synthetic_v2.jsonl` is fitted, and the honest number moves to the owner's larger dataset. D117 fits
+twelve rules from its labels, each collision with the hold-out separated by an input: tour slots count
+from the reference date, the short horizon is 60 days, a past date is unqualified, new stage rows
+including do-not-contact, a consented channel outside the preferences, and a state timezone fallback.
+Template result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined labels, with
+`sample.jsonl` and `holdout_12.jsonl` unchanged.

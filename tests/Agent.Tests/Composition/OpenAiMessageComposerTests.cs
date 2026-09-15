@@ -1198,10 +1198,10 @@ public class OpenAiMessageComposerTests
     [Fact]
     public async Task ComposeAsync_ResidentsUnknownCallToAction_GetsNoTourOptionAndNoLink()
     {
-        const string smsJson = """{"subject":null,"body":"hi","cta_type":"confirm_move_in","cta_options":null}""";
-        const string emailJson = """{"subject":"Hello","body":"hi","cta_type":"confirm_move_in","cta_options":null}""";
+        const string smsJson = """{"subject":null,"body":"hi","cta_type":"request_parking","cta_options":null}""";
+        const string emailJson = """{"subject":"Hello","body":"hi","cta_type":"request_parking","cta_options":null}""";
         var emailClient = new FakeCompletionClient(emailJson);
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: "resident", lifecycleStage: "move_in");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_parking", persona: "resident", lifecycleStage: "move_in");
 
         ComposeOutcome sms = await new OpenAiMessageComposer(new FakeCompletionClient(smsJson)).ComposeAsync(prospectCase, CommunicationChannel.Sms);
         ComposeOutcome email = await new OpenAiMessageComposer(emailClient).ComposeAsync(prospectCase, CommunicationChannel.Email);

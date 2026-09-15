@@ -46,6 +46,9 @@ internal static class EnglishMessageTemplates
         {
             ["reschedule"] = ["today", "tomorrow"],
             ["intent_capture"] = ["yes", "no", "details"],
+
+            // synthetic_v2 v2_resident_move_in: the two key pickup times.
+            ["confirm_move_in"] = ["9 AM", "1 PM"],
         }.ToFrozenDictionary(StringComparer.Ordinal),
         GenericSmsOptions: ["a question", "a tour"],
         GenericSmsOptionsWithoutTour: ["a question"]);

@@ -427,6 +427,18 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Failed, score.CtaPayload);
     }
 
+    // A label that sends nothing states no call to action, so an email the agent sent anyway is
+    // measured on its link's presence alone; the channel check is the one that fails it.
+    [Fact]
+    public void Evaluate_LabelSendsNothingAndTheAgentSendsAnEmail_PayloadIsMeasuredOnPresence()
+    {
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(Suppressed()));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody)));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
     // A label with no options has nothing to compare against, so presence is what the check can
     // measure.
     [Fact]

@@ -21,10 +21,12 @@ internal sealed record RulesFileCatalogRow(
     NextAction? NoMoveDateAction = null);
 
 // A send-slot row as the file states it. Every member may be absent here so the loader can name
-// each one that is; the local time is 24-hour "HH:mm", the minute being the slot's grain.
+// each one that is; the local time is 24-hour "HH:mm", the minute being the slot's grain; an absent
+// branch is a row that answers every horizon branch.
 internal sealed record RulesFileSlotRow(
     string? Persona = null,
     string? LifecycleStage = null,
     CommunicationChannel? Channel = null,
     int? DaysAfterFloorDay = null,
-    string? LocalTime = null);
+    string? LocalTime = null,
+    HorizonBranch? Branch = null);

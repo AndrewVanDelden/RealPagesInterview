@@ -6,9 +6,10 @@ using Xunit;
 namespace Agent.Tests.Decisions;
 
 // A7: horizon is move_date_target minus the reference date (a value the caller passes, never a
-// clock), counted in the record's timezone by the caller. At most 45 days is short, and a past
-// date is short; more than 45 days is long; an absent date is its own branch, because a prospect
-// whose timeline is not stated has not been qualified on it. The branch then picks the action out
+// clock), counted in the record's timezone by the caller. At most 60 days is short; more than 60
+// days is long; an absent date is its own branch, because a prospect whose timeline is not stated has
+// not been qualified on it, and a past date takes that branch too, because a timeline already passed
+// has to be qualified again. The branch then picks the action out
 // of the catalog keyed on persona and lifecycle stage, and the planner returns the why beside the
 // what.
 public class NextActionPlannerTests
@@ -90,14 +91,17 @@ public class NextActionPlannerTests
         Assert.Equal(ActionSource.CatalogRow, planned.Source);
     }
 
+    // A move date already past takes the no-move-date branch, and the horizon still records how far
+    // past it is: synthetic_v2's prospect/open record 23 days past follows up in 2, its row's no-date
+    // action.
     [Fact]
-    public void Plan_MoveDateInThePast_IsShortWithANegativeHorizon()
+    public void Plan_MoveDateInThePast_TakesTheNoMoveDateBranchWithItsNegativeHorizon()
     {
-        PlannedAction planned = Planner.Plan("prospect", "new", new DateOnly(2025, 11, 1), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "open", new DateOnly(2025, 11, 1), ReferenceDate);
 
-        Assert.Equal(HorizonBranch.Short, planned.Branch);
+        Assert.Equal(HorizonBranch.NoMoveDate, planned.Branch);
         Assert.Equal(-38, planned.HorizonDays);
-        Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
+        Assert.Equal(new NextAction(ActionTypes.FollowUpInDays, Value: 2), planned.Action);
     }
 
     // A8: a persona the samples never named takes the generic row, and the planner says so
@@ -106,7 +110,7 @@ public class NextActionPlannerTests
     [Fact]
     public void Plan_PersonaWithNoRow_UsesTheGenericRowAndRecordsIt()
     {
-        PlannedAction planned = Planner.Plan("prospect", "toured", new DateOnly(2026, 1, 10), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "waitlisted", new DateOnly(2026, 1, 10), ReferenceDate);
 
         Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
         Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
@@ -116,7 +120,7 @@ public class NextActionPlannerTests
     [Fact]
     public void Plan_ResidentWithNoRowOnAShortHorizon_UsesTheGenericRowsLongAction()
     {
-        PlannedAction planned = Planner.Plan("resident", "move_in", new DateOnly(2026, 1, 10), ReferenceDate);
+        PlannedAction planned = Planner.Plan("resident", "moved_out", new DateOnly(2026, 1, 10), ReferenceDate);
 
         Assert.Equal(new NextAction(ActionTypes.FollowUpInDays, Value: 3), planned.Action);
         Assert.Equal(HorizonBranch.Short, planned.Branch);
@@ -128,22 +132,52 @@ public class NextActionPlannerTests
     [Fact]
     public void Plan_NoRowAndNoMoveDate_UsesTheGenericRowsLongAction()
     {
-        PlannedAction planned = Planner.Plan("resident", "renewal", null, ReferenceDate);
+        PlannedAction planned = Planner.Plan("resident", "vacated", null, ReferenceDate);
 
         Assert.Equal(new NextAction(ActionTypes.FollowUpInDays, Value: 3), planned.Action);
         Assert.Equal(HorizonBranch.NoMoveDate, planned.Branch);
         Assert.Equal(ActionSource.GenericRowNoMatch, planned.Source);
     }
 
-    // prospect/open was only ever seen on a long horizon and with no date, so its short branch
-    // has no evidence and comes from the generic row instead.
+    // prospect/no_show was only ever seen with no date, so its short branch has no evidence and comes
+    // from the generic row instead.
     [Fact]
     public void Plan_BranchTheRowDoesNotState_UsesTheGenericRowAndRecordsIt()
     {
-        PlannedAction planned = Planner.Plan("prospect", "open", new DateOnly(2026, 1, 10), ReferenceDate);
+        PlannedAction planned = Planner.Plan("prospect", "no_show", new DateOnly(2026, 1, 10), ReferenceDate);
 
         Assert.Equal(ActionTypes.StartCadence, planned.Action.Type);
         Assert.Equal(ActionSource.GenericRowNoBranch, planned.Source);
+    }
+
+    // synthetic_v2's boundary records: 60 days out is short, 61 is long.
+    [Theory]
+    [InlineData(60, HorizonBranch.Short, "prospect_welcome_short_horizon")]
+    [InlineData(61, HorizonBranch.Long, "prospect_welcome_long_horizon")]
+    public void Plan_SixtyDayBoundary_SplitsShortFromLong(int daysOut, HorizonBranch branch, string cadence)
+    {
+        PlannedAction planned = Planner.Plan("prospect", "new", ReferenceDate.AddDays(daysOut), ReferenceDate);
+
+        Assert.Equal(branch, planned.Branch);
+        Assert.Equal(new NextAction(ActionTypes.StartCadence, cadence), planned.Action);
+    }
+
+    // A record with no move date whose call to action is stated takes its row's short action where the
+    // row states one: synthetic_v2's prospect/new records that name book_tour are labeled the short
+    // cadence, and the hold-out's prospect/new record that names none the long one. A row with no short
+    // action keeps its no-date action, and no row at all keeps the generic row's.
+    [Theory]
+    [InlineData("new", true, ActionTypes.StartCadence, "prospect_welcome_short_horizon", null, ActionSource.CatalogRow)]
+    [InlineData("new", false, ActionTypes.StartCadence, "prospect_welcome_long_horizon", null, ActionSource.CatalogRow)]
+    [InlineData("cancelled_manager", true, ActionTypes.FollowUpInDays, null, 2, ActionSource.CatalogRow)]
+    [InlineData("no_such_stage", true, ActionTypes.FollowUpInDays, null, 3, ActionSource.GenericRowNoMatch)]
+    public void Plan_NoMoveDate_TakesTheRowsShortActionOnlyWhenTheCallToActionIsStated(string stage, bool callToActionStated, string type, string? name, int? value, ActionSource source)
+    {
+        PlannedAction planned = Planner.Plan("prospect", stage, null, ReferenceDate, callToActionStated);
+
+        Assert.Equal(new NextAction(type, name, value), planned.Action);
+        Assert.Equal(HorizonBranch.NoMoveDate, planned.Branch);
+        Assert.Equal(source, planned.Source);
     }
 
     [Fact]

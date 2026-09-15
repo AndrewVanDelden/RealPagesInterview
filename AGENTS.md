@@ -38,7 +38,7 @@ sets it. Never read, print, or write the value.
 - `docs/`: `DECISION_LOG.md` the current phase and one paragraph per sprint, `DECISIONS_ARCHIVE.md`
   every decision in full, `DESIGN.md` the rules, their evidence and the numbers, `CODE_REVIEW.md` the scope-outs.
 - `sample.jsonl` and `holdout_12.jsonl` are the evidence rules are fitted to (D81);
-  `synthetic_12.jsonl` and `synthetic_v2.jsonl` are evaluation sets, never fitted to (D6, D81).
+  `synthetic_v2.jsonl` is training data too since D116; `synthetic_12.jsonl` is a regression set, never fitted to (D6, D81).
 
 ## Workflow
 

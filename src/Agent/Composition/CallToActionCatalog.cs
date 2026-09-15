@@ -56,6 +56,19 @@ internal static class CallToActionCatalog
             // resident_loyalty_engage
             ["enroll_loyalty"] = new("enroll_loyalty", "loyalty", "invite the resident to enroll in the loyalty program"),
 
+            // synthetic_v2 v2_prospect_toured, v2_prospect_applied, v2_prospect_approved and
+            // v2_resident_active_checkin: each label links to its page.
+            ["start_application"] = new("start_application", "apply"),
+            ["complete_application"] = new("complete_application", "portal"),
+            ["sign_lease"] = new("sign_lease", "lease"),
+            ["submit_maintenance_request"] = new("submit_maintenance_request", "maintenance"),
+
+            // synthetic_v2 v2_resident_renewal: renew_lease goes out as review_renewal_offer.
+            ["renew_lease"] = new("review_renewal_offer", "renew"),
+
+            // synthetic_v2 v2_resident_move_in: an sms with the move-in times, no page shown.
+            ["confirm_move_in"] = new("confirm_move_in", null),
+
             // resident_renewal_90day_notice
             ["review_renewal"] = new(
                 "review_renewal",

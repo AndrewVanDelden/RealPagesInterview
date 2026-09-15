@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Text.Json;
 using Agent.Common;
 using Agent.Domain;
 
@@ -15,11 +16,11 @@ public sealed class SendSlotTable
     // next message, and the bound keeps the scheduler's date arithmetic far from the calendar's end.
     private const int MaxDaysAfterFloorDay = 365;
 
-    private readonly FrozenDictionary<(string Persona, string LifecycleStage, CommunicationChannel Channel), SendSlotRow> _rowsByKey;
+    private readonly FrozenDictionary<(string Persona, string LifecycleStage, CommunicationChannel Channel, HorizonBranch? Branch), SendSlotRow> _rowsByKey;
 
     private SendSlotTable(
         IReadOnlyList<SendSlotRow> rows,
-        FrozenDictionary<(string, string, CommunicationChannel), SendSlotRow> rowsByKey)
+        FrozenDictionary<(string, string, CommunicationChannel, HorizonBranch?), SendSlotRow> rowsByKey)
     {
         Rows = rows;
         _rowsByKey = rowsByKey;
@@ -31,7 +32,10 @@ public sealed class SendSlotTable
     // the samples and the hold-out send those at the channel's hour.
     public static SendSlotTable Default { get; } = Create(
     [
-        new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, new TimeOnly(9, 5)),
+        // Hold-out prospect_consent_block_sms_fallback_email states no move date; every synthetic_v2
+        // prospect/new email that states one is labeled at the channel's hour, so this row is limited
+        // to the no-move-date branch.
+        new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, new TimeOnly(9, 5), HorizonBranch.NoMoveDate),
         new SendSlotRow("prospect", "open", CommunicationChannel.Sms, 0, new TimeOnly(9, 20)),
         new SendSlotRow("prospect", "no_show", CommunicationChannel.Sms, 0, new TimeOnly(9, 15)),
         new SendSlotRow("prospect", "cancelled_manager", CommunicationChannel.Email, 0, new TimeOnly(13, 0)),
@@ -57,12 +61,13 @@ public sealed class SendSlotTable
     internal static Result<SendSlotTable> Create(IReadOnlyList<(int Position, SendSlotRow Row)> rows)
     {
         List<string> failures = [];
-        var byKey = new Dictionary<(string Persona, string LifecycleStage, CommunicationChannel Channel), (int Position, SendSlotRow Row)>();
+        var byKey = new Dictionary<(string Persona, string LifecycleStage, CommunicationChannel Channel, HorizonBranch? Branch), (int Position, SendSlotRow Row)>();
 
         foreach ((int position, SendSlotRow row) in rows)
         {
-            (string Persona, string LifecycleStage, CommunicationChannel Channel) key = KeyOf(row.Persona, row.LifecycleStage, row.Channel);
-            string label = $"Send slot row {position} ({key.Persona}/{key.LifecycleStage}/{ChannelName(row.Channel)})";
+            (string Persona, string LifecycleStage, CommunicationChannel Channel, HorizonBranch? Branch) key = KeyOf(row.Persona, row.LifecycleStage, row.Channel, row.Branch);
+            string branchSuffix = row.Branch is { } branch ? $"/{JsonNamingPolicy.SnakeCaseLower.ConvertName(branch.ToString())}" : string.Empty;
+            string label = $"Send slot row {position} ({key.Persona}/{key.LifecycleStage}/{ChannelName(row.Channel)}{branchSuffix})";
             bool sendable = SendScheduler.DefaultSendHour.ContainsKey(row.Channel);
 
             if (key.Persona.Length == 0)
@@ -102,22 +107,28 @@ public sealed class SendSlotTable
             : Result<SendSlotTable>.Failure(string.Join(Environment.NewLine, failures));
     }
 
-    // O(1): one hash lookup. Persona and stage are free text on the record, so they are
-    // trimmed and lowercased the same way the rows are.
-    public Option<SendSlotRow> Find(string? persona, string? lifecycleStage, CommunicationChannel channel)
+    // O(1): at most two hash lookups. Persona and stage are free text on the record, so they are
+    // trimmed and lowercased the same way the rows are. A row limited to the record's branch wins over
+    // a row that answers every branch; a lookup that names no branch reads only the latter.
+    public Option<SendSlotRow> Find(string? persona, string? lifecycleStage, CommunicationChannel channel, HorizonBranch? branch = null)
     {
         if (persona is null || lifecycleStage is null)
         {
             return Option<SendSlotRow>.None();
         }
 
-        return _rowsByKey.TryGetValue(KeyOf(persona, lifecycleStage, channel), out SendSlotRow? row)
+        if (branch is not null && _rowsByKey.TryGetValue(KeyOf(persona, lifecycleStage, channel, branch), out SendSlotRow? branchRow))
+        {
+            return Option<SendSlotRow>.Some(branchRow);
+        }
+
+        return _rowsByKey.TryGetValue(KeyOf(persona, lifecycleStage, channel, null), out SendSlotRow? row)
             ? Option<SendSlotRow>.Some(row)
             : Option<SendSlotRow>.None();
     }
 
-    private static (string Persona, string LifecycleStage, CommunicationChannel Channel) KeyOf(string persona, string lifecycleStage, CommunicationChannel channel) =>
-        (persona.Trim().ToLowerInvariant(), lifecycleStage.Trim().ToLowerInvariant(), channel);
+    private static (string Persona, string LifecycleStage, CommunicationChannel Channel, HorizonBranch? Branch) KeyOf(string persona, string lifecycleStage, CommunicationChannel channel, HorizonBranch? branch) =>
+        (persona.Trim().ToLowerInvariant(), lifecycleStage.Trim().ToLowerInvariant(), channel, branch);
 
     private static string ChannelName(CommunicationChannel channel) => channel.ToString().ToLowerInvariant();
 }

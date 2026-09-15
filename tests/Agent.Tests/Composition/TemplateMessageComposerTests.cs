@@ -221,6 +221,7 @@ public class TemplateMessageComposerTests
     [InlineData("Oak Ridge", "https://oakridge.example/tour")]
     [InlineData("St. James Lofts", "https://stjames.example/tour")]
     [InlineData("Lofts", "https://lofts.example/tour")]
+    [InlineData("Saguaro Flats", "https://saguaroflats.example/tour")]
     public async Task ComposeAsync_EmailWithAnyPropertyName_BuildsTheSlugFromIt(string propertyName, string expectedLink)
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: propertyName);
@@ -256,7 +257,7 @@ public class TemplateMessageComposerTests
     [InlineData(null, "es", new[] { "una pregunta" })]
     public async Task ComposeAsync_GenericOptionsForAPersonaThatIsNotAProspect_LeaveOutTheTour(string? persona, string language, string[] expected)
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: persona, lifecycleStage: "move_in", language: language);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_parking", persona: persona, lifecycleStage: "move_in", language: language);
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -268,14 +269,42 @@ public class TemplateMessageComposerTests
     [Fact]
     public async Task ComposeAsync_UnknownPrimaryCtaOnEmail_CarriesNoLink()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "submit_maintenance_request", persona: "resident", lifecycleStage: "active");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_callback", persona: "resident", lifecycleStage: "active");
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         ComposedMessage result = ComposedOf(outcome);
-        Assert.Equal("submit_maintenance_request", result.Message.Cta!.Type);
+        Assert.Equal("request_callback", result.Message.Cta!.Type);
         Assert.Null(result.Message.Cta.Link);
         Assert.DoesNotContain("https://", result.Message.Body);
+    }
+
+    // The calls to action synthetic_v2.jsonl's records name, each with the page its label links to and
+    // the wire type it states: renew_lease goes out as review_renewal_offer.
+    [Theory]
+    [InlineData("start_application", "start_application", "https://oakridge.example/apply")]
+    [InlineData("complete_application", "complete_application", "https://oakridge.example/portal")]
+    [InlineData("sign_lease", "sign_lease", "https://oakridge.example/lease")]
+    [InlineData("submit_maintenance_request", "submit_maintenance_request", "https://oakridge.example/maintenance")]
+    [InlineData("renew_lease", "review_renewal_offer", "https://oakridge.example/renew")]
+    public async Task ComposeAsync_BlindSetCallToActionOnEmail_CarriesItsTypeAndPage(string primaryCta, string expectedType, string expectedLink)
+    {
+        ComposeOutcome outcome = await Composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: primaryCta), CommunicationChannel.Email);
+
+        Cta cta = ComposedOf(outcome).Message.Cta!;
+        Assert.Equal(expectedType, cta.Type);
+        Assert.Equal(new Uri(expectedLink), cta.Link);
+    }
+
+    // A move-in confirmation offers the two key pickup times its label names.
+    [Fact]
+    public async Task ComposeAsync_ConfirmMoveInOnSms_OffersTheMoveInTimes()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: "resident", lifecycleStage: "move_in");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(["9 AM", "1 PM"], ComposedOf(outcome).Message.Cta!.Options);
     }
 
     // A9: no primary_cta, at a persona and stage with no default call to action, means the

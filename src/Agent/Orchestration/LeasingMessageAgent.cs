@@ -92,8 +92,16 @@ public sealed class LeasingMessageAgent(
 
         // Step 2: plan the next action from the horizon (A7), counted in days from the run's
         // reference time as a date in the record's own zone.
-        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, context.TimeZoneId);
-        PlannedAction planned = planner.Plan(prospectCase.Persona, prospectCase.LifecycleStage, context.MoveDateTarget, referenceDate);
+        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
+        // know it, the zone of the state its city_interest names.
+        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
+        PlannedAction planned = planner.Plan(
+            prospectCase.Persona,
+            prospectCase.LifecycleStage,
+            context.MoveDateTarget,
+            referenceDate,
+            callToActionStated: !Presence.IsAbsent(prospectCase.ConstraintsOrEmpty.PrimaryCta));
         NextAction nextAction = planned.Action;
         var actionPlan = new ActionPlanNotes(planned.Branch, planned.HorizonDays, planned.Source);
 
@@ -113,16 +121,25 @@ public sealed class LeasingMessageAgent(
                 planned.Branch);
         }
 
+        // A planned no_op is a record that must not be contacted, a closed lead or a persona and stage
+        // that contradict each other, so nothing is composed or sent and the action's reason says why.
+        if (nextAction.Type == ActionTypes.NoOp)
+        {
+            log.LogInformation("Suppressing message: the planned action is no_op.");
+            return Suppressed(prospectCase, SuppressionReason.NoOpAction, nextAction, actionPlan, modelCost: null, networkRetries: null, renewalOfferLoaded);
+        }
+
         // Step 3: schedule (A4, A5), before composing, because a tour invitation's reply options are
         // the tour slots counted from the send time. The scheduler reads the record and the channel and
         // nothing a draft sets. It returns the send with its working, so the diagnostics can name the
         // floor, the zone and the slot the way they name the plan; the slot is never a wall time the
         // zone did not reach (A20). The tour slots follow the property's calendar when the property
         // data holds one.
-        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, context.TimeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage);
+        ScheduledSend scheduled = scheduler.Resolve(referenceTime, context.LastInteraction, timeZoneId, channel, prospectCase.Persona, prospectCase.LifecycleStage, planned.Branch);
         IReadOnlyList<DateTimeOffset> tourSlots = TourSlots.For(
+            referenceTime,
             scheduled.SendAt,
-            context.TimeZoneId,
+            timeZoneId,
             propertyFacts.HasValue ? propertyFacts.Value.TourCalendar : null);
 
         // Step 4: compose. Three outcomes, and two of them carry a draft: a composed
