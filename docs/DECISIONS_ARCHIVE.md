@@ -3768,5 +3768,34 @@ all had been reached only by `v2_unusual_persona_stage`, which is now suppressed
 that real case, a label that sends nothing against an email the agent sent. `.\test.ps1` then passed
 115 and 908 tests at 100 percent line, branch and method coverage. The review queue now holds one row
 on each synthetic set and none on the samples or the hold-out. The check caught a decision number in a
-test comment, rewritten as the rule. No model run was made. The
+test comment, rewritten as the rule. No model run was made.
+
+**Run and debug fact, the full runs after D117 (2026-09-14).** At `d1e8847`, the same flags as the runs
+after D114, one run per file, one after the other. `holdout_12.jsonl`: exit 0; every deterministic check
+full; Overall 12 of 12; ActionSem 12 of 12; BodySem 7 of 11, from 8; review queue empty; p95 2597 ms
+against 2000 ms, FAIL. Moved: `resident_welcome_day0` FAIL to OK; `prospect_welcome_day0` OK to FAIL,
+the judge objecting that its dated options state times and that the body names the city, the same
+content it passed the run before; `prospect_long_horizon_day3` OK to FAIL, its body leaving out the pool
+and fitness center its data states, a model miss. `synthetic_v2.jsonl`: exit 2 on its malformed line;
+every deterministic check equal to the template run, Overall 26 of 30 from 1; ActionSem 29 of 29 from
+14; BodySem 8 of 26 from 4; review queue 1 row; p95 3042 ms, FAIL. Of its 18 body failures, most are the
+judge reading the dated options Oct 26 and 27, 2026 (Monday and Tuesday, checked against the calendar)
+as a different offer from the labels' Mon and Tue because they state times, and labels asking what no
+input states. Two are product bugs, both read in the output: `v2_move_date_in_past` says "as you plan
+your move in early October" for a move date 23 days before the run, because the email timeline
+instruction still fires on a past date that D117 treats as unqualified; and `v2_prospect_toured`, a call
+to action with no code-owned options, carries the model's options "1. Start Application" wrapped by
+code's sentence into "Reply 1 for 1. Start Application" (D118). Each figure is one call per record.
+Results are in `holdout_12_run_2026-09-14_d117` and `synthetic_v2_run_2026-09-14_d117` on the owner's
+desktop.
+
+**D118. Two prompt-path bugs the runs after D117 exposed (proposed 2026-09-14).** Question: how are the
+two bugs of that run fixed? Options: (a) the timeline instruction fires only for a move date on or after
+the reference date, since a past date is unqualified; and an option the model returns is stripped of a
+leading number and its punctuation ("1. ", "2) ") before code numbers it, so the options sentence and
+`cta.options` carry the option text alone; (b) the timeline fix alone, and a call to action with no
+code-owned options gets the language set's generic list instead of the model's; (c) leave both.
+Recommendation: (a): both are defects in text code already owns, and the model's own option wording is
+kept where no code-owned list exists. Scopes: `OpenAiMessageComposer` and its tests. Evidence: the two
+bodies. Assumptions: A10, A18. Open. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.
