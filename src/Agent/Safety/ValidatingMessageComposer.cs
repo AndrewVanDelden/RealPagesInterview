@@ -28,7 +28,9 @@ public sealed class ValidatingMessageComposer(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         IReadOnlyList<string>? violationsForNextAttempt = priorViolations;
 
@@ -53,7 +55,7 @@ public sealed class ValidatingMessageComposer(
         for (int attempt = 1; attempt <= MaxComposeAttempts; attempt++)
         {
             modelAttempts = attempt;
-            ComposeOutcome attemptOutcome = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken);
+            ComposeOutcome attemptOutcome = await innerComposer.ComposeAsync(prospectCase, channel, violationsForNextAttempt, cancellationToken, tourSlots, referenceDate);
 
             if (attemptOutcome is ComposeOutcome.Composed attemptComposed)
             {
@@ -95,7 +97,7 @@ public sealed class ValidatingMessageComposer(
         }
 
         log.LogWarning("No compose attempt produced a clean message; falling back to the safe fallback composer.");
-        ComposeOutcome fallbackOutcome = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken);
+        ComposeOutcome fallbackOutcome = await fallbackComposer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken, tourSlots: tourSlots, referenceDate: referenceDate);
 
         // The two exits below return no message, so there are no notes to stamp, and the spend
         // accumulated above goes on the outcome itself or it is lost. Each exit also adds the

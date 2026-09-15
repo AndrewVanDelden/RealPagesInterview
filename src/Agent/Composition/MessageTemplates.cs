@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Globalization;
 
 namespace Agent.Composition;
 
@@ -25,9 +26,12 @@ internal sealed record MessageTemplates(
     string EmailOptOut,
     string EmailSubjectForProperty,
     string EmailSubjectGeneric,
+    string RenewalPriceHoldSentence,
+    string RenewalTextRemindersSentence,
     FrozenDictionary<string, string> CtaPhraseByType,
     FrozenDictionary<string, IReadOnlyList<string>> SmsOptionsByCtaType,
-    IReadOnlyList<string> GenericSmsOptions)
+    IReadOnlyList<string> GenericSmsOptions,
+    IReadOnlyList<string> GenericSmsOptionsWithoutTour)
 {
     // A9: a call to action this set has no phrase for is spelled from its own type, which
     // is the only wording the record supplies. That reads as English for a Spanish record,
@@ -38,7 +42,20 @@ internal sealed record MessageTemplates(
 
     // A10: the options are prose, so their content is per language; which call to action
     // gets which options is this set's row, and anything unrecognized takes the generic
-    // pair rather than going without a payload.
-    public IReadOnlyList<string> SmsOptions(string ctaType) =>
-        SmsOptionsByCtaType.TryGetValue(ctaType, out IReadOnlyList<string>? options) ? options : GenericSmsOptions;
+    // list rather than going without a payload. The generic list offers a tour, which only a
+    // prospect is shopping for, so a record that is not a prospect gets the list without it.
+    // A10: sample 1's shape, "Reply 1 for ..., 2 for ...", the one sentence both composers write so the
+    // body and cta.options always carry the same list. The numbered options are joined with a
+    // semicolon because a dated tour option carries commas of its own. O(n) in the number of options,
+    // a language set's row, the planned slots or the model's list, never input.
+    public string NumberedOptionsSentence(IReadOnlyList<string> options) =>
+        string.Format(
+            CultureInfo.InvariantCulture,
+            SmsOptionsSentence,
+            string.Join("; ", options.Select((option, index) => string.Format(CultureInfo.InvariantCulture, SmsOption, index + 1, option))));
+
+    public IReadOnlyList<string> SmsOptions(string ctaType, bool forProspect) =>
+        SmsOptionsByCtaType.TryGetValue(ctaType, out IReadOnlyList<string>? options)
+            ? options
+            : forProspect ? GenericSmsOptions : GenericSmsOptionsWithoutTour;
 }

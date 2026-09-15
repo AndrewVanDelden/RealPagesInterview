@@ -10,6 +10,7 @@ public class SuppressionReasonTests
     [InlineData(SuppressionReason.NoContactConsent, "no_contact_consent")]
     [InlineData(SuppressionReason.CompositionFailed, "composition_failed")]
     [InlineData(SuppressionReason.SafetyViolation, "safety_violation")]
+    [InlineData(SuppressionReason.NoOpAction, "no_op_action")]
     public void ToWireName_MatchesSuppressionReasonConverterSpelling(SuppressionReason reason, string expected)
     {
         Assert.Equal(expected, reason.ToWireName());

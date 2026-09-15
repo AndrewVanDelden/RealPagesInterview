@@ -21,7 +21,6 @@ internal static partial class PropertyLink
     {
         "apartment",
         "apartments",
-        "flats",
         "homes",
         "lofts",
         "place",
@@ -31,10 +30,11 @@ internal static partial class PropertyLink
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     // O(n) in the length of the property name and the unit: one split, one set lookup, and a
-    // bounded number of substitutions.
-    public static Uri? For(string? propertyName, string path, string? unit)
+    // bounded number of substitutions. A call to action with no path, one the table does not
+    // recognize, gets no link, as a record with no property name does.
+    public static Uri? For(string? propertyName, string? path, string? unit)
     {
-        if (Presence.IsAbsent(propertyName))
+        if (Presence.IsAbsent(propertyName) || path is null)
         {
             return null;
         }

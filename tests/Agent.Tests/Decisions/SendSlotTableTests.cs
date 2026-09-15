@@ -67,6 +67,44 @@ public class SendSlotTableTests
         Assert.False(table.Find("prospect", "new", CommunicationChannel.Voice).HasValue);
     }
 
+    // A row may name the horizon branch it applies to, and the branch is part of its key: a row for
+    // one branch answers only that branch, a row with none answers every other branch, and two rows
+    // for the same key and branch are a duplicate.
+    [Fact]
+    public void Create_RowsForTheSameKeyOnDifferentBranches_KeepsBothAndMatchesEachToItsBranch()
+    {
+        var noMoveDate = new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, NineOhFive, HorizonBranch.NoMoveDate);
+        var anyBranch = new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, new TimeOnly(10, 30));
+
+        SendSlotTable table = SendSlotTable.Create([noMoveDate, anyBranch]).Value;
+
+        Assert.Equal(noMoveDate, table.Find("prospect", "new", CommunicationChannel.Email, HorizonBranch.NoMoveDate).Value);
+        Assert.Equal(anyBranch, table.Find("prospect", "new", CommunicationChannel.Email, HorizonBranch.Short).Value);
+        Assert.Equal(anyBranch, table.Find("prospect", "new", CommunicationChannel.Email).Value);
+    }
+
+    [Fact]
+    public void Create_SameKeyAndBranchTwice_IsADuplicate()
+    {
+        Result<SendSlotTable> result = SendSlotTable.Create(
+        [
+            new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, NineOhFive, HorizonBranch.NoMoveDate),
+            new SendSlotRow("prospect", "new", CommunicationChannel.Email, 1, NineOhFive, HorizonBranch.NoMoveDate),
+        ]);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Send slot row 2 (prospect/new/email/no_move_date): duplicates send slot row 1.", result.Error);
+    }
+
+    // A row for one branch does not answer a lookup that names no branch.
+    [Fact]
+    public void Find_RowForOneBranchAndALookupWithNoBranch_FindsNothing()
+    {
+        SendSlotTable table = SendSlotTable.Create([new SendSlotRow("prospect", "new", CommunicationChannel.Email, 0, NineOhFive, HorizonBranch.NoMoveDate)]).Value;
+
+        Assert.False(table.Find("prospect", "new", CommunicationChannel.Email).HasValue);
+    }
+
     [Fact]
     public void Create_NoRows_IsATableWhereEveryKeyFallsToTheChannelHour()
     {

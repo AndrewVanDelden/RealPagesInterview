@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 (D92) and extended 2026-09-13 by D94 to D103, which change the prompt, the links, the planner, the property facts and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-13: `.\test.ps1` passes 112 and 774 tests at 100 percent, running all four sets offline on the template composer, and each set's template run exits 0 or 2 as documented.
-Next step: merge PR #36 into `dev` after the owner's narration of one record, with the full runs of `holdout_12.jsonl` and `synthetic_v2.jsonl` reported beside it.
+Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 912 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the owner's larger dataset is run once, unseen, as the honest number.
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -31,30 +31,24 @@ seam per external or non-deterministic dependency, each with a real and an offli
 implementation on the day it is created, and every other interface goes as the sprint that
 touches it lands (S3); and an evaluator built before the product and proven able to fail (S4).
 
-**D1 to D31, Sprints 1 to 6 (2026-09-07 to 2026-09-08).** The contracts: the input contract,
-three required members and a default for the rest (D1); the action catalog and the planner (D2,
-D17 to D20); the output and diagnostics contracts (D3, D22 to D24); scheduling and the
-transition-day slot (D4, D21); composition, language and the call-to-action payload (D5, D25,
-D26, D29); the evaluation contract, the scorer's label
-corrections and the judge (D6, D13, D15, D30); the twelve-record file (D9, D11); gates, replay,
-reference time and log scope (D8, D10, D14, D16); the official SDK and what bounds a model call
-(D27, D28); and the step 60 run (D31). Structure is D7, the Phase 0 restart D12.
+**D1 to D31, Sprints 1 to 6 (2026-09-07 to 2026-09-08).** The contracts: the input contract
+(D1); the action catalog and planner (D2, D17 to D20); output and diagnostics (D3, D22 to D24);
+scheduling and the transition-day slot (D4, D21); composition, language and the call-to-action
+payload (D5, D25, D26, D29); the evaluation contract, label corrections and the judge (D6, D13,
+D15, D30); the twelve-record file (D9, D11); gates, replay, reference time and log scope (D8,
+D10, D14, D16); the SDK and call bounds (D27, D28); the step 60 run (D31). Structure is D7, the
+Phase 0 restart D12.
 
-**D32 to D37, latency, proposed 2026-09-08.** Written from the step 60 run's measurements rather
-than from preference: measure one successful call before tuning anything (D32), stop retrying a
-timeout (D33), retry only a safety rejection in the compose-validate loop (D34), what one
-attempt may take (D35), what `p95_latency_ms` is (D36), and batch concurrency (D37). D35 and D36
-take no recommendation, and prompt caching is recorded there as not a lever. All six were
-settled in Sprint 11: D32 measured, D33 to D35 and D37 taken, D36 closed by D70.
+**D32 to D37, latency (proposed 2026-09-08, settled in Sprint 11).** From the step 60 run's
+measurements: measure one call before tuning (D32), stop retrying a timeout (D33), retry only a
+safety rejection (D34), bound one attempt (D35), define `p95_latency_ms` (D36, closed by D70), and
+batch concurrency (D37).
 
-**D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check
-rather than one boolean (D38), all four checks hard gates and brand style a diagnostic (D39),
-which checks a record cannot switch off (D40), what the term proxy normalizes and exempts (D41,
-D45, D49, D50), what earns a state and what brand style is (D42), the review queue for a
-suppressed draft (D43), the vendor's retention default (D44), what an exception may say (D46,
-D51), a null inside a list the element type forbids (D47), and the composer seam carrying a
-refusal rather than destroying the draft (D48). D52 to D56 are PR #24's review fixes, three
-findings reconsidered and kept.
+**D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check (D38),
+all four hard gates, brand style a diagnostic (D39), which checks a record cannot switch off (D40),
+what the term proxy normalizes and exempts (D41, D45, D49, D50), what earns a state (D42), the
+review queue (D43), vendor retention (D44), what an exception may say (D46, D51), a null inside a
+list (D47), a refusal carried through the composer seam (D48). D52 to D56 are PR #24's review fixes.
 
 **D57 to D59, Sprint 8, structure and narration (2026-09-09).** The consent gate merged into the
 channel selector, whose absence of a value answers both questions (D57); every interface without
@@ -64,12 +58,9 @@ comment citations corrected, four review findings on its prose, and one baseline
 a token change in.
 
 **D60 to D67, Sprint 9, the Phase 6 remainder and fault injection (2026-09-09).** Phase 6's
-check is the playbook's, not this log's (D60); what latency and cost in the diagnostics mean
-(D61, D62); step 81 is the Phase 6 check run rather than a second scoring pass (D63); the
-fault-injection audit, five faults already proved and the output paths guarded (D64); the input
-paths given the same guard, with empty arguments closed in parsing (D65); and the model spend
-that vanished on exactly the records that failed (D66). D67 is open. A run and debug fact records
-five PR #26 review findings fixed.
+check is the playbook's (D60); latency and cost defined (D61, D62); step 81 is the Phase 6 check run
+(D63); the fault-injection audit and guarded output/input paths (D64, D65); model spend kept on
+failed records (D66). D67 left open. A run and debug fact records five PR #26 findings fixed.
 
 **D68, Sprint 10, the decision log trim (2026-09-10).** How this file gets under playbook step
 92's two-thousand-word cap without breaking the citations that point into it from `src/`,
@@ -83,25 +74,18 @@ counts as a definition, the S numbers and archive it missed, and four lines of s
 `docs/scorecards/` (D69); `--model-call-budget-ms` lets the model answer on evaluation runs
 (D70); a line that did not parse or a record that threw is an `ERROR` row, so the synthetic set
 reads 12 of 13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7; code then took
-the opt-out sentence and an unstated call to action (D72, D73), and refusals fell from 33 to 0.
-The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed three PR #28
-review findings.
+the opt-out sentence and an unstated call to action (D72, D73), refusals fell from 33 to 0. The
+sprint also took D67, D34, D33, D35, D37, did steps 86 to 88, fixed three PR #28 review findings.
 
 **D74 to D76, Sprint 12, Phase 8 documentation (2026-09-10).** The README meets step 90 and
-every command in it ran; DESIGN.md has step 91's interface table, a decision number on every
-rule, nine open questions, and Phase 7's changes to seven assumptions plus A22 and A23. Step 95
-found no secret and no personal path; the repository stays public with the assignment's text and
-data, the owner's choice (D74). Step 92's two fixes are made; D75 takes none of the step 96
-changes. Four agents ran these steps at once, a Phase First departure on record. Step 93 reviewed
-this sprint's diff, unreviewed by any PR (D76), and found nothing; a second reviewer is owed.
+DESIGN.md step 91; step 95 found no secret, and the repository stays public, the owner's choice
+(D74). D75 takes none of the step 96 changes. Four agents ran these steps at once, a Phase First
+departure on record. Step 93 reviewed the sprint's unreviewed diff and found nothing (D76).
 
-**D77 and D78, Sprint 13, the release (2026-09-10).** The owner marked step 93 complete with
-its second reviewer not run. The annotated tag `v1.0.0` is on `ccf3c5c`; step 97's narrative is
-`docs/RELEASE_v1.0.0.md`, which names the nine files step 94 has the owner read by hand.
-`docs/NARRATION.md` opens with a 150-word script, one minute spoken, answering all seven
-questions. The Phase 8 check passed from a worktree at the tag, a run and debug fact. D77 asks
-whether the retrospective of 2026-09-06 already meets Phase 9; D78 asks where the narrative is
-published, since `dev` shares no history with `main`. Both are open.
+**D77 and D78, Sprint 13, the release (2026-09-10).** The tag `v1.0.0` is on `ccf3c5c` with its
+narrative in `docs/RELEASE_v1.0.0.md`, and `docs/NARRATION.md` opens with a one-minute script; the
+Phase 8 check passed at the tag, a run and debug fact. D77 asks whether the retrospective of
+2026-09-06 meets Phase 9 and D78 where the narrative is published; Sprint 14 took both.
 
 **D79, Sprint 14, Phase 9 (2026-09-10).** D77 and D78 were taken as (a): Phase 9 rests on the
 retrospective of 2026-09-06, and the release is published on GitHub from
@@ -133,9 +117,8 @@ stream under a capped heap (D86). No comment cites a number (D87). Warnings are 
 and PR #33's review findings were fixed, all run and debug facts.
 
 **D91 and D92, Sprint 15 closed, Sprint 16 opened (2026-09-11).** Sprint 15 closes with the tag
-`v1.1.0` on `6e05adb`, and the narration's provenance moves there after a re-run matched every
-value (D91). Sprint 16 closes one gap and nothing else: an empty-body completion counted with its
-tokens (D92). Its agent started before Sprint 15's CI finished, a run and debug fact.
+`v1.1.0` on `6e05adb`, where the narration's values were re-checked (D91). Sprint 16 closes one gap:
+an empty-body completion counted with its tokens (D92).
 
 **D94 to D105, Sprint 16 continued (2026-09-13).** The hold-out run of 2026-09-11 scored every
 decision 12 of 12 and failed every message body on the judge. The payload check compares the
@@ -143,14 +126,35 @@ label's link and options (D94, D100) and the action check every stated member (D
 reason and tokens are kept (D95); the prompt carries the stage's facts, the link, the reply options
 and each call to action's purpose (D96, D103); resident links are built from the record (D97); a
 no-choice call keeps its retries (D98); property facts come from `--property-data` (D101), chosen per
-call to action (D104); no move date is its own branch (D102); and D105 fixes three prompt misses.
+call to action (D104); no move date is its own branch (D102); D105 fixes three prompt misses.
 
-**PR #36 review fixes, Sprint 16 continued (2026-09-14).** A `/code-review` and an Antigravity
-review left eighteen findings on the open PR; three declined against D101, A19 and no stated rule,
-fourteen fixed under strict TDD: two resident call to actions with no phrase in either language
-set, the documented hold-out run missing `--property-data`, a unit's dash compared raw in one
-place and folded in another, ten new inputs untracked by `DefaultedFields`, a case-sensitive
-`cancellation_reason` check, an unexcluded empty-options boundary, a cross-language weekday fold,
-a linear property scan, a judge fault that crashed the batch instead of one grade, `--diagnostics`
-missing from `--replay`'s guards, and `--judge` alone spending calls nowhere logged. 919 tests,
-100 percent coverage, both projects.
+**PR #36 review fixes, Sprint 16 closed (2026-09-14).** A `/code-review` and an Antigravity review
+left eighteen findings: three declined against D101, A19 and no stated rule, fourteen fixed test
+first, among them a judge fault that crashed the batch and a linear property scan; 919 tests at 100
+percent, run and debug facts. PR #36 merged into `dev` as `b3f9036`, closing the sprint (D106).
+
+**D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 failed checks are read record by record,
+not fitted: 19 product gaps, 5 label choices (D107). D108 is taken: a tour sms offers the next two open
+slots from two days after its send date, Monday to Saturday at 10:00 by default, written as dates.
+D109 is taken: a record that is not a prospect gets no prospect cadence or tour option, and an unknown
+call to action no link. The move timeline goes on email only (D110), tour availability only to a
+named invitation (D111), and code writes renewal terms (D112). Run and debug facts hold the evidence.
+
+**D113 to D115, the full runs after D112 and D114, Sprint 17 (2026-09-14).** Run and debug facts.
+The judge was given send times (D113) and code the sms options sentence (D114); hold-out bodies went
+from 7 to 8 of 11, and the blind set's two new body passes were the judge miscounting weekdays. D115
+proposed code-resolved days and D116 declined it.
+
+**D116 and D117, the blind set becomes training data, Sprint 17 (2026-09-14).** The owner took D116:
+`synthetic_v2.jsonl` is fitted, and the honest number moves to the owner's larger dataset. D117 fits
+twelve rules from its labels, each collision with the hold-out separated by an input. Template
+result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined labels, with
+`sample.jsonl` and `holdout_12.jsonl` unchanged. The model runs matched it; D118 fixed two
+prompt-path bugs they exposed.
+
+**D119, PR #36's own review revisited (2026-09-15).** A second `/code-review` raised ten findings.
+Six declined: two already fixed by D111/D112, two already answered by pre-merge threads this pass
+missed, one an unearned catalog abstraction, one a saving too small to justify widening the composer
+seam. Four fixed test first: a judge-side cancellation that discarded an already-composed record, a
+case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
+a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.

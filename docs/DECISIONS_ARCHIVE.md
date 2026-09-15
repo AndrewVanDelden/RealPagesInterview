@@ -3329,3 +3329,548 @@ matching `--rules` and `--property-data`. `--judge` alone, without `--eval-repor
 refused before the judge is built, replay exempted since its report always prints regardless.
 `.\test.ps1` after every fix: 919 tests (115 Agent.Cli.Tests, 804 Agent.Tests), 100 percent line,
 branch and method coverage, both projects.
+
+**D106. How Sprint 16 closes, and what Sprint 17 holds (taken 2026-09-14).** Question: PR #36
+(`sprint-16` into `dev`) merged at 2026-09-14T06:56:30Z as `b3f9036`, with no decision open. What
+does the next sprint hold? Options: (a) Sprint 17, on `sprint-17` off `dev`, holds three things and
+nothing else: reading the blind set's 24 checks that flipped when D94, D99, D100 and D102 made the
+scorer stricter (D107); closing the three hold-out bodies the judge still failed after D105 (D110 to
+D112); and closing the log; (b) start with a full run of both sets. Recommendation: (a), the owner's
+brief of 2026-09-13; a run is the owner's to name. The phase stays 4 with the same check, since every
+change is to the model composer and the check is its offline path. Scopes: this sprint. Evidence:
+`gh pr view 36` and `git log origin/dev`. Assumptions: none. Taken on that brief.
+
+**D107. How the blind set's flipped checks are read (taken 2026-09-14).** Question: between the
+committed template scorecards of `986ee79` (`synthetic_v2.jsonl`) and `e4c74ad` (`synthetic_12.jsonl`)
+and those of `42ec311`, 24 checks flipped from pass to fail: 21 on `synthetic_v2.jsonl` (16 payload, 5
+action) and 3 on `synthetic_12.jsonl` (2 payload, 1 action). The brief of 2026-09-13 counted 20; the
+scorecard diff shows 24. A template run of both sets at `b3f9036` reproduced 1 of 30 and 9 of 13, and
+each flipped record's label was read beside the output. Which flips are product gaps and which are
+the label author's own choices? The classification, each against the label's values:
+- A real gap, 11 payload flips: every `synthetic_v2.jsonl` prospect/new sms (`short_sms`, both horizon
+  boundaries, `spanish_locale`, `vietnamese_locale`, `unknown_timezone`, `missing_move_date`,
+  `missing_first_name`, `missing_language`, `empty_profile`, `no_data_to_personalize`) is labeled Mon
+  and Tue where the language set sends Thu and Fri whatever the send date. The exact days are not
+  derivable from any fitted record (D108).
+- A real gap, 3 payload flips: an unrecognized email call to action links to the generic `/reply`
+  page, where the labels name the page it is for (`v2_prospect_applied` `/portal`,
+  `v2_resident_active_checkin` `/maintenance`, `v2_resident_renewal` `/renew`). The exact paths are the
+  author's; `saguaroflats` against our `saguaro` is A21's type-word rule, already recorded as one of
+  two rules that fit sample 2 (D109).
+- A real gap, 3 flips: a resident no row covers is answered as a prospect, the generic row's
+  `prospect_welcome_short_horizon` for `v2_resident_move_in` (label `resident_move_in_prep`) and the
+  generic reply options "a question" and "a tour" for `v2_resident_move_in` (label 9 AM, 1 PM) and
+  `v2_resident_notice_given` (label two inspection dates). The exact names and values are the
+  author's (D109).
+- A real gap already recorded, 2 payload flips: `synthetic_12_unseen_cta_vocabulary` and
+  `synthetic_13_past_move_date` (D100 addendum).
+- A label artifact, 5 flips: `v2_horizon_boundary_60_days` is labeled short, where A7's threshold is 45,
+  a round number inside the fitted interval (32, 68] in which 60 fits equally; `v2_missing_move_date`
+  and `v2_no_data_to_personalize` label an absent date with the short cadence, where D102's research put
+  it on the nurture cadence; `v2_no_consent_for_preferred` has no consent on any channel and spells the
+  reason `no_consented_channel`, where the hold-out's `resident_opt_out_respected`, the same situation,
+  spells it `no_contact_consent`; and `synthetic_03_lease_end_instead_of_move_date` is labeled 3 days
+  under the A7 that D102 replaced, a label this project wrote.
+Options: (a) no label is edited and no pinned tally moves; each real gap becomes its own decision whose
+evidence comes from the fitted sets or research, never from the blind labels' values; the artifacts are
+recorded and not acted on; (b) correct the artifact labels in `synthetic_v2.jsonl`; (c) score a second
+tally that skips artifact checks. Recommendation: (a). A blind set whose labels are edited after its
+failures are read is no longer blind, and a scorer that knows which labels to skip is fitted to them.
+Scopes: this record, D108 and D109. Evidence: the two scorecard diffs, the template runs and the
+labels. Assumptions: A7, A10, A21. Taken under the brief of 2026-09-13 to classify.
+
+**D108. The sms tour options are fixed weekday names (open, the owner's).** Question: the language sets
+send Thu and Fri, or jueves and viernes, on every tour invitation, whatever day it is sent. On the
+hold-out, reference date Tuesday 2025-12-09, that is two and three days out; on a Friday it names days
+already past or a week away. Two rules fit the one fitted example, the day two and three days after
+the reference date and the first two weekdays after tomorrow; the blind set's Mon and Tue on Saturday
+2026-10-24 fits both too, and `synthetic_12.jsonl`'s Thursday and Friday on Saturday 2026-03-07 fits
+neither, since this project wrote those labels under the fixed pair. Options: (a) the tour days are a
+property fact, a `tour_days` list in `--property-data`, since the property system knows its tour
+calendar (D101), and with no data the language set's pair stays, a known wrong answer on other
+weekdays; (b) code computes the days from the send date in the record's zone and language, choosing
+between the two rules with the blind set, which fits it; (c) keep the fixed pair. Recommendation: (a),
+the only option that neither guesses a calendar nor fits the blind set. Scopes, when taken: the
+property data, the loader, both composers, the language sets and A27. Evidence: D107's 11 flips and
+the three reference dates. Assumptions: A10, A27. Open: the choice is the owner's, since (a) adds an
+input the feed must supply and (b) spends the blind set's independence.
+
+**D109. A record nothing covers is answered as a prospect (open, the owner's).** Question: the generic
+action row names `prospect_welcome_short_horizon` for a short horizon whatever the persona, the
+language sets' generic reply options offer "a tour" to a resident, and an unrecognized email call to
+action links to `/reply`, a page no evidence shows is for that purpose. Options: (a) a record whose
+persona is not prospect takes the generic row's long action (`follow_up_in_days` 3) on every branch;
+the generic reply options drop "a tour" for such a record; and an unrecognized email call to action
+gets no link, as A21 already refuses one for an absent property name; (b) hold every generic-row answer
+for review and send nothing, which D83 now only queues beside the send; (c) keep the prospect defaults.
+Recommendation: (a): each part removes a statement no evidence supports without inventing a resident
+cadence, a time or a page. (b) makes suppression the default for an unseen stage, a business decision.
+Scopes, when taken: `ActionCatalog`, the language sets, `CallToActionCatalog`, A8, A9 and A21.
+Evidence: D107's 6 flips. Assumptions: A8, A9, A21. Open: the choice is the owner's, since (a) and (b)
+change what an unseen stage receives.
+
+**D110. The move timeline goes on an email only (taken 2026-09-14).** Question: after D105 the
+hold-out's `prospect_welcome_day0` sms stated "early January", which its label omits, while
+`prospect_long_horizon_day3`'s email label states "a mid-February move". Which records get the
+timeline instruction? Three rules fit both fitted records: the channel (sms omits, email states), the
+stage (new omits, open states) and the horizon branch (short omits, long states). Research of
+2026-09-14: one sms segment is 160 GSM-7 characters or 70 with any Unicode character, and every segment
+past the first is billed and can arrive out of order (sender.net, "What is the SMS Character Limit?";
+Infobip, "SMS character limit & how message length impacts costs"); the labeled sms is already past 70
+characters. Options: (a) the instruction on an email only; (b) on the open stage only; (c) on the long
+branch only. Recommendation: (a), the one rule with a cost behind it: an sms carries the call to action
+and the reply options. (b) and (c) fit the evidence equally, so a third dated prospect record is what
+would separate them. Scopes: `OpenAiMessageComposer` and its tests. Evidence: the two labels and the
+run after D105. Assumptions: A18. Taken under the brief of 2026-09-13 to research and decide.
+
+**D111. Tour availability goes to a tour invitation the record names (taken 2026-09-14).** Question:
+after D105 `prospect_consent_block_sms_fallback_email` stated this week's tour availability, which its
+label omits. Five fitted records invite a tour. Their labels: `prospect_welcome_day0` "Tours are
+available this week" (primary_cta `book_tour`, move date); `prospect_long_horizon_day3` "Book a visit
+this week" (`book_tour`, move date); `prospect_spanish_locale` "esta semana" (`book_tour`, no date);
+`prospect_cancellation_manager_cross_sell` evening and weekend tours and no week (`book_tour`,
+`schedule_conflict`); `prospect_consent_block_sms_fallback_email` none (no primary_cta, the stage's
+default). Candidate rules against all five: availability only with a move date fails
+`prospect_spanish_locale`; availability only when the record names the call to action and has no
+schedule-conflict cancellation fits all five; availability only on the new or open stage with a named
+call to action also fits all five. Options: (a) the second rule, the extended hours taking the week's
+place after a schedule conflict; (b) the third rule; (c) keep availability on every tour invitation.
+Recommendation: (a). It keys on what the record's author asked for, a named invitation to book, where
+the stage default is a welcome ("Thanks for your interest. Here are the next steps"), and on the
+objection D104 already reads; (b) needs a stage list the evidence cannot bound. Risk: the run after
+D105 passed the cancellation body with availability stated, and this removes it. Scopes:
+`OpenAiMessageComposer`, its tests, OPERATIONS.md and A27. Evidence: the five labels. Assumptions: A27.
+Taken under the brief of 2026-09-13.
+
+**D112. A renewal offer's terms are written by code, and the lease end date leaves the prompt (taken
+2026-09-14).** Question: after D105 `resident_renewal_90day_notice` was given its offer's price hold
+(10 days) and text-reminder offer (yes) as property facts, wrote the hold as "review within the next 10
+days", left out the reminder offer, and stated the lease end date from its data block, which the label
+omits. Options: (a) the offer's terms go to no prompt; the language set holds the two sentences, in
+the label's words for English ("We've reserved current pricing for {0} days.", "If you prefer text,
+reply YES to get reminders by SMS.") and an unlabeled translation for Spanish; code writes the price
+hold on its own line before the link's line and the reminder offer after it, above the opt-out, or
+after the draft when there is no link; the model is told the system appends the terms; and
+`lease_end_date` is dropped from the data block; (b) tell the model to copy the sentences word for
+word; (c) keep the facts and add a lease-date rule to the prompt. Recommendation: (a), D105's rule: a
+fact the model reworded becomes one code writes. (b) and (c) are the prose instructions D105 set aside.
+Research of 2026-09-14 cuts the other way on the date: a formal renewal letter states when the lease
+ends and a date to answer by (Buildium, "What to Include in a Lease Renewal Letter"). This message is
+a nudge that links to the offer, and no labeled message states the date, so the date is left to the
+offer page; that trade is recorded here for the owner. Scopes: `MessageTemplates`, both language
+sets, `OpenAiMessageComposer`, its tests and OPERATIONS.md. Evidence: the label and the run after D105.
+Assumptions: A18, A27. Taken under the brief of 2026-09-13.
+
+**Run and debug fact, D110 to D112 written (2026-09-14).** On `sprint-17` off `b3f9036`. Before any
+change `.\test.ps1` passed 115 and 804 tests at 100 percent; the brief's 112 and 788 predated PR #36's
+review fixes. The D110 to D112 tests ran red first, 16 failing in `OpenAiMessageComposerTests` for the
+intended reasons, and pass with the implementation. The first full gate then failed on branch coverage
+alone: `IsProspect`'s null-persona branch went unreached, because the theory proving that a resident or
+an unstated persona gets no timeline ran on sms, which now decides before the persona is read. The
+theory moved to email, the one channel where that rule still decides something. `.\test.ps1` then
+passed 115 and 810 tests at 100 percent line, branch and method coverage, and `BaselineNumbersTests`
+held every pinned tally, since the template composer is unchanged. No model run was made, so whether
+the three hold-out bodies now pass the judge is not measured.
+
+**Run and debug fact, D108 and D109 re-read against send dates (2026-09-14).** Template runs of all
+four sets at `43d0d4e`, every sms tour invitation and every generic answer extracted with its label.
+D108 as written is wrong on one claim: it read the weekdays from the reference dates, but a message
+is judged on the day it is sent. The three fitted tour sms (`sample.jsonl` and `holdout_12.jsonl`
+`prospect_welcome_day0`, `prospect_spanish_locale`) all send Tuesday 2025-12-09, where the fixed
+pair, the day two and three days out, and the first two weekdays after tomorrow all give Thu and Fri,
+so the fitted evidence cannot separate the three. Of `synthetic_12.jsonl`'s six, five send Saturday
+2026-03-07, where both computed rules give Mon and Tue, and `synthetic_08_unknown_timezone` sends
+Sunday; five of the six pass only because this project wrote their labels under the fixed pair. The eleven
+`synthetic_v2.jsonl` tour sms send Sunday 2026-10-25, not Saturday: the reference time is Saturday
+17:00 in Chicago and the scheduler moves the send to 09:00 the next day. Both send-date rules give
+Tue and Wed there, and the label's Mon and Tue fits neither; only a rule counted from the reference
+date fits both the hold-out and the blind labels, and a reference date is the batch clock, not a
+recipient's day. `v2_spanish_locale`'s label spells Mon and Tue in English, so it fails the
+per-language weekday fold whatever days are sent. D109 covers 14 records, not the 6 flips D107 named:
+every record whose plan source is `generic_row_no_match` or `generic_row_no_branch`, whose sms options
+are the generic pair, or whose unrecognized email call to action links to `/reply`. Eleven are on
+`synthetic_v2.jsonl` and fail, among them `v2_prospect_lost` (a closed lead still sent a tour
+invitation, labeled `no_op` `lead_closed`) and `v2_unusual_persona_stage` (labeled `no_op`
+`persona_stage_mismatch`); three are on `synthetic_12.jsonl`. Seven of the nine catalog rows state
+only the no-move-date branch and prospect/open has no short branch, so a dated record at those
+stages also falls to the generic row.
+
+**D108 addendum, taken: tour options are dated slots (2026-09-14).** The owner rejected every option as
+written: no weekday is a deciding day, and a reply option should be a date anyone can read in any
+language. Taken: an sms tour invitation offers the next two open tour slots, counted from the
+message's local send date. The first slot is at least two days after that date; a day is open when
+the property data's `tour_days` names its weekday and `tour_closed_dates` does not name the date, and
+with no property calendar the open days are Monday to Saturday; each slot is at the property data's
+`tour_time`, and 10:00 AM with none, resolved in the record's zone. Each option is written as
+`MMM dd, yyyy, h:mm AM` in the invariant culture (`Oct 27, 2026, 10:00 AM`) in every language, so a
+record's language set no longer holds tour options, and numbered options are joined with a semicolon
+since each option carries commas. The agent schedules before it composes, since the options need the
+send date; the scheduler reads nothing a draft sets. The scorer reads a label's weekday option as the
+first date with that weekday after the label's own local send date, and compares it with the date of
+an option written in this format; a label option that is not a weekday is compared as before.
+Research of 2026-09-14: tours scheduled within 3 days of the inquiry show at 85% and at 40% after 10 or
+more days, across 1.5 million tour appointments at more than 1,000 properties (Zuma, "Why Your
+Apartment Tours Aren't Converting"); 76% of renters name the weekend the best time to tour (NMHC renter
+preferences survey, as summarized by Swiftlane) and weekends 10 am to 5 pm are the most popular window
+(tour24 study); larger operators keep Saturday leasing hours while Sunday hours are not universal
+(Multi-Housing News, "Does Your Leasing Office Have Weekend Hours?"). The owner chose the format and
+10:00 AM, and asked for the lead time and the open days to be researched and applied. Lead time two
+days: the research asks for a tour within three days and does not separate one day from two, and the
+one fitted example, sent Tuesday and labeled Thu and Fri, is two days; the blind set implies one day and
+is not fitted (D81). Monday to Saturday: weekend demand is strong, but a Sunday slot the office does not
+staff is a promise the property breaks, and with a calendar the property's own days win. Known limit:
+an office that opens Saturday at noon is offered 10:00 AM Saturday unless its calendar states a time.
+Expected effect on the template baselines: `sample.jsonl` and `holdout_12.jsonl` unchanged; five
+`synthetic_12.jsonl` records whose labels this project wrote under the fixed pair now fail the payload
+check; `synthetic_v2.jsonl` unchanged, its Sunday Mon and Tue labels being one day where this rule
+starts at two. Scopes: a tour slot planner in `Decisions`, `PropertyFacts` and its loader, both
+composers and their interface, `ValidatingMessageComposer`, both language sets, `LeasingMessageAgent`,
+`ReplyOptionSpelling`, `Evaluator`, `BaselineNumbersTests`, A10, A27 and OPERATIONS.md. Assumptions:
+A10, A27. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D108 built (2026-09-14).** On `sprint-17`, test first in three slices. The tour
+slot planner and the option format failed to compile, then passed their 16 tests. The property
+calendar's loader tests failed to compile and the scorer's dated-option tests failed 4 cases at
+runtime, then both passed. The composer, compose-validate loop and agent tests failed to compile on
+the missing `tourSlots` parameter, then passed. The first full gate failed on exactly the baseline the
+decision predicted: `synthetic_12.jsonl`'s Saturday tour sends now offer Monday and Tuesday against
+Thursday and Friday labels this project wrote under the fixed pair. It was re-pinned at payload 3 of 10
+and overall 5 of 13, with the reason in the test. `.\test.ps1` then passed 115 and 842 tests at 100
+percent line, branch and method coverage. Template runs of all four sets: `sample.jsonl` 2 of 2 and
+`holdout_12.jsonl` 12 of 12, unchanged, their Tuesday tour sms offering `Dec 11, 2025, 10:00 AM` and
+`Dec 12, 2025, 10:00 AM`; `synthetic_v2.jsonl` 1 of 30, unchanged, its Sunday sends offering October 27
+and 28 where its labels name Mon and Tue. The committed `synthetic_12` scorecard was refreshed; the
+`synthetic_v2` one was left as it was, since only its latency figures moved. Numbered sms options are
+now joined with a semicolon on every call to action. The README diagram and the narration's rehearsal
+now schedule at step 3 and compose at step 4. No model run was made.
+
+**D109 addendum, taken: option (a) (2026-09-14).** The owner took (a). A record whose persona is not
+`prospect`, an absent persona included, that the generic action row answers takes the generic row's
+long-horizon action on every branch, since the short action names a prospect cadence no evidence
+shows for anyone else; the language sets gain a generic reply list for such a record that leaves out
+the tour; and a `primary_cta` the call-to-action table does not recognize keeps its type but gets no
+link path, so its email carries no link, the rule A21 already applies to an absent property name. The
+persona test becomes one shared rule, trimmed and without regard to case, since the action catalog,
+both composers and the model composer's timeline instruction all ask it. A generic answer is still
+sent and still queued for review. Scopes: `ActionCatalog`, `CallToActionCatalog`, `PropertyLink`, both
+composers, both language sets, `MessageTemplates`, A8, A9, A21 and OPERATIONS.md if it names the
+generic answers. Evidence: D107's classification and the run and debug fact that re-read D109 against
+send dates. Assumptions: A8, A9, A21. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D109 built (2026-09-14).** On `sprint-17`, test first. The shared persona rule's
+test failed to compile until `Personas` existed; with it, 9 cases failed at runtime for the intended
+reasons: 4 catalog branches and the planner's short-horizon resident still took the prospect cadence,
+2 template cases still offered a tour to a record that is not a prospect, and the template and model
+composers still linked an unrecognized email call to action to `/reply`. All passed with the
+implementation. The first full gate failed on exactly the `synthetic_v2.jsonl` baseline: a per-record
+diff of its template scorecard before and after showed two flipped checks and no other,
+`v2_resident_notice_given` action from FAIL to OK (follow up in 3 days, as labeled) and
+`v2_unusual_persona_stage` payload from OK to FAIL (its label sends nothing, and its unrecognized email
+now carries no link, so the presence rule fails). It was re-pinned at action 13 of 29 and payload 7 of
+25, overall still 1 of 30, with the reason in the test, and its committed scorecard refreshed. The
+residents `v2_resident_move_in` and `v2_resident_notice_given` now offer "a question" alone, and no
+unrecognized email links to `/reply`. `sample.jsonl`, `holdout_12.jsonl` and `synthetic_12.jsonl`
+are unchanged.
+
+**Run and debug fact, the full runs after D112 (2026-09-14).** At `580689d`, `--composer openai
+--model-call-budget-ms 30000 --judge` with every output flag, one run per file, one after the other.
+`holdout_12.jsonl` with `--property-data`: exit 0; every deterministic check full; Overall 12 of 12;
+ActionSem 12 of 12; BodySem 7 of 11, from 8 of 11 at the run after D105; review queue empty; p95
+5187 ms against 2000 ms, FAIL, every record slower than that run, attempts 1 on every record, cause not
+measured. Body verdicts that moved: `prospect_consent_block_sms_fallback_email` FAIL to OK, its body no
+longer stating this week's availability (D111); `prospect_no_show_reengage` OK to FAIL, its body
+dropping the numbered options it wrote the run before (D114); `prospect_spanish_locale` OK to FAIL, the
+judge reading its dates as not the label's jueves and viernes, and its body translating the code's
+dates into Spanish while `cta.options` carries the code's text (D113, D114). Still failing:
+`prospect_welcome_day0`, whose body no longer states the move timeline (D110), failed now because the
+judge says Dec 11 and 12 are not Thursday and Friday, which they are (D113); and
+`resident_renewal_90day_notice`, whose body now states the 10-day price hold and the text-reminder
+offer exactly and no lease end date (D112), failed now for the email opt-out sentence code appends,
+which its label words as "Opt-out any time". `synthetic_v2.jsonl`: exit 2 on its malformed line;
+Overall 1 of 30; Action 13 of 29; Payload 7 of 25; ActionSem 14 of 29, from 13; BodySem 2 of 24, from
+0, with `v2_prospect_new_long_email` and `v2_missing_last_interaction` now passing; review queue 11
+rows, as before; p95 3259 ms against 2000 ms, FAIL, from 2016. Every blind-set tour sms fails BodySem
+on its dated options against the labels' weekdays, several reasons calling October 2026 dates not
+"this week" in a run whose reference time is 2026-10-24 (D113). The earlier blind-set run predates D104
+and D105, so its body changes are not attributable to D108 to D112 alone. Each figure is one call per
+record, so run-to-run variance is not measured. Results are in `holdout_12_run_2026-09-14_d112` and
+`synthetic_v2_run_2026-09-14_d112` on the owner's desktop.
+
+**D113. The judge sees each message's send date (proposed 2026-09-14).** Question: after D108 an sms
+tour invitation's options are dates while the labels name weekdays, and the judge's prompt carries each
+side's action, subject and body but no send date, so it cannot tell that Dec 11, 2025 is the label's
+Thursday. In the full run after D112 it failed `prospect_welcome_day0` and `prospect_spanish_locale` on
+that ground and every blind-set tour sms with it. Options: (a) the judge's reference and candidate
+blocks each carry the message's `send_at`, and the rubric says a weekday on one side and a date on the
+other name the same day when the date is the first with that weekday after the send date; (b) the
+judge also receives the deterministic payload verdict; (c) leave the judge and read those BodySem
+failures by hand. Recommendation: (a): the fact the judge lacks is already in the output, and the
+payload check resolves weekdays by the same rule (D108), so both graders read a date one way. (b) lets
+one grader's verdict steer the other. Scopes: `SemanticJudge` and its golden prompt. Evidence: that
+run's judge reasons. Assumptions: none. Open.
+
+**D114. Code writes the sms reply options sentence (proposed 2026-09-14).** Question: in the full run
+after D112 the model left the numbered options out of `prospect_no_show_reengage` ("reschedule for today
+or tomorrow?", where the run after D105 wrote "reply with 1 for today or 2 for tomorrow"), and in
+`prospect_spanish_locale` wrote the code's options "Dec 11, 2025, 10:00 AM" as "11 de diciembre de
+2025, 10:00 AM" in the body while `cta.options` carried the code's text, so the body and the payload
+disagree and the owner's one-format rule is broken. Whether D108's semicolon between the options in the
+prompt caused the first is not measured. Options: (a) the model is told the system appends the numbered
+options, as it is told for the opt-out, and code appends the language set's options sentence, the one
+the template writes, before the opt-out on every sms with options; (b) tell the model to copy the
+options verbatim; (c) leave it. Recommendation: (a), D105's rule: text the model rewrote or dropped
+becomes text code writes; (b) is a prose instruction of the kind the model just ignored. Scopes:
+`OpenAiMessageComposer`, its goldens and A10. Evidence: the two bodies. Assumptions: A10, A18. Open.
+
+**D113 and D114 addendum, taken: option (a) each (2026-09-14).** The owner took both recommendations.
+D113: the judge's reference and candidate blocks each carry `send_at`, and the rubric says a weekday on
+one side and a date on the other name the same day when the date is the first with that weekday after
+that side's send date. D114: on sms the model writes no reply options in the body; it is told the
+system appends them, and it still returns options in `cta_options` for a call to action code has none
+for. Code appends the language set's numbered options sentence, the one the template writes, after the
+draft and any renewal offer terms and before the opt-out, and the options sentence is built by one rule
+both composers share. Taken on the owner's instruction of 2026-09-14.
+
+**Run and debug fact, D113 and D114 built (2026-09-14).** On `sprint-17`, test first: 16 cases in
+`SemanticJudgeTests` and `OpenAiMessageComposerTests` failed for the intended reasons, the golden rubric,
+a new prompt test for each side's `send_at` and weekday, the sms instruction theory, the no-options
+instruction, the golden user prompt, and eight sms bodies that now end with code's numbered options
+sentence before the opt-out; all passed with the implementation. The options sentence moved from a
+private method of the template composer to `MessageTemplates`, so both composers build it one way.
+A body the model wrote with its own opt-out now gets the options after it, because code cannot tell
+where in the draft that sentence sits; the model is told the system appends both. `.\test.ps1` passed
+115 and 862 tests at 100 percent line, branch and method coverage, with every pinned template baseline
+unchanged, since the template composer's output did not change.
+
+**Run and debug fact, the full runs after D114 (2026-09-14).** At `bfab7fa`, the same flags as the runs
+after D112, one run per file, one after the other. `holdout_12.jsonl`: exit 0; every deterministic check
+full; Overall 12 of 12; ActionSem 12 of 12; BodySem 8 of 11, from 7; review queue empty; p95 3550 ms
+against 2000 ms, FAIL, attempts 1 on every record. Moved: `prospect_welcome_day0` FAIL to OK, the judge
+reading Dec 11 and 12, 2025 as Thursday and Friday, which they are (D113); `prospect_no_show_reengage`
+FAIL to OK, its body ending with code's "Reply 1 for today; 2 for tomorrow." (D114);
+`resident_welcome_day0` OK to FAIL on wording nearly the same as the run before ("complete the features
+enablement" in both), a judge flip no code change reached, and a sign the purpose sentence's field name,
+`features_enablement`, is echoed into the prose. Still failing: `prospect_spanish_locale`, its body now
+carrying code's options, failed for its stated `amenity_interest` (estacionamiento, lavandería), which
+the label leaves out, and for the times; `resident_renewal_90day_notice`, again for the code-appended
+email opt-out. `synthetic_v2.jsonl`: exit 2 on its malformed line; Overall 1 of 30; Action 13 of 29;
+Payload 7 of 25; ActionSem 14 of 29; BodySem 4 of 24, from 2; review queue 11 rows; p95 2208 ms against
+2000 ms, FAIL. The two new body passes are false: the judge graded `v2_missing_first_name` and
+`v2_empty_profile` as matching because Oct 27 and 28, 2026 "correspond to Monday and Tuesday" after the
+Sunday send date, and they are Tuesday and Wednesday, checked against the calendar; in the same run it
+counted the same dates correctly for `v2_spanish_locale` and failed it. The judge's own date arithmetic
+is unreliable in both directions (D115). Each figure is one call per record. Results are in
+`holdout_12_run_2026-09-14_d114` and `synthetic_v2_run_2026-09-14_d114` on the owner's desktop.
+
+**D115. Code resolves each reply option's day for the judge (proposed 2026-09-14).** Question: D113
+gave the judge each side's send time and weekday and a rubric rule for reading a date against a weekday,
+and the run after D114 shows the judge applying that rule with wrong arithmetic: two blind-set bodies
+passed on dates it miscounted as Monday and Tuesday. Options: (a) each block of the judge's prompt lists
+the message's reply options with the day code resolves for each: a dated option with its weekday, and a
+weekday option with the date the D108 rule gives from that side's send date, and the rubric compares
+those resolved days rather than asking the judge to count; (b) take the reply options out of the judge's
+body question, since the deterministic payload check already compares them by the D108 rule; (c) leave
+the judge as D113 built it. Recommendation: (a): the judge keeps grading whether the offer is the same,
+and no calendar fact is left for a model to compute. (b) hides a body that offers different days behind
+a payload check the judge never sees. Scopes: `SemanticJudge`, a shared day resolution with
+`ReplyOptionSpelling`, the golden prompt and rubric. Evidence: that run's judge reasons and the
+calendar. Assumptions: none. Open.
+
+**D116. `synthetic_v2.jsonl` becomes training data (taken 2026-09-14).** Question: after D108 to D114
+the blind set still reads 1 of 30 overall, and the judge's two checks, where most of Sprint 17's work
+landed, are excluded from a record's pass or fail by design. A measurement with a 1-day tour lead time
+read 8 of 30, but choosing that value from the blind labels fits the set D81 kept blind. The owner will
+bring a larger dataset. Options: (a) `synthetic_v2.jsonl` joins `sample.jsonl` and `holdout_12.jsonl`
+as evidence rules are fitted to, the honest number moves to the owner's larger dataset, which stays
+unseen until the rules are done and is then run once, and the model prose and judge work stops, so D115
+is not taken; (b) keep the set blind and write rules from the fitted sets and research only; (c) write a
+new blind set now. Recommendation: (a), the owner's choice. The blind set's failures are rules its
+stages and inputs need and the fitted twelve records never show, so they are fitted from their own
+labels, each rule citing the records that set it; a label this project judges wrong is recorded as
+declined rather than fitted. Scopes: D81's frame for this file, AGENTS.md, README.md, DESIGN.md
+section 7, `BaselineNumbersTests`, and one decision per rule. Assumptions: A7 to A10, A21. Taken on the
+owner's instruction of 2026-09-14; D115 is declined with it.
+
+**D117. The rules `synthetic_v2.jsonl` sets as training data (taken 2026-09-14).** Question: under
+D116, which rules does each failing record set, and where its label collides with a hold-out label,
+which input separates the two? Every record was read against its label from a template run at
+`d2e2643`. Options: (a) fit the rules below, each keyed on an input the record states, every collision
+separated by an input that differs between the colliding records and recorded with the other inputs
+that fit equally, and the labels that cannot be fitted without breaking a hold-out label declined;
+(b) fit only the rules that collide with nothing. Recommendation: (a), since (b) leaves the stages the
+larger dataset will certainly carry. The rules:
+1. Tour slots count from the run's reference date in the record's zone, not the send date: the first
+   slot is at least two days after that date and after the send date. Hold-out, reference Tuesday
+   2025-12-09, labels Thursday and Friday; the eleven `synthetic_v2.jsonl` tour records, reference
+   Saturday 2026-10-24 17:00 in Chicago and sent Sunday, label Monday and Tuesday. A lead time counted
+   from the send date fits one set or the other, never both.
+2. The short horizon is at most 60 days: `v2_horizon_boundary_60_days` short, `_61_days` long; sample
+   1 (32 short) and sample 2 (68 long) agree.
+3. A past move date takes the no-move-date branch: `v2_move_date_in_past` (prospect/open, 23 days past)
+   follows up in 2, the row's no-date action; a timeline already passed is unqualified again.
+   `synthetic_12_13_past_move_date`, a label this project wrote under the old A7, no longer matches.
+4. A record with no move date whose `primary_cta` is stated takes its row's short action where the row
+   states one: `v2_missing_move_date` and `v2_no_data_to_personalize` (prospect/new, `book_tour`) are
+   labeled the short cadence, and the hold-out's `prospect_consent_block_sms_fallback_email`
+   (prospect/new, no `primary_cta`) the long one. A stated `last_interaction` also separates them.
+5. Catalog rows: prospect/toured, prospect/applied and prospect/approved follow up in 2 on the short
+   branch; resident/move_in starts `resident_move_in_prep` on the short branch; resident/active follows
+   up in 7 with no move date (its date is past); resident/renewal starts `resident_renewal` with no
+   move date; prospect/open follows up in 2 on the short branch (`v2_voice_channel`); prospect/lost is
+   `no_op` `lead_closed` and prospect/renewal `no_op` `persona_stage_mismatch` on every branch, since a
+   closed lead or a contradictory record is not a matter of horizon.
+6. A `no_op` action suppresses the message: channel none, the action's reason on the wire, suppression
+   reason `no_op_action`. `v2_prospect_lost` and `v2_unusual_persona_stage`.
+7. Calls to action: `start_application` path `apply`, `complete_application` path `portal`, `sign_lease`
+   path `lease`, `submit_maintenance_request` path `maintenance`, `renew_lease` sent as
+   `review_renewal_offer` with path `renew`, and `confirm_move_in` offering 9 AM and 1 PM in English.
+8. `flats` is not a trailing property-type word: `v2_resident_active_checkin` links to
+   `saguaroflats.example`.
+9. Voice sends at 10:00: `v2_voice_channel`.
+10. A send slot row may name the horizon branch it applies to, and prospect/new email at 09:05 applies
+    only with no move date: every `synthetic_v2.jsonl` prospect/new email states a move date and is
+    labeled 10:00 (`v2_prospect_new_long_email`, `v2_dst_fall_back_london`,
+    `v2_missing_property_name`, `v2_empty_channel_preferences`, `v2_consent_only_non_preferred`).
+11. An unknown timezone falls back to the zone of the state named in `city_interest` before UTC:
+    `v2_unknown_timezone` (`America/Dallas`, "Dallas, TX") is labeled Central time. Each state takes
+    its IANA zone for most of its population.
+12. When no preferred channel is consented, a consented channel outside the preferences is used, email
+    before sms before voice: `v2_empty_channel_preferences` and `v2_consent_only_non_preferred` are
+    labeled email; consent is the permission, and a preference list is an ordering.
+Declined: `v2_no_consent_for_preferred` spells the reason `no_consented_channel` where the hold-out's
+`resident_opt_out_respected`, the same situation, spells it `no_contact_consent`; `v2_missing_property_name`
+labels an email with reply options and no link, which the payload rule cannot pass without dropping
+the link check; `v2_resident_notice_given` labels two inspection dates from one example, whose rule (13
+and 14 days before the move date, or another) one record cannot fix. Expected template result:
+`synthetic_v2.jsonl` 26 of 30 with `sample.jsonl` and `holdout_12.jsonl` unchanged, a projection
+checked only by the build. Scopes: `TourSlots`, `NextActionPlanner`, `ActionCatalog`, `SendSlotTable`,
+`SendSlotRow`, the rules file, `SendScheduler`, `TimeZones`, `ChannelSelector`, `LeasingMessageAgent`,
+`CallToActionCatalog`, `PropertyLink`, the English language set, the baselines, A3 to A10, A19 to A21.
+Assumptions: A3 to A10, A19 to A21. Taken under D116.
+
+**Run and debug fact, D117 built (2026-09-14).** On `sprint-17`, test first: the new and changed tests
+across tour slots, the planner, the catalog, the slot table, the scheduler, timezones, the channel
+selector, the agent, the template composer and the suppression reason failed to build on the new
+members, then passed with the implementation. One implementation bug was caught before any run: the
+catalog's two shared no-op actions were first declared below `Default`, which static initialization
+order would have built with them still empty; they now sit above it, with the reason in a comment.
+The first full gate failed on exactly three tests: a planner fixture that used prospect/toured, now a
+row, moved to a stage with none, and the two synthetic baselines. Template runs at the reference times
+as documented: `synthetic_v2.jsonl` 26 of 30 from 1, every check full but action 28 of 29 and payload 23
+of 25, its failures exactly the three declined labels (`v2_no_consent_for_preferred`,
+`v2_missing_property_name`, `v2_resident_notice_given`) and its malformed line; `synthetic_12.jsonl`
+5 of 13, action 9 of 12 from 11, `synthetic_12_unseen_cta_vocabulary` and `synthetic_13_past_move_date`
+now failing their actions against labels this project wrote under the replaced past-date and
+short-branch rules; `sample.jsonl` 2 of 2 and `holdout_12.jsonl` 12 of 12 unchanged. Both synthetic
+baselines and committed scorecards were re-pinned with the reason. The next gate failed on branch
+coverage alone, 99.88 percent: the email payload check's branch for a label with no call to action at
+all had been reached only by `v2_unusual_persona_stage`, which is now suppressed, so a unit test pins
+that real case, a label that sends nothing against an email the agent sent. `.\test.ps1` then passed
+115 and 908 tests at 100 percent line, branch and method coverage. The review queue now holds one row
+on each synthetic set and none on the samples or the hold-out. The check caught a decision number in a
+test comment, rewritten as the rule. No model run was made.
+
+**Run and debug fact, the full runs after D117 (2026-09-14).** At `d1e8847`, the same flags as the runs
+after D114, one run per file, one after the other. `holdout_12.jsonl`: exit 0; every deterministic check
+full; Overall 12 of 12; ActionSem 12 of 12; BodySem 7 of 11, from 8; review queue empty; p95 2597 ms
+against 2000 ms, FAIL. Moved: `resident_welcome_day0` FAIL to OK; `prospect_welcome_day0` OK to FAIL,
+the judge objecting that its dated options state times and that the body names the city, the same
+content it passed the run before; `prospect_long_horizon_day3` OK to FAIL, its body leaving out the pool
+and fitness center its data states, a model miss. `synthetic_v2.jsonl`: exit 2 on its malformed line;
+every deterministic check equal to the template run, Overall 26 of 30 from 1; ActionSem 29 of 29 from
+14; BodySem 8 of 26 from 4; review queue 1 row; p95 3042 ms, FAIL. Of its 18 body failures, most are the
+judge reading the dated options Oct 26 and 27, 2026 (Monday and Tuesday, checked against the calendar)
+as a different offer from the labels' Mon and Tue because they state times, and labels asking what no
+input states. Two are product bugs, both read in the output: `v2_move_date_in_past` says "as you plan
+your move in early October" for a move date 23 days before the run, because the email timeline
+instruction still fires on a past date that D117 treats as unqualified; and `v2_prospect_toured`, a call
+to action with no code-owned options, carries the model's options "1. Start Application" wrapped by
+code's sentence into "Reply 1 for 1. Start Application" (D118). Each figure is one call per record.
+Results are in `holdout_12_run_2026-09-14_d117` and `synthetic_v2_run_2026-09-14_d117` on the owner's
+desktop.
+
+**D118. Two prompt-path bugs the runs after D117 exposed (proposed 2026-09-14).** Question: how are the
+two bugs of that run fixed? Options: (a) the timeline instruction fires only for a move date on or after
+the reference date, since a past date is unqualified; and an option the model returns is stripped of a
+leading number and its punctuation ("1. ", "2) ") before code numbers it, so the options sentence and
+`cta.options` carry the option text alone; (b) the timeline fix alone, and a call to action with no
+code-owned options gets the language set's generic list instead of the model's; (c) leave both.
+Recommendation: (a): both are defects in text code already owns, and the model's own option wording is
+kept where no code-owned list exists. Scopes: `OpenAiMessageComposer` and its tests. Evidence: the two
+bodies. Assumptions: A10, A18. Open.
+
+**D118 addendum, taken: option (a) (2026-09-14).** The owner took (a). The model composer reads no clock,
+so the agent passes the record's local reference date to the composer beside the tour slots, as an
+optional trailing parameter every composer accepts and the compose-validate loop forwards; with no date
+given the timeline instruction keeps its old rule. A leading number is stripped from a model option only
+when one or two digits are followed by a period, a closing parenthesis or a hyphen and then a space, so
+an option such as "10:00 AM" or "1.5 miles" is left whole. Taken on the owner's instruction of
+2026-09-14.
+
+**Run and debug fact, D118 built (2026-09-14).** On `sprint-17`, test first. The timeline test first
+failed to build on the missing `referenceDate` parameter; with the parameter added to the interface,
+both composers, the compose-validate loop, the agent's call and the eleven test doubles, and no behavior
+behind it, both D118 tests failed at runtime. The timeline test's rows were first written the wrong way
+round, a move date equal to the reference date marked as past; they were corrected to the rule, on or
+after the reference date fires, and the past row still failed before the fix. With the fix both passed,
+and `.\test.ps1` passed 115 and 912 tests at 100 percent line, branch and method coverage, with every
+template baseline unchanged, since neither fix touches the template composer. No model run was made. The
+decisions' options and recommendations stand; their evidence sentences are corrected by this fact.
+
+**D119. Four bugs PR #36's own review missed, three findings its rationale already answered (taken
+2026-09-15).** Question: a `/code-review` pass against merged PR #36 (Sprint 16) raised ten findings;
+which are real and fixed, which are already fixed elsewhere, and which are declined? Findings: (1)
+`CliRunner.RunRecordAsync`'s judge call caught every exception except `OperationCanceledException`, so a
+judge-side cancellation (a completion client's own timeout, or the batch shutting down mid-call) escaped
+uncaught and discarded a record's already-composed, already-validated output instead of costing only the
+grade, unlike the ordinary-fault case the same catch already handled correctly; (2) `tour_availability`
+stated on a schedule-conflict cancellation and (3) `lease_end_date` always stated: both real in PR #36's
+merged state, both already fixed by D111 and D112 in the very next commit after merge, before this
+review ran; (4) `PropertyFacts.SameIdentifier` compared unit/offer id ordinally (case-sensitive) while
+`PropertyData.FactsFor` compares property names `OrdinalIgnoreCase`, so a record and an independently
+authored `--property-data` file differing only in case silently failed to match; (5) `LeasingMessageAgent`
+computing `renewal_offer_loaded` without the composer's `FactKinds` gate: declined, D101 defines the
+state as "found in the property data," not "and the resolved call to action states it": the same
+sentence an earlier, already-declined review thread on this exact line already quoted; (6) `PropertyLink.
+FoldDashes` "duplicating" `SafetyTextNormalizer.FoldHyphens`: declined, an earlier review thread on this
+exact pair (before PR #36 merged) already established they are deliberately different-scoped folds (four
+explicit code points for term-match bypass detection vs. the full Unicode Pd category for identifier
+matching) and that `PropertyFacts.SameIdentifier` already calls the one fold for its purpose; this review
+missed that established rationale; (7) `DescribePropertyFacts`'s per-kind eligibility conditions hand-
+written inline rather than catalog-driven: the `PropertyFactKind` enum's own comment already states this
+split is deliberate (which kinds a call to action can carry is the catalog's; whether a record's own
+input calls for one is the composer's), and no second consumer would read a generalized predicate table,
+so a full catalog generalization is declined as an unearned abstraction; its narrower complaint (nested
+ternary-in-`string.Concat` is harder to trace than the file's flat `DescribeStageFacts` pattern) is
+taken as a readability rewrite to `if` blocks appending to a list, with no behavior change; (8) five
+near-identical `--replay` mutual-exclusivity guards in `CliRunner.RunAsync`, past the repo's own extract-
+on-third-occurrence convention: taken, collapsed into one `RefuseIfCombinedWithReplay` helper each guard
+calls with its own message; (9) property facts and the property link rebuilt from scratch on each of
+`ValidatingMessageComposer`'s up to two compose attempts: declined, fixing it would mean threading
+`OpenAiMessageComposer`-specific precomputed values through the composer-agnostic `IMessageComposer`
+seam every composer and test fake implements, for a saving of microseconds nested inside a network call
+that costs hundreds of milliseconds to seconds; (10) `ScoredRun` built once for the judge call and again,
+equal, for the evaluator: taken, built once in `RunRecordAsync` and carried on the new
+`RecordRun.Completed.ScoredRun` member, which `RecordFold.AddAsync` now reads instead of reconstructing.
+Scopes: `CliRunner`, `RecordRun`, `RecordFold`, `PropertyFacts`, `OpenAiMessageComposer`, and their
+tests. Assumptions: none beyond D101, D111, D112 and the pre-merge PropertyLink/PropertyFacts and
+LeasingMessageAgent review threads, all cited above. Taken on the owner's instruction to fix the findings
+"including the gemini ones" of 2026-09-15.
+
+**Run and debug fact, D119 built (2026-09-15).** On `sprint-17`, test first for each of (1), (4), (8) and
+(10). (1): a new `CancellingJudge` test double (`GradeAsync` throws `OperationCanceledException`
+unconditionally) and `RunAsync_JudgeThrowsCancellation_TheRecordsOwnOutputSurvivesAndLaterRecordsStillRun`
+first failed with the injected `OperationCanceledException` escaping `RunAsync` uncaught; removing the
+`when (ex is not OperationCanceledException)` filter on the judge call's catch (and only that catch, not
+`agent.RunAsync`'s own, which still must not swallow a cancellation the record's real work never
+finished) made it pass. (4): `RenewalOfferFor_IdentifiersWrittenWithDifferentCase_StillMatch`'s four
+cases first failed on `StringComparison.Ordinal`; changing `SameIdentifier` to `OrdinalIgnoreCase` (after
+the existing dash fold) made all four pass. (8) and (10) are behavior-preserving refactors with no new
+branch, proved by the unchanged existing coverage instead of a new test: extracting
+`RefuseIfCombinedWithReplay` and threading one `ScoredRun` through `RecordRun.Completed` both left every
+existing assertion (five replay-guard messages, the judge and diagnostics rows) passing unchanged. (7)'s
+`DescribePropertyFacts` rewrite is likewise behavior-preserving, proved the same way. `.\test.ps1` passed
+116 and 916 tests at 100 percent line, branch and method coverage. Every finding not listed as fixed here
+was replied to and its thread resolved on PR #36 with the rationale above; ReportFindings was re-called
+with outcomes. No model run was made; nothing here changes a composer's or the scorer's on-label
+behavior for a record that was never one of the four bugs' failure scenarios.

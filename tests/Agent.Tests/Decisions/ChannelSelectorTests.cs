@@ -44,17 +44,23 @@ public class ChannelSelectorTests
         Assert.False(selected.HasValue);
     }
 
-    // Contactable and which channel are one question: no selected channel is the answer to both,
-    // so the case a separate consent gate once proved lives here. Consent on every channel is not
-    // a channel: a record that states no preference has nothing to send on, so the answer is none.
-    [Fact]
-    public void Select_EmptyChannelPreferencesDespiteFullConsent_ReturnsNone()
+    // Consent is the permission and a preference list is only an order, so when no preferred channel
+    // is consented a consented channel outside the list is used, email before sms before voice:
+    // synthetic_v2's record with no preferences and its record that prefers only an unconsented sms are
+    // both labeled email.
+    [Theory]
+    [InlineData(true, true, true, new CommunicationChannel[0], CommunicationChannel.Email)]
+    [InlineData(true, false, false, new[] { CommunicationChannel.Sms }, CommunicationChannel.Email)]
+    [InlineData(false, true, true, new CommunicationChannel[0], CommunicationChannel.Sms)]
+    [InlineData(false, false, true, new[] { CommunicationChannel.Sms }, CommunicationChannel.Voice)]
+    [InlineData(true, true, false, new[] { CommunicationChannel.Voice }, CommunicationChannel.Email)]
+    public void Select_NoPreferredChannelConsented_FallsBackToAConsentedChannelEmailFirst(bool email, bool sms, bool voice, CommunicationChannel[] preferences, CommunicationChannel expected)
     {
-        var consent = new ConsentPreferences(EmailOptIn: true, SmsOptIn: true, VoiceOptIn: true);
-        CommunicationChannel[] preferences = [];
+        var consent = new ConsentPreferences(EmailOptIn: email, SmsOptIn: sms, VoiceOptIn: voice);
 
         Option<CommunicationChannel> selected = Selector.Select(preferences, consent);
 
-        Assert.False(selected.HasValue);
+        Assert.True(selected.HasValue);
+        Assert.Equal(expected, selected.Value);
     }
 }

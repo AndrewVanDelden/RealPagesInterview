@@ -27,6 +27,8 @@ internal static class SpanishMessageTemplates
         EmailOptOut: "Para cancelar los correos, responde STOP.",
         EmailSubjectForProperty: "Visita {0}",
         EmailSubjectGeneric: "Tu siguiente paso",
+        RenewalPriceHoldSentence: "Reservamos el precio actual por {0} días.",
+        RenewalTextRemindersSentence: "Si prefieres mensajes de texto, responde SÍ para recibir recordatorios por SMS.",
         CtaPhraseByType: new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["schedule_tour"] = "agendar una visita",
@@ -40,9 +42,9 @@ internal static class SpanishMessageTemplates
         }.ToFrozenDictionary(StringComparer.Ordinal),
         SmsOptionsByCtaType: new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
-            ["schedule_tour"] = ["jueves", "viernes"],
             ["reschedule"] = ["hoy", "mañana"],
             ["intent_capture"] = ["sí", "no", "detalles"],
         }.ToFrozenDictionary(StringComparer.Ordinal),
-        GenericSmsOptions: ["una pregunta", "una visita"]);
+        GenericSmsOptions: ["una pregunta", "una visita"],
+        GenericSmsOptionsWithoutTour: ["una pregunta"]);
 }

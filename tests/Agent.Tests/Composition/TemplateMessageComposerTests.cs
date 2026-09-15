@@ -155,22 +155,32 @@ public class TemplateMessageComposerTests
         Assert.Equal(1, result.Notes.Attempts);
     }
 
-    // A10: sms carries the numbered reply options in the body and in cta.options,
-    // the way sample 1's label does; the option text comes from the record's language set,
-    // keyed by the call-to-action type, since no input field states it.
+    // A10: sms carries the numbered reply options in the body and in cta.options, the way sample 1's
+    // label does. A tour invitation's options are the tour slots the agent planned, each written as a
+    // date, and since each option carries commas the numbered options are joined with a semicolon.
     [Fact]
-    public async Task ComposeAsync_SmsWithKnownCta_CarriesNumberedOptionsInBodyAndCta()
+    public async Task ComposeAsync_TourSms_CarriesTheTourSlotsAsNumberedDatedOptions()
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         ComposedMessage result = ComposedOf(outcome);
 
         NextMessage message = result.Message;
-        Assert.Equal(["Thu", "Fri"], message.Cta!.Options);
-        Assert.Contains("Reply 1 for Thu, 2 for Fri.", message.Body);
+        Assert.Equal(SampleTourSlots.TuesdayText, message.Cta!.Options);
+        Assert.Contains("Reply 1 for Dec 11, 2025, 10:00 AM; 2 for Dec 12, 2025, 10:00 AM.", message.Body);
         Assert.Null(message.Cta.Link);
+    }
+
+    // A caller that planned no slots has no date to offer, so a tour sms falls back to the language
+    // set's generic pair rather than inventing days.
+    [Fact]
+    public async Task ComposeAsync_TourSmsWithNoSlots_OffersTheGenericPair()
+    {
+        ComposeOutcome outcome = await Composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
+
+        Assert.Equal(["a question", "a tour"], ComposedOf(outcome).Message.Cta!.Options);
     }
 
     // A10 and A21: email carries the link, built from the property slug and the catalog's
@@ -211,6 +221,7 @@ public class TemplateMessageComposerTests
     [InlineData("Oak Ridge", "https://oakridge.example/tour")]
     [InlineData("St. James Lofts", "https://stjames.example/tour")]
     [InlineData("Lofts", "https://lofts.example/tour")]
+    [InlineData("Saguaro Flats", "https://saguaroflats.example/tour")]
     public async Task ComposeAsync_EmailWithAnyPropertyName_BuildsTheSlugFromIt(string propertyName, string expectedLink)
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: propertyName);
@@ -237,6 +248,63 @@ public class TemplateMessageComposerTests
         Cta cta = result.Message.Cta!;
         Assert.Equal("call_now", cta.Type);
         Assert.Equal(["a question", "a tour"], cta.Options);
+    }
+
+    // The generic reply list offers a tour, which only a prospect is shopping for, so a record whose
+    // persona is not a prospect gets the list without it, in its own language.
+    [Theory]
+    [InlineData("resident", "en", new[] { "a question" })]
+    [InlineData(null, "es", new[] { "una pregunta" })]
+    public async Task ComposeAsync_GenericOptionsForAPersonaThatIsNotAProspect_LeaveOutTheTour(string? persona, string language, string[] expected)
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_parking", persona: persona, lifecycleStage: "move_in", language: language);
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(expected, ComposedOf(outcome).Message.Cta!.Options);
+    }
+
+    // A call to action the table does not recognize names no page any evidence shows, so its email
+    // carries no link, the rule an absent property name already follows.
+    [Fact]
+    public async Task ComposeAsync_UnknownPrimaryCtaOnEmail_CarriesNoLink()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_callback", persona: "resident", lifecycleStage: "active");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.Equal("request_callback", result.Message.Cta!.Type);
+        Assert.Null(result.Message.Cta.Link);
+        Assert.DoesNotContain("https://", result.Message.Body);
+    }
+
+    // The calls to action synthetic_v2.jsonl's records name, each with the page its label links to and
+    // the wire type it states: renew_lease goes out as review_renewal_offer.
+    [Theory]
+    [InlineData("start_application", "start_application", "https://oakridge.example/apply")]
+    [InlineData("complete_application", "complete_application", "https://oakridge.example/portal")]
+    [InlineData("sign_lease", "sign_lease", "https://oakridge.example/lease")]
+    [InlineData("submit_maintenance_request", "submit_maintenance_request", "https://oakridge.example/maintenance")]
+    [InlineData("renew_lease", "review_renewal_offer", "https://oakridge.example/renew")]
+    public async Task ComposeAsync_BlindSetCallToActionOnEmail_CarriesItsTypeAndPage(string primaryCta, string expectedType, string expectedLink)
+    {
+        ComposeOutcome outcome = await Composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: primaryCta), CommunicationChannel.Email);
+
+        Cta cta = ComposedOf(outcome).Message.Cta!;
+        Assert.Equal(expectedType, cta.Type);
+        Assert.Equal(new Uri(expectedLink), cta.Link);
+    }
+
+    // A move-in confirmation offers the two key pickup times its label names.
+    [Fact]
+    public async Task ComposeAsync_ConfirmMoveInOnSms_OffersTheMoveInTimes()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "confirm_move_in", persona: "resident", lifecycleStage: "move_in");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Equal(["9 AM", "1 PM"], ComposedOf(outcome).Message.Cta!.Options);
     }
 
     // A9: no primary_cta, at a persona and stage with no default call to action, means the
@@ -348,7 +416,7 @@ public class TemplateMessageComposerTests
 
         Assert.Equal("reschedule", result.Message.Cta!.Type);
         Assert.Equal(["today", "tomorrow"], result.Message.Cta.Options);
-        Assert.Contains("Reply to reschedule your tour. Reply 1 for today, 2 for tomorrow.", result.Message.Body);
+        Assert.Contains("Reply to reschedule your tour. Reply 1 for today; 2 for tomorrow.", result.Message.Body);
     }
 
     // The hold-out's undecided-renewal record states reply_intent, and its label spells the
@@ -362,12 +430,12 @@ public class TemplateMessageComposerTests
 
         Assert.Equal("intent_capture", result.Message.Cta!.Type);
         Assert.Equal(["yes", "no", "details"], result.Message.Cta.Options);
-        Assert.Contains("Reply to tell us if you plan to renew. Reply 1 for yes, 2 for no, 3 for details.", result.Message.Body);
+        Assert.Contains("Reply to tell us if you plan to renew. Reply 1 for yes; 2 for no; 3 for details.", result.Message.Body);
     }
 
     [Theory]
-    [InlineData("reschedule_tour", "Responde para reprogramar tu visita. Responde 1 para hoy, 2 para mañana.")]
-    [InlineData("reply_intent", "Responde para decirnos si piensas renovar. Responde 1 para sí, 2 para no, 3 para detalles.")]
+    [InlineData("reschedule_tour", "Responde para reprogramar tu visita. Responde 1 para hoy; 2 para mañana.")]
+    [InlineData("reply_intent", "Responde para decirnos si piensas renovar. Responde 1 para sí; 2 para no; 3 para detalles.")]
     public async Task ComposeAsync_SpanishSmsWithAHoldOutCallToAction_ComposesItsPhraseAndOptionsInSpanish(string primaryCta, string expectedSentences)
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: primaryCta, language: "es");
@@ -432,21 +500,22 @@ public class TemplateMessageComposerTests
         Assert.Null(result.Message.Cta!.Link);
     }
 
-    // A13: a record that states Spanish gets a Spanish message, its options
-    // included, and the notes record that the locale was applied.
+    // A13: a record that states Spanish gets a Spanish message and the notes record that the locale
+    // was applied. The tour slots are dates written the same way in every language, so only the words
+    // around them are Spanish.
     [Fact]
-    public async Task ComposeAsync_SpanishSms_ComposesInSpanishWithSpanishOptions()
+    public async Task ComposeAsync_SpanishSms_ComposesInSpanishWithTheSameDatedOptions()
     {
         ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es");
 
-        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         ComposedMessage result = ComposedOf(outcome);
 
         NextMessage message = result.Message;
         Assert.StartsWith("Hola Taylor", message.Body);
-        Assert.Equal(["jueves", "viernes"], message.Cta!.Options);
-        Assert.Contains("Responde 1 para jueves, 2 para viernes.", message.Body);
+        Assert.Equal(SampleTourSlots.TuesdayText, message.Cta!.Options);
+        Assert.Contains("Responde 1 para Dec 11, 2025, 10:00 AM; 2 para Dec 12, 2025, 10:00 AM.", message.Body);
         Assert.Contains("STOP", message.Body);
         Assert.True(result.Notes.LocaleApplied);
     }

@@ -72,6 +72,7 @@ public class RulesFileRoundTripTests
                     row.Channel,
                     row.DaysAfterFloorDay,
                     LocalTime = row.LocalTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                    row.Branch,
                 }),
             },
             AgentJsonOptions.Default);
