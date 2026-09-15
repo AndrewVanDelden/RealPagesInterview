@@ -31,14 +31,13 @@ seam per external or non-deterministic dependency, each with a real and an offli
 implementation on the day it is created, and every other interface goes as the sprint that
 touches it lands (S3); and an evaluator built before the product and proven able to fail (S4).
 
-**D1 to D31, Sprints 1 to 6 (2026-09-07 to 2026-09-08).** The contracts: the input contract,
-three required members and a default for the rest (D1); the action catalog and the planner (D2,
-D17 to D20); the output and diagnostics contracts (D3, D22 to D24); scheduling and the
-transition-day slot (D4, D21); composition, language and the call-to-action payload (D5, D25,
-D26, D29); the evaluation contract, the scorer's label
-corrections and the judge (D6, D13, D15, D30); the twelve-record file (D9, D11); gates, replay,
-reference time and log scope (D8, D10, D14, D16); the official SDK and what bounds a model call
-(D27, D28); and the step 60 run (D31). Structure is D7, the Phase 0 restart D12.
+**D1 to D31, Sprints 1 to 6 (2026-09-07 to 2026-09-08).** The contracts: the input contract
+(D1); the action catalog and planner (D2, D17 to D20); output and diagnostics (D3, D22 to D24);
+scheduling and the transition-day slot (D4, D21); composition, language and the call-to-action
+payload (D5, D25, D26, D29); the evaluation contract, label corrections and the judge (D6, D13,
+D15, D30); the twelve-record file (D9, D11); gates, replay, reference time and log scope (D8,
+D10, D14, D16); the SDK and call bounds (D27, D28); the step 60 run (D31). Structure is D7, the
+Phase 0 restart D12.
 
 **D32 to D37, latency (proposed 2026-09-08, settled in Sprint 11).** From the step 60 run's
 measurements: measure one call before tuning (D32), stop retrying a timeout (D33), retry only a
@@ -46,11 +45,10 @@ safety rejection (D34), bound one attempt (D35), define `p95_latency_ms` (D36, c
 batch concurrency (D37).
 
 **D38 to D56, Sprint 7, safety and states (2026-09-09).** One named result per safety check (D38),
-all four checks hard gates and brand style a diagnostic (D39), which checks a record cannot switch
-off (D40), what the term proxy normalizes and exempts (D41, D45, D49, D50), what earns a state
-(D42), the review queue (D43), vendor retention (D44), what an exception may say (D46, D51), a null
-inside a list (D47), and a refusal carried through the composer seam (D48). D52 to D56 are PR #24's
-review fixes.
+all four hard gates, brand style a diagnostic (D39), which checks a record cannot switch off (D40),
+what the term proxy normalizes and exempts (D41, D45, D49, D50), what earns a state (D42), the
+review queue (D43), vendor retention (D44), what an exception may say (D46, D51), a null inside a
+list (D47), a refusal carried through the composer seam (D48). D52 to D56 are PR #24's review fixes.
 
 **D57 to D59, Sprint 8, structure and narration (2026-09-09).** The consent gate merged into the
 channel selector, whose absence of a value answers both questions (D57); every interface without
@@ -61,8 +59,8 @@ a token change in.
 
 **D60 to D67, Sprint 9, the Phase 6 remainder and fault injection (2026-09-09).** Phase 6's
 check is the playbook's (D60); latency and cost defined (D61, D62); step 81 is the Phase 6 check run
-(D63); the fault-injection audit and the guarded output and input paths (D64, D65); and model spend kept
-on failed records (D66). D67 was left open. A run and debug fact records five PR #26 findings fixed.
+(D63); the fault-injection audit and guarded output/input paths (D64, D65); model spend kept on
+failed records (D66). D67 left open. A run and debug fact records five PR #26 findings fixed.
 
 **D68, Sprint 10, the decision log trim (2026-09-10).** How this file gets under playbook step
 92's two-thousand-word cap without breaking the citations that point into it from `src/`,
@@ -76,9 +74,8 @@ counts as a definition, the S numbers and archive it missed, and four lines of s
 `docs/scorecards/` (D69); `--model-call-budget-ms` lets the model answer on evaluation runs
 (D70); a line that did not parse or a record that threw is an `ERROR` row, so the synthetic set
 reads 12 of 13 (D71). Three live runs make `docs/VARIANCE.md` and pass Phase 7; code then took
-the opt-out sentence and an unstated call to action (D72, D73), and refusals fell from 33 to 0.
-The sprint also took D67, D34, D33, D35 and D37, did steps 86 to 88, and fixed three PR #28
-review findings.
+the opt-out sentence and an unstated call to action (D72, D73), refusals fell from 33 to 0. The
+sprint also took D67, D34, D33, D35, D37, did steps 86 to 88, fixed three PR #28 review findings.
 
 **D74 to D76, Sprint 12, Phase 8 documentation (2026-09-10).** The README meets step 90 and
 DESIGN.md step 91; step 95 found no secret, and the repository stays public, the owner's choice
@@ -129,7 +126,7 @@ label's link and options (D94, D100) and the action check every stated member (D
 reason and tokens are kept (D95); the prompt carries the stage's facts, the link, the reply options
 and each call to action's purpose (D96, D103); resident links are built from the record (D97); a
 no-choice call keeps its retries (D98); property facts come from `--property-data` (D101), chosen per
-call to action (D104); no move date is its own branch (D102); and D105 fixes three prompt misses.
+call to action (D104); no move date is its own branch (D102); D105 fixes three prompt misses.
 
 **PR #36 review fixes, Sprint 16 closed (2026-09-14).** A `/code-review` and an Antigravity review
 left eighteen findings: three declined against D101, A19 and no stated rule, fourteen fixed test
@@ -138,8 +135,7 @@ percent, run and debug facts. PR #36 merged into `dev` as `b3f9036`, closing the
 
 **D106 to D112, Sprint 17 (2026-09-14).** The blind set's 24 failed checks are read record by record,
 not fitted: 19 product gaps, 5 label choices (D107). D108 is taken: a tour sms offers the next two open
-slots from two days after its send date, Monday to Saturday at 10:00 by default, written as dates,
-and the scorer reads a label's weekday as a date.
+slots from two days after its send date, Monday to Saturday at 10:00 by default, written as dates.
 D109 is taken: a record that is not a prospect gets no prospect cadence or tour option, and an unknown
 call to action no link. The move timeline goes on email only (D110), tour availability only to a
 named invitation (D111), and code writes renewal terms (D112). Run and debug facts hold the evidence.
@@ -151,9 +147,14 @@ proposed code-resolved days and D116 declined it.
 
 **D116 and D117, the blind set becomes training data, Sprint 17 (2026-09-14).** The owner took D116:
 `synthetic_v2.jsonl` is fitted, and the honest number moves to the owner's larger dataset. D117 fits
-twelve rules from its labels, each collision with the hold-out separated by an input: tour slots count
-from the reference date, the short horizon is 60 days, a past date is unqualified, new stage rows
-including do-not-contact, a consented channel outside the preferences, and a state timezone fallback.
-Template result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined labels, with
+twelve rules from its labels, each collision with the hold-out separated by an input. Template
+result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined labels, with
 `sample.jsonl` and `holdout_12.jsonl` unchanged. The model runs matched it; D118 fixed two
 prompt-path bugs they exposed.
+
+**D119, PR #36's own review revisited (2026-09-15).** A second `/code-review` raised ten findings.
+Six declined: two already fixed by D111/D112, two already answered by pre-merge threads this pass
+missed, one an unearned catalog abstraction, one a saving too small to justify widening the composer
+seam. Four fixed test first: a judge-side cancellation that discarded an already-composed record, a
+case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
+a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.

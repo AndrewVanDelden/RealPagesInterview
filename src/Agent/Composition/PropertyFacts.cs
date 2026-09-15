@@ -27,7 +27,9 @@ public sealed record PropertyFacts(
 
     // Folded through PropertyLink.FoldDashes before comparing: a unit is the same identifier
     // whichever dash character it was typed with, the same rule the link segment already
-    // follows for the same field.
+    // follows for the same field. Compared case-insensitively too, the same rule
+    // PropertyData.FactsFor already applies to a property name: the record and the
+    // property-data file are authored independently, so neither's casing is authoritative.
     private static bool SameIdentifier(string? stated, string wanted) =>
-        stated is not null && string.Equals(PropertyLink.FoldDashes(stated.Trim()), PropertyLink.FoldDashes(wanted.Trim()), StringComparison.Ordinal);
+        stated is not null && string.Equals(PropertyLink.FoldDashes(stated.Trim()), PropertyLink.FoldDashes(wanted.Trim()), StringComparison.OrdinalIgnoreCase);
 }

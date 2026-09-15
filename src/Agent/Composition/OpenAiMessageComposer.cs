@@ -409,19 +409,29 @@ public sealed partial class OpenAiMessageComposer(
 
         PropertyFacts facts = found.Value;
         bool scheduleConflict = IsScheduleConflict(context.CancellationReason);
+        var lines = new List<string>();
 
-        return string.Concat(
-            kinds.Contains(PropertyFactKind.TourAvailability) && !Presence.IsAbsent(primaryCta) && !scheduleConflict
-                ? StatedLine("tour_availability", facts.TourAvailability)
-                : string.Empty,
-            kinds.Contains(PropertyFactKind.ExtendedTourHours) && scheduleConflict
-                ? StatedLine("extended_tour_hours", facts.ExtendedTourHours)
-                : string.Empty,
-            kinds.Contains(PropertyFactKind.StartingPrice) && context.ProfileOrEmpty.BudgetMax is not null
-                ? string.Concat((facts.StartingPrices ?? []).Select(price => string.Create(
+        if (kinds.Contains(PropertyFactKind.TourAvailability) && !Presence.IsAbsent(primaryCta) && !scheduleConflict)
+        {
+            lines.Add(StatedLine("tour_availability", facts.TourAvailability));
+        }
+
+        if (kinds.Contains(PropertyFactKind.ExtendedTourHours) && scheduleConflict)
+        {
+            lines.Add(StatedLine("extended_tour_hours", facts.ExtendedTourHours));
+        }
+
+        if (kinds.Contains(PropertyFactKind.StartingPrice) && context.ProfileOrEmpty.BudgetMax is not null)
+        {
+            foreach (StartingPrice price in facts.StartingPrices ?? [])
+            {
+                lines.Add(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"starting_total_monthly_price: {price.FloorPlan} ${price.TotalMonthlyPrice:0.##} as of {price.AsOf:yyyy-MM-dd} (every mandatory monthly fee included)\n")))
-                : string.Empty);
+                    $"starting_total_monthly_price: {price.FloorPlan} ${price.TotalMonthlyPrice:0.##} as of {price.AsOf:yyyy-MM-dd} (every mandatory monthly fee included)\n"));
+            }
+        }
+
+        return string.Concat(lines);
     }
 
     // The renewal offer a renewal review carries: the one the property data holds for the record's

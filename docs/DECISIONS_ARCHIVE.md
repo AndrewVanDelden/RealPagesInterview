@@ -3816,3 +3816,61 @@ after the reference date fires, and the past row still failed before the fix. Wi
 and `.\test.ps1` passed 115 and 912 tests at 100 percent line, branch and method coverage, with every
 template baseline unchanged, since neither fix touches the template composer. No model run was made. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.
+
+**D119. Four bugs PR #36's own review missed, three findings its rationale already answered (taken
+2026-09-15).** Question: a `/code-review` pass against merged PR #36 (Sprint 16) raised ten findings;
+which are real and fixed, which are already fixed elsewhere, and which are declined? Findings: (1)
+`CliRunner.RunRecordAsync`'s judge call caught every exception except `OperationCanceledException`, so a
+judge-side cancellation (a completion client's own timeout, or the batch shutting down mid-call) escaped
+uncaught and discarded a record's already-composed, already-validated output instead of costing only the
+grade, unlike the ordinary-fault case the same catch already handled correctly; (2) `tour_availability`
+stated on a schedule-conflict cancellation and (3) `lease_end_date` always stated: both real in PR #36's
+merged state, both already fixed by D111 and D112 in the very next commit after merge, before this
+review ran; (4) `PropertyFacts.SameIdentifier` compared unit/offer id ordinally (case-sensitive) while
+`PropertyData.FactsFor` compares property names `OrdinalIgnoreCase`, so a record and an independently
+authored `--property-data` file differing only in case silently failed to match; (5) `LeasingMessageAgent`
+computing `renewal_offer_loaded` without the composer's `FactKinds` gate: declined, D101 defines the
+state as "found in the property data," not "and the resolved call to action states it" — the same
+sentence an earlier, already-declined review thread on this exact line already quoted; (6) `PropertyLink.
+FoldDashes` "duplicating" `SafetyTextNormalizer.FoldHyphens`: declined, an earlier review thread on this
+exact pair (before PR #36 merged) already established they are deliberately different-scoped folds (four
+explicit code points for term-match bypass detection vs. the full Unicode Pd category for identifier
+matching) and that `PropertyFacts.SameIdentifier` already calls the one fold for its purpose; this review
+missed that established rationale; (7) `DescribePropertyFacts`'s per-kind eligibility conditions hand-
+written inline rather than catalog-driven: the `PropertyFactKind` enum's own comment already states this
+split is deliberate (which kinds a call to action can carry is the catalog's; whether a record's own
+input calls for one is the composer's), and no second consumer would read a generalized predicate table,
+so a full catalog generalization is declined as an unearned abstraction; its narrower complaint (nested
+ternary-in-`string.Concat` is harder to trace than the file's flat `DescribeStageFacts` pattern) is
+taken as a readability rewrite to `if` blocks appending to a list, with no behavior change; (8) five
+near-identical `--replay` mutual-exclusivity guards in `CliRunner.RunAsync`, past the repo's own extract-
+on-third-occurrence convention: taken, collapsed into one `RefuseIfCombinedWithReplay` helper each guard
+calls with its own message; (9) property facts and the property link rebuilt from scratch on each of
+`ValidatingMessageComposer`'s up to two compose attempts: declined, fixing it would mean threading
+`OpenAiMessageComposer`-specific precomputed values through the composer-agnostic `IMessageComposer`
+seam every composer and test fake implements, for a saving of microseconds nested inside a network call
+that costs hundreds of milliseconds to seconds; (10) `ScoredRun` built once for the judge call and again,
+equal, for the evaluator: taken, built once in `RunRecordAsync` and carried on the new
+`RecordRun.Completed.ScoredRun` member, which `RecordFold.AddAsync` now reads instead of reconstructing.
+Scopes: `CliRunner`, `RecordRun`, `RecordFold`, `PropertyFacts`, `OpenAiMessageComposer`, and their
+tests. Assumptions: none beyond D101, D111, D112 and the pre-merge PropertyLink/PropertyFacts and
+LeasingMessageAgent review threads, all cited above. Taken on the owner's instruction to fix the findings
+"including the gemini ones" of 2026-09-15.
+
+**Run and debug fact, D119 built (2026-09-15).** On `sprint-17`, test first for each of (1), (4), (8) and
+(10). (1): a new `CancellingJudge` test double (`GradeAsync` throws `OperationCanceledException`
+unconditionally) and `RunAsync_JudgeThrowsCancellation_TheRecordsOwnOutputSurvivesAndLaterRecordsStillRun`
+first failed with the injected `OperationCanceledException` escaping `RunAsync` uncaught; removing the
+`when (ex is not OperationCanceledException)` filter on the judge call's catch (and only that catch, not
+`agent.RunAsync`'s own, which still must not swallow a cancellation the record's real work never
+finished) made it pass. (4): `RenewalOfferFor_IdentifiersWrittenWithDifferentCase_StillMatch`'s four
+cases first failed on `StringComparison.Ordinal`; changing `SameIdentifier` to `OrdinalIgnoreCase` (after
+the existing dash fold) made all four pass. (8) and (10) are behavior-preserving refactors with no new
+branch, proved by the unchanged existing coverage instead of a new test: extracting
+`RefuseIfCombinedWithReplay` and threading one `ScoredRun` through `RecordRun.Completed` both left every
+existing assertion (five replay-guard messages, the judge and diagnostics rows) passing unchanged. (7)'s
+`DescribePropertyFacts` rewrite is likewise behavior-preserving, proved the same way. `.\test.ps1` passed
+116 and 916 tests at 100 percent line, branch and method coverage. Every finding not listed as fixed here
+was replied to and its thread resolved on PR #36 with the rationale above; ReportFindings was re-called
+with outcomes. No model run was made; nothing here changes a composer's or the scorer's on-label
+behavior for a record that was never one of the four bugs' failure scenarios.

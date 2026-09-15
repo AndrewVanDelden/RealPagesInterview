@@ -2077,6 +2077,47 @@ public class CliRunnerTests
         }
     }
 
+    // The same per-record isolation as the throw above, but for a cancellation the run never
+    // asked for: the pipeline already produced t1's real output before the judge ever ran, so a
+    // judge call ending in OperationCanceledException (a completion client's own timeout, not
+    // the caller's token) must not discard it or stop t2 from processing behind it.
+    [Fact]
+    public async Task RunAsync_JudgeThrowsCancellation_TheRecordsOwnOutputSurvivesAndLaterRecordsStillRun()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: new CancellingJudge());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            Assert.Equal(2, output.RootElement.GetArrayLength());
+            Assert.False(output.RootElement[0].GetProperty("next_message").ValueKind is JsonValueKind.Null);
+            Assert.False(output.RootElement[1].GetProperty("next_message").ValueKind is JsonValueKind.Null);
+
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("t1", diagnostics.RootElement[0].GetProperty("task_id").GetString());
+            Assert.Equal("t2", diagnostics.RootElement[1].GetProperty("task_id").GetString());
+            Assert.Equal(JsonValueKind.Null, diagnostics.RootElement[0].GetProperty("judge").ValueKind);
+            Assert.Equal(JsonValueKind.Null, diagnostics.RootElement[1].GetProperty("judge").ValueKind);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+        }
+    }
+
     // A replay has no record runs to grade inside, so it grades the scored rows after the fact
     // through the same per-record call and prints the same reason and cost lines.
     [Fact]

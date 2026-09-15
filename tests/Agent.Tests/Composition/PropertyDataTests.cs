@@ -76,4 +76,19 @@ public class PropertyDataTests
 
         Assert.True(facts.RenewalOfferFor(recordUnit, null).HasValue);
     }
+
+    // The record and the property-data file are authored independently, the same reason
+    // PropertyData.FactsFor matches a property name case-insensitively: a unit or offer id is the
+    // same identifier whichever case it was typed with.
+    [Theory]
+    [InlineData("A-204", "a-204", null, null)]
+    [InlineData("a-204", "A-204", null, null)]
+    [InlineData(null, null, "REN-A204-2026", "ren-a204-2026")]
+    [InlineData(null, null, "ren-a204-2026", "REN-A204-2026")]
+    public void RenewalOfferFor_IdentifiersWrittenWithDifferentCase_StillMatch(string? offerUnit, string? recordUnit, string? offerId, string? recordOfferId)
+    {
+        var facts = new PropertyFacts("Lakeview Commons", RenewalOffers: [new RenewalOffer(Unit: offerUnit, OfferId: offerId)]);
+
+        Assert.True(facts.RenewalOfferFor(recordUnit, recordOfferId).HasValue);
+    }
 }

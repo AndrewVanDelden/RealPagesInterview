@@ -106,45 +106,40 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
-        if (outputPath is not null && replayPath is not null)
+        if (RefuseIfCombinedWithReplay(outputPath, replayPath, "--output and --replay are mutually exclusive: pass exactly one.") is int outputGuard)
         {
-            error.WriteLine("--output and --replay are mutually exclusive: pass exactly one.");
-            return CliExitCodes.UsageError;
+            return outputGuard;
         }
 
         // A replay scores an output file that already exists and runs no validator, so it has
         // nothing to queue. An empty file from a replay would read as a clean run rather than as
         // a question that was never asked.
-        if (reviewQueuePath is not null && replayPath is not null)
+        if (RefuseIfCombinedWithReplay(reviewQueuePath, replayPath, "--review-queue needs a run that validates: it cannot be combined with --replay.") is int reviewQueueGuard)
         {
-            error.WriteLine("--review-queue needs a run that validates: it cannot be combined with --replay.");
-            return CliExitCodes.UsageError;
+            return reviewQueueGuard;
         }
 
         // A replay scores a file that already exists and runs no planner or scheduler, so a
         // rules file could change nothing it reports. Refused, so a replay never reads as
         // scored under rules it did not use.
-        if (rulesPath is not null && replayPath is not null)
+        if (RefuseIfCombinedWithReplay(rulesPath, replayPath, "--rules needs a run that plans: it cannot be combined with --replay.") is int rulesGuard)
         {
-            error.WriteLine("--rules needs a run that plans: it cannot be combined with --replay.");
-            return CliExitCodes.UsageError;
+            return rulesGuard;
         }
 
         // A replay composes nothing and loads no offer, so property data could change nothing it
         // reports. Refused for the same reason --rules is.
-        if (propertyDataPath is not null && replayPath is not null)
+        if (RefuseIfCombinedWithReplay(propertyDataPath, replayPath, "--property-data needs a run that composes: it cannot be combined with --replay.") is int propertyDataGuard)
         {
-            error.WriteLine("--property-data needs a run that composes: it cannot be combined with --replay.");
-            return CliExitCodes.UsageError;
+            return propertyDataGuard;
         }
 
         // A replay runs no agent, so it has no per-record AgentDiagnostics or IngestNotes to
         // write: ReplayAsync takes no diagnostics stream. Refused rather than silently never
         // opening the file, for the same reason every other flag a replay cannot honor is.
-        if (diagnosticsPath is not null && replayPath is not null)
+        if (RefuseIfCombinedWithReplay(diagnosticsPath, replayPath, "--diagnostics needs a run that produces per-record diagnostics: it cannot be combined with --replay.") is int diagnosticsGuard)
         {
-            error.WriteLine("--diagnostics needs a run that produces per-record diagnostics: it cannot be combined with --replay.");
-            return CliExitCodes.UsageError;
+            return diagnosticsGuard;
         }
 
         // A live run's judge verdicts reach the record only through the eval report or the
@@ -579,6 +574,11 @@ public sealed class CliRunner(
 
         log.LogInformation("Record processed in {ElapsedMs}ms.", latencyMs);
 
+        // Built once and carried on RecordRun.Completed: the judge call below and the fold's own
+        // scoring pass both need the same case/output/violation-count/latency view of this record,
+        // so there is one ScoredRun for it instead of an equal one built again at each use.
+        var scoredRun = new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs);
+
         // With --judge the record is graded here, inside its own run and log scope and after its
         // latency is measured, so the grade's call is in neither the latency nor another record's
         // lines. The verdict rides the result to the fold, the one writer of the diagnostics row
@@ -589,21 +589,25 @@ public sealed class CliRunner(
         // produced before the judge ever ran, so it must not discard that output or stop a later
         // record from running behind it. The verdict is simply not measured; the caught exception
         // is not attached to the entry for the same reason SemanticJudge.GradeAsync's own catch
-        // gives (step 68).
+        // gives (step 68). Unlike agent.RunAsync's own catch above, cancellation is not excluded
+        // here: agent.RunAsync already finished producing this record's real output before the
+        // judge ever ran, so a cancellation the judge call ends in (a completion client's own
+        // timeout, or the batch shutting down while this call is in flight) is still just a judge
+        // fault from this output's point of view, not evidence the output itself was never made.
         JudgeVerdict? judgement = null;
         if (judge is not null)
         {
             try
             {
-                judgement = await judge.GradeAsync(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs), cancellationToken);
+                judgement = await judge.GradeAsync(scoredRun, cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 log.LogError(ex, "Judge call failed; the record's own output is unaffected.");
             }
         }
 
-        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, judgement);
+        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, scoredRun, judgement);
     }
 
     // Re-scores an existing output file against --input without running the agent. The output
@@ -875,6 +879,21 @@ public sealed class CliRunner(
     {
         int index = Array.IndexOf(cliArgs, name);
         return index >= 0 && index + 1 < cliArgs.Length ? cliArgs[index + 1] : null;
+    }
+
+    // The one shape every "this flag cannot be combined with --replay" guard shares: refused with
+    // its own message when both are present, and not evaluated otherwise. Each call site keeps its
+    // own comment for why that particular flag is refused; this only carries the check, the write
+    // and the exit code the five of them would otherwise repeat.
+    private int? RefuseIfCombinedWithReplay(string? flagValue, string? replayPath, string message)
+    {
+        if (flagValue is null || replayPath is null)
+        {
+            return null;
+        }
+
+        error.WriteLine(message);
+        return CliExitCodes.UsageError;
     }
 
     // The judge model is pinned separately from the composer's, so the two are not the same
