@@ -3830,7 +3830,7 @@ review ran; (4) `PropertyFacts.SameIdentifier` compared unit/offer id ordinally 
 `PropertyData.FactsFor` compares property names `OrdinalIgnoreCase`, so a record and an independently
 authored `--property-data` file differing only in case silently failed to match; (5) `LeasingMessageAgent`
 computing `renewal_offer_loaded` without the composer's `FactKinds` gate: declined, D101 defines the
-state as "found in the property data," not "and the resolved call to action states it" — the same
+state as "found in the property data," not "and the resolved call to action states it": the same
 sentence an earlier, already-declined review thread on this exact line already quoted; (6) `PropertyLink.
 FoldDashes` "duplicating" `SafetyTextNormalizer.FoldHyphens`: declined, an earlier review thread on this
 exact pair (before PR #36 merged) already established they are deliberately different-scoped folds (four
