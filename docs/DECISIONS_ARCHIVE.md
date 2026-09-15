@@ -3797,5 +3797,22 @@ leading number and its punctuation ("1. ", "2) ") before code numbers it, so the
 code-owned options gets the language set's generic list instead of the model's; (c) leave both.
 Recommendation: (a): both are defects in text code already owns, and the model's own option wording is
 kept where no code-owned list exists. Scopes: `OpenAiMessageComposer` and its tests. Evidence: the two
-bodies. Assumptions: A10, A18. Open. The
+bodies. Assumptions: A10, A18. Open.
+
+**D118 addendum, taken: option (a) (2026-09-14).** The owner took (a). The model composer reads no clock,
+so the agent passes the record's local reference date to the composer beside the tour slots, as an
+optional trailing parameter every composer accepts and the compose-validate loop forwards; with no date
+given the timeline instruction keeps its old rule. A leading number is stripped from a model option only
+when one or two digits are followed by a period, a closing parenthesis or a hyphen and then a space, so
+an option such as "10:00 AM" or "1.5 miles" is left whole. Taken on the owner's instruction of
+2026-09-14.
+
+**Run and debug fact, D118 built (2026-09-14).** On `sprint-17`, test first. The timeline test first
+failed to build on the missing `referenceDate` parameter; with the parameter added to the interface,
+both composers, the compose-validate loop, the agent's call and the eleven test doubles, and no behavior
+behind it, both D118 tests failed at runtime. The timeline test's rows were first written the wrong way
+round, a move date equal to the reference date marked as past; they were corrected to the rule, on or
+after the reference date fires, and the past row still failed before the fix. With the fix both passed,
+and `.\test.ps1` passed 115 and 912 tests at 100 percent line, branch and method coverage, with every
+template baseline unchanged, since neither fix touches the template composer. No model run was made. The
 decisions' options and recommendations stand; their evidence sentences are corrected by this fact.

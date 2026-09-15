@@ -993,6 +993,46 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("Mention the prospect's move timeline", fakeClient.LastUserPrompt);
     }
 
+    // A move date already past is a timeline to qualify again, not one to repeat, so an email is told
+    // to mention the timeline only when the move date is on or after the run's reference date; a caller
+    // that gives no reference date keeps the instruction.
+    [Theory]
+    [InlineData("2026-01-10", false)]
+    [InlineData("2026-01-09", true)]
+    [InlineData(null, true)]
+    public async Task ComposeAsync_ProspectEmail_MentionsTheTimelineOnlyWhenTheMoveDateIsNotPast(string? referenceDate, bool expectsTimeline)
+    {
+        const string json = """{"subject":"Tour","body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { MoveDateTarget = new DateOnly(2026, 1, 9) } };
+
+        await composer.ComposeAsync(
+            prospectCase,
+            CommunicationChannel.Email,
+            referenceDate: referenceDate is null ? null : DateOnly.Parse(referenceDate, System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.Equal(expectsTimeline, fakeClient.LastUserPrompt!.Contains("Mention the prospect's move timeline", StringComparison.Ordinal));
+    }
+
+    // The model's options for a call to action with no code-owned list sometimes arrive already
+    // numbered, and code numbers them, so a leading "1. ", "2) " or "3 - " is stripped first; a number
+    // that is the option itself, such as a time or a distance, is kept.
+    [Fact]
+    public async Task ComposeAsync_ModelOptionsAlreadyNumbered_AreStrippedBeforeCodeNumbersThem()
+    {
+        const string json = """{"subject":null,"body":"Hi Dana.","cta_type":"start_application","cta_options":["1. Start Application","2) Ask a Question"," 3 - Schedule a Follow-Up","10:00 AM","1.5 miles"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "start_application", lifecycleStage: "toured", includeOptOutInstructions: false);
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        NextMessage message = ComposedOf(outcome).Message;
+        Assert.Equal(["Start Application", "Ask a Question", "Schedule a Follow-Up", "10:00 AM", "1.5 miles"], message.Cta!.Options);
+        Assert.Equal("Hi Dana. Reply 1 for Start Application; 2 for Ask a Question; 3 for Schedule a Follow-Up; 4 for 10:00 AM; 5 for 1.5 miles.", message.Body);
+    }
+
     // An sms carries its call to action and its reply options and nothing more, since every character
     // past one segment is a second billed segment, so a prospect's move date stays data there.
     [Fact]

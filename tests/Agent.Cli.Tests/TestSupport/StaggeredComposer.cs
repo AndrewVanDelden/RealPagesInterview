@@ -24,7 +24,8 @@ internal sealed class StaggeredComposer(string[] taskIdsInInputOrder, bool throw
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null)
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         // A record composes a second time only after its first compose returned, which needs
         // every record to have started, so the count reaches the batch size on the last

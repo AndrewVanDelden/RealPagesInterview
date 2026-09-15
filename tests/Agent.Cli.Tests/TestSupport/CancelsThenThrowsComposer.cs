@@ -14,7 +14,8 @@ internal sealed class CancelsThenThrowsComposer(CancellationTokenSource runCance
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null)
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         runCancellation.Cancel();
         throw new InvalidOperationException($"Injected fault for '{prospectCase.TaskId}'.");

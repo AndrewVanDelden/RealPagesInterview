@@ -14,9 +14,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 ## Current phase
 
 Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 908 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner takes or declines D118, then the larger dataset is run once, unseen, as the honest number.
-Open decisions: D118.
+Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 912 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
+Next step: the owner's larger dataset is run once, unseen, as the honest number.
+Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
 proof that passed it, the tallies it moved and any exception taken belong in the paragraphs
@@ -155,5 +155,5 @@ twelve rules from its labels, each collision with the hold-out separated by an i
 from the reference date, the short horizon is 60 days, a past date is unqualified, new stage rows
 including do-not-contact, a consented channel outside the preferences, and a state timezone fallback.
 Template result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined labels, with
-`sample.jsonl` and `holdout_12.jsonl` unchanged. The model runs matched it; D118 proposes two
-prompt-path fixes they exposed.
+`sample.jsonl` and `holdout_12.jsonl` unchanged. The model runs matched it; D118 fixed two
+prompt-path bugs they exposed.

@@ -14,7 +14,8 @@ internal sealed class ThrowingComposer(string taskIdToFail) : IMessageComposer
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null)
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         if (prospectCase.TaskId == taskIdToFail)
         {

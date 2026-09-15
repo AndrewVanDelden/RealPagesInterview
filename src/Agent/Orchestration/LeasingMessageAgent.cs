@@ -147,7 +147,7 @@ public sealed class LeasingMessageAgent(
         // validated below like any draft without the loop's verdict, so step 5 is the one
         // place that names the violations; a composition that produced no draft at all is the
         // only one that short-circuits here, because there is nothing to validate.
-        ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken, tourSlots: tourSlots);
+        ComposeOutcome composeOutcome = await composer.ComposeAsync(prospectCase, channel, cancellationToken: cancellationToken, tourSlots: tourSlots, referenceDate: referenceDate);
 
         // What the run spent is read once, here, and reaches every diagnostics this method
         // builds below. It is a fact about the record and not about a message, so unlike the

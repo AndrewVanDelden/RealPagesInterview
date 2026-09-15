@@ -17,6 +17,7 @@ internal sealed class RewritingComposer(IMessageComposer inner) : IMessageCompos
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null) =>
-        RewriteOutcome(await inner.ComposeAsync(RewriteCase(prospectCase), channel, priorViolations, cancellationToken, tourSlots));
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null) =>
+        RewriteOutcome(await inner.ComposeAsync(RewriteCase(prospectCase), channel, priorViolations, cancellationToken, tourSlots, referenceDate));
 }

@@ -15,7 +15,8 @@ internal sealed class CancelsWhileComposingComposer(CancellationTokenSource runC
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null)
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         runCancellation.Cancel();
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);

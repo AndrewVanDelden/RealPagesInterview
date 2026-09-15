@@ -10,7 +10,8 @@ internal sealed class ThrowsOnCancellationComposer : IMessageComposer
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<DateTimeOffset>? tourSlots = null)
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         throw new InvalidOperationException("Should have thrown for cancellation before reaching here.");
