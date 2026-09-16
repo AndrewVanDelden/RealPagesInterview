@@ -92,6 +92,17 @@ public class TemplateMessageComposerTests
         Assert.Contains("STOP", result.Message.Body);
     }
 
+    // The greeting uses the name without the emoji and whitespace around it.
+    [Fact]
+    public async Task ComposeAsync_FirstNamePaddedWithAnEmoji_GreetsTheNameAlone()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "  🙂 Sam 🙂 ");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.StartsWith("Hi Sam!", ComposedOf(outcome).Message.Body);
+    }
+
     [Fact]
     public async Task ComposeAsync_AbsentPropertyName_ComposesWithoutAPropertyFact()
     {

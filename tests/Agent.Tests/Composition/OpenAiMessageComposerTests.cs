@@ -116,6 +116,21 @@ public class OpenAiMessageComposerTests
         Assert.Contains("property: unknown", fakeClient.LastUserPrompt);
     }
 
+    // The model is given the greeting name, without the emoji and whitespace around the first name,
+    // so it cannot echo them into the greeting.
+    [Fact]
+    public async Task ComposeAsync_UserPrompt_FirstNamePaddedWithAnEmoji_GivesTheNameAlone()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "  \U0001F642 Sam \U0001F642 ");
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("first_name: Sam\n", fakeClient.LastUserPrompt);
+    }
+
     // A blank (whitespace-only) value is absent too (Agent.Common.Presence), the same rule
     // TemplateMessageComposer applies - not a literal blank fact the model could read as a name.
     [Fact]

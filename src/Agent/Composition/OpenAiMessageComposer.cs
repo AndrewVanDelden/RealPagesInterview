@@ -375,7 +375,7 @@ public sealed partial class OpenAiMessageComposer(
             $"language: {Describe(context.Language)}\n" +
             $"persona: {Describe(prospectCase.Persona)}\n" +
             $"lifecycle_stage: {Describe(prospectCase.LifecycleStage)}\n" +
-            $"first_name: {Describe(profile.FirstName)}\n" +
+            $"first_name: {Describe(profile.GreetingName)}\n" +
             $"property: {Describe(context.PropertyName)}\n" +
             $"stated_interest: {interest}\n" +
             $"move_date_target: {DescribeDate(context.MoveDateTarget)}\n" +

@@ -44,6 +44,15 @@ public class IngestNotesTests
         Assert.Contains("consent", notes.DefaultedFields);
     }
 
+    // A first name that is only an emoji names no one, so it is a defaulted input like an absent one.
+    [Fact]
+    public void Describe_FirstNameIsOnlyAnEmoji_NamesTheFirstName()
+    {
+        IngestNotes notes = IngestNotes.Describe(Parse(RequiredOnlyLine.Replace("\"channel_preferences\"", "\"input\":{\"profile\":{\"first_name\":\"🙂\"}},\"channel_preferences\"")));
+
+        Assert.Contains("input.profile.first_name", notes.DefaultedFields);
+    }
+
     [Fact]
     public void Describe_OnlyRequiredMembers_NamesEveryDefaultedDecisionInput()
     {

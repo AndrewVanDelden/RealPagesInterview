@@ -27,7 +27,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;
-        string? firstName = Present(profile.FirstName);
+        string? firstName = profile.GreetingName;
         string? propertyName = Present(context.PropertyName);
         CallToAction callToAction = CallToActionCatalog.Resolve(
             prospectCase.ConstraintsOrEmpty.PrimaryCta,
