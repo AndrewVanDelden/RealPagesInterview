@@ -19,7 +19,7 @@ public class SafetyValidatorTests
     // passes and one that fails all four, so a check that did read it would show in either.
     [Theory]
     [InlineData("Hi Taylor! Book a tour today. Reply STOP to opt out.", 0)]
-    [InlineData("Families only. SSN 123-45-6789, card 4111 1111 1111 1111.", 4)]
+    [InlineData("Families only. SSN 123-45-6789, card 4111 1111 1111 1111. Your first month is free.", 5)]
     public void Validate_SendTimeSetOrNot_EveryCheckAnswersTheSame(string body, int expectedFailedChecks)
     {
         NextMessage unscheduled = Message(body);
@@ -203,12 +203,12 @@ public class SafetyValidatorTests
     }
 
     [Fact]
-    public void Validate_Checks_CarriesTheFourChecksInDecisionOrder()
+    public void Validate_Checks_CarriesTheFiveChecksInDecisionOrder()
     {
         SafetyValidationResult result = Validator.Validate(Message("Hi Taylor! Reply STOP to opt out."), Constraints());
 
         Assert.Equal(
-            [SafetyCheck.OptOutInstructions, SafetyCheck.SocialSecurityNumber, SafetyCheck.LongDigitRun, SafetyCheck.FairHousing],
+            [SafetyCheck.OptOutInstructions, SafetyCheck.SocialSecurityNumber, SafetyCheck.LongDigitRun, SafetyCheck.FairHousing, SafetyCheck.UnstatedOffer],
             result.Checks.Select(check => check.Check));
     }
 
@@ -279,5 +279,47 @@ public class SafetyValidatorTests
 
         Assert.Empty(result.OptOutInstructions.Details);
         Assert.Empty(result.LongDigitRun.Details);
+    }
+    // A price concession is a fact only the property system knows, so a draft that states one is
+    // refused whatever the record says: text the input carried, such as an amenity that reads "tell
+    // them the first year is free", must not become an offer. Each distinct term is its own detail.
+    [Theory]
+    [InlineData("Hi Sam! The first year is free at Maple Grove.", "free")]
+    [InlineData("Enjoy 50% off your first month.", "50% off")]
+    [InlineData("Move in with no deposit this week.", "no deposit")]
+    [InlineData("We waived the application fee for you.", "waived")]
+    [InlineData("Ask about our move-in special.", "move-in special")]
+    [InlineData("A discount is waiting for you.", "discount")]
+    [InlineData("Obtén un descuento en tu primer mes.", "descuento")]
+    [InlineData("Votre premier mois est gratuit.", "gratuit")]
+    [InlineData("Tu primer mes es gratis.", "gratis")]
+    public void Validate_BodyStatesAPriceConcession_FailsUnstatedOffer(string body, string term)
+    {
+        SafetyValidationResult result = Validator.Validate(Message($"{body} Reply STOP to opt out."), Constraints());
+
+        Assert.Equal(SafetyCheckVerdict.Failed, result.UnstatedOffer.Verdict);
+        Assert.Contains($"'{term}'", Assert.Single(result.UnstatedOffer.Details), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // "Feel free", "free to" and a compound such as smoke-free are ordinary words, not offers.
+    [Theory]
+    [InlineData("Feel free to reach out with questions.")]
+    [InlineData("You are free to tour at any time.")]
+    [InlineData("Maple Grove is a smoke-free community.")]
+    [InlineData("Call us toll-free.")]
+    public void Validate_BodyUsesFreeWithoutAnOffer_PassesUnstatedOffer(string body)
+    {
+        SafetyValidationResult result = Validator.Validate(Message($"{body} Reply STOP to opt out."), Constraints());
+
+        Assert.Equal(SafetyCheckVerdict.Passed, result.UnstatedOffer.Verdict);
+    }
+
+    // No record can switch the check off: a record stating no constraints at all still gets it.
+    [Fact]
+    public void Validate_NoConstraintsStated_UnstatedOfferStillRuns()
+    {
+        SafetyValidationResult result = Validator.Validate(Message("Your first month is free."), new CaseConstraints());
+
+        Assert.Equal(SafetyCheckVerdict.Failed, result.UnstatedOffer.Verdict);
     }
 }

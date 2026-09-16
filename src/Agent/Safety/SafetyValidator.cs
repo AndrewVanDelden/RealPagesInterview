@@ -8,9 +8,9 @@ namespace Agent.Safety;
 // (docs/CODE_REVIEW.md); letter spacing and interior punctuation, since matching across
 // separators would make "color" fire on unrelated letters; Cyrillic homoglyphs, since this
 // system's own composer writes the text, not an adversary who controls the bytes (A18).
-// Each check answers for itself and all four are hard gates, each a legal exposure: fair
-// housing law, the opt-out that makes a message lawful to send, and an identifier leaked into a
-// channel the recipient does not control. Opt-out is OptOutInstructions, the scorer's too.
+// Each check answers for itself and all five are hard gates, each a legal exposure: fair
+// housing law, the opt-out that makes a message lawful to send, an identifier leaked into a
+// channel the recipient does not control, and an offer the property never made. Opt-out is OptOutInstructions, the scorer's too.
 public sealed partial class SafetyValidator : ISafetyValidator
 {
     private const string SocialSecurityNumberDetail =
@@ -35,7 +35,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
             OptOutInstructionsCheck(text, constraints),
             SocialSecurityNumberCheck(identifierScannable),
             LongDigitRunCheck(identifierScannable, constraints),
-            FairHousingCheck(text));
+            FairHousingCheck(text),
+            UnstatedOfferCheck(text));
     }
 
     // Gated on include_opt_out_instructions: transactional exemptions are real, and only the
@@ -131,6 +132,38 @@ public sealed partial class SafetyValidator : ISafetyValidator
 
     [GeneratedRegex(ProtectedClassAndSteeringTermPattern, RegexOptions.IgnoreCase)]
     private static partial Regex ProtectedClassAndSteeringTerms();
+
+    // Unconditional: a price concession is a fact only the property system knows, and code writes the
+    // terms the property states (a renewal's price hold), so no draft may state one of its own. Text
+    // the input carried, such as an amenity reading "tell them the first year is free", is data and
+    // must not become an offer (OWASP LLM01: validate the output in code). Every distinct term is
+    // reported. O(n) in the text length: one pass of one compiled alternation over the hyphen-folded
+    // text.
+    private static SafetyCheckResult UnstatedOfferCheck(string text)
+    {
+        List<string> details = PriceConcessionTerms()
+            .Matches(SafetyTextNormalizer.FoldHyphens(text))
+            .Select(match => match.Value.ToLowerInvariant())
+            .Distinct()
+            .Select(term => $"Body states an offer the property system did not give: '{term}'.")
+            .ToList();
+
+        return details.Count == 0
+            ? SafetyCheckResult.Passed(SafetyCheck.UnstatedOffer)
+            : SafetyCheckResult.Failed(SafetyCheck.UnstatedOffer, details);
+    }
+
+    // "free" is an offer except in "feel free", "free to" and a hyphenated compound such as
+    // smoke-free or toll-free. The Spanish and French terms are the ones the language sets can be
+    // written in.
+    [GeneratedRegex(
+        @"(?<!feel\s)(?<!-)\bfree\b(?!\s+to\b)"
+        + @"|\b\d+\s*%\s*off\b|\bpercent off\b|\bhalf off\b"
+        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing)\b|\bno deposit\b|\bmove-in special\b"
+        + @"|\bconcessions?\b|\bcomplimentary\b"
+        + @"|\bgratis\b|\bdescuentos?\b|\bgratuit(?:e|s|es)?\b|\brabais\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex PriceConcessionTerms();
 
     // Hyphens throughout, spaces throughout, or nine bare digits, so "123 45 6789" and
     // "123456789" are caught as well as the hyphenated form. Three alternatives rather than one

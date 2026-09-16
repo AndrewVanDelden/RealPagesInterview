@@ -102,7 +102,7 @@ sets it. Never read, print, or write the value.
 - The output file carries no task id, so `--replay` pairs rows with parsed records by position
   and refuses a count mismatch with exit code 1 (D14).
 - Only `CliRunner` opens the `TaskId` log scope (D16). Do not add one in the library.
-- Each safety check answers for itself (D38) and all four are hard gates (D39). D40 says which
+- Each safety check answers for itself (D38) and all five are hard gates (D39, D130). D40 says which
   a record may switch off; the exempt lists are spans, never terms (D41, D45).
 - Every action type the program can emit is a constant on `ActionTypes`, and
   `ActionCatalog.Create` refuses a row whose type is not in `ActionTypes.All`, so a new action

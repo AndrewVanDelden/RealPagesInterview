@@ -22,7 +22,8 @@ public class LeasingMessageAgentTests
         new(SafetyCheckResult.NotApplicable(SafetyCheck.OptOutInstructions),
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
-            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
+            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]),
+            SafetyCheckResult.Passed(SafetyCheck.UnstatedOffer));
 
     // The defect per-check results fixed: fair_housing_check_passed was violations.Count == 0, so
     // this record recorded a fair-housing failure that never happened.
@@ -30,7 +31,8 @@ public class LeasingMessageAgentTests
         new(SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]),
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
-            SafetyCheckResult.Passed(SafetyCheck.FairHousing));
+            SafetyCheckResult.Passed(SafetyCheck.FairHousing),
+            SafetyCheckResult.Passed(SafetyCheck.UnstatedOffer));
 
     // SampleProspectCases.Minimal asserts no state, so a test that wants a verdict in the map
     // has to say which state the record asserts. The constraints come along unchanged: the
@@ -702,7 +704,8 @@ public class LeasingMessageAgentTests
             SafetyCheckResult.Failed(SafetyCheck.OptOutInstructions, ["Missing required opt-out instructions."]),
             SafetyCheckResult.Passed(SafetyCheck.SocialSecurityNumber),
             SafetyCheckResult.NotApplicable(SafetyCheck.LongDigitRun),
-            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]));
+            SafetyCheckResult.Failed(SafetyCheck.FairHousing, ["Body contains protected-class or steering language: 'disability'."]),
+            SafetyCheckResult.Passed(SafetyCheck.UnstatedOffer));
         LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(new FixedSafetyValidator(twoFailures));
 
         AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
