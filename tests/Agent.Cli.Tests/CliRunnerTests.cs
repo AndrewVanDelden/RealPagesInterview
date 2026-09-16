@@ -1303,6 +1303,60 @@ public class CliRunnerTests
         }
     }
 
+    // A Windows extended-length path is not normalized by Path.GetFullPath, so a parent named
+    // by appending ".." would be taken as a real folder name: the run would create a folder
+    // named after the output file and fail on it. Such a path whose folder exists writes its file.
+    [Fact]
+    public async Task RunAsync_OutputPathIsExtendedLength_WritesTheFile()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string extendedOutputPath = @"\\?\" + outputPath;
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", extendedOutputPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("next_message", await File.ReadAllTextAsync(outputPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // A drive root has no parent folder to create, and is not a file that can be opened: it is
+    // one clean "Could not open" line and exit code 1, never an unhandled exception.
+    [Fact]
+    public async Task RunAsync_OutputPathIsADriveRoot_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = Path.GetPathRoot(Path.GetTempPath())!;
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --output '{outputPath}'", errorWriter.ToString());
+            Assert.DoesNotContain("Injected fault", errorWriter.ToString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+        }
+    }
+
     // Every other bad-argument case (unknown --composer, missing API key) maps to a clean
     // UsageError + stderr message rather than crashing with a raw unhandled exception -
     // --log-file previously didn't, since FileLoggerProvider's StreamWriter construction

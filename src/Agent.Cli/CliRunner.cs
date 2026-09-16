@@ -820,13 +820,19 @@ public sealed class CliRunner(
 
     // Every file the run writes creates the folders above it, so a first run into a folder that
     // does not exist yet writes its files instead of failing on a folder the operator has to make
-    // by hand. Combining with ".." and taking the full path names the parent for any path,
-    // including a drive root, where Path.GetDirectoryName returns null. A parent that cannot be
-    // created, such as one whose name is an existing file, throws IOException, which the open
-    // guard around every caller turns into the flag's own "Could not open" line and exit code 1.
+    // by hand. The parent is read with Path.GetDirectoryName rather than by appending "..", which
+    // an extended-length path (\\?\) keeps as a literal folder name. A drive root has no parent,
+    // so nothing is created and the open that follows fails. A parent that cannot be created, such
+    // as one whose name is an existing file, throws IOException, which the open guard around every
+    // caller turns into the flag's own "Could not open" line and exit code 1.
     private static string WithParentDirectories(string path)
     {
-        Directory.CreateDirectory(Path.GetFullPath(Path.Combine(path, "..")));
+        string? parent = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (parent is not null)
+        {
+            Directory.CreateDirectory(parent);
+        }
+
         return path;
     }
 

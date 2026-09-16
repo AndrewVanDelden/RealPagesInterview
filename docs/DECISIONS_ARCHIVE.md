@@ -3940,8 +3940,8 @@ exit code 1 before any model call is still proven; one new test that writes all 
 missing folders; `docs/OPERATIONS.md`; and `/runs/` in `.gitignore`, so a run's files, including the
 owner's dataset's outputs, are never committed. Evidence: the stderr line of the failed attempt; the
 new test failing before the change with exit code 1 against an expected 0; `.\test.ps1` after it at
-117 and 916 tests, 100 percent line, branch and method; and a CLI run of `holdout_12.jsonl` on the
+119 and 916 tests, 100 percent line, branch and method; and a CLI run of `holdout_12.jsonl` on the
 template composer into `runs/smoke/`, absent before the run, which exited 0, wrote all five files and
 read `Overall: 12/12 passed`, the pinned tally. Assumptions: none. Retrospective: a playbook step that
 gives a run command must be run exactly as written, from a clean checkout, before it is handed over;
-this one was given without being run.
+this one was given without being run. Review fact: the cold review of the first version found that naming the parent by appending ".." and taking the full path breaks an extended-length path (\?\), which Path.GetFullPath does not normalize: the run created a folder named after the output file and exited 1, where dev wrote the file. The parent is now Path.GetDirectoryName of the full path, skipped when null at a drive root, with a test for each, the extended-length one failing first.
