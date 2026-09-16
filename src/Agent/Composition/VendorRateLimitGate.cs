@@ -63,13 +63,22 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
     }
 
     // Records what a call counted for once it is over, whether it completed or failed, and the
-    // limits its response reported, if any, then wakes every held call to check again.
-    public void Complete(VendorCallReservation reservation, int countedTokens, VendorRateLimits? reportedLimits)
+    // limits its response reported, if any, then wakes every held call to check again. A request the
+    // SDK retried inside the call went out under the same reservation, and the vendor counts failed
+    // requests against its limits too, so each retry takes its own place in the window from now.
+    // O(r) in the retries, which the client's retry limit bounds.
+    public void Complete(VendorCallReservation reservation, int countedTokens, VendorRateLimits? reportedLimits, int retriedRequests, int tokensPerRetry)
     {
         TaskCompletionSource woken;
         lock (sync)
         {
             reservation.Tokens = countedTokens;
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            for (int retry = 0; retry < retriedRequests; retry++)
+            {
+                sent.Enqueue(new VendorCallReservation(now, tokensPerRetry));
+            }
+
             limits = reportedLimits ?? limits;
             unlimitedCallInFlight = false;
             woken = capacityChanged;

@@ -201,10 +201,10 @@ or human) doesn't re-flag them as missing behavior.
   out-of-space test.
 
 - **Every record runs at once; the rate-limit gate, not a concurrency limit, keeps calls under the vendor's limits (D123, D124).**
-  Every record starts as soon as it is read, so a batch of n records holds n records in memory. Each
-  model's calls then pass one `VendorRateLimitGate`, which learns the key's per-minute request and
+  Every record starts as soon as it is read, so a batch of n records holds n records in memory. Every
+  client of one model, the composer's and the judge's, then passes one shared `VendorRateLimitGate`, which learns the key's per-minute request and
   token limits from the first response's `x-ratelimit-limit-*` headers and holds calls past ninety
-  percent of them. What it does not cover, stated rather than implied: another process using the same
+  percent of them, counting each request the SDK retried. What it does not cover, stated rather than implied: another process using the same
   key at the same time spends limits the gate cannot see, and a 429 from that is retried once and then
   falls back to the template; and the gate's token estimate is three characters a token plus a
   1,000-token reply allowance, not the vendor's own count. No live run past a limit was made, since

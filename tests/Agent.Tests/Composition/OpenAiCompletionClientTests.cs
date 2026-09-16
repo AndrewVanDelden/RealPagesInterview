@@ -508,6 +508,33 @@ public class OpenAiCompletionClientTests
         Assert.Equal(3, handler.CallCount);
     }
 
+    // A request the SDK retried counts against the limit like any other: with 2 of 3 requests a
+    // minute usable, a call answered 503 then 200 has spent both, so the next call waits for the
+    // window. Counting the call once would let it through.
+    [Fact]
+    public async Task CompleteAsync_CallWasRetried_TheRetryCountsAgainstTheLimit()
+    {
+        var time = new FakeTimeProvider();
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult(Interlocked.Increment(ref requests) == 1
+                ? (HttpStatusCode.ServiceUnavailable, """{"error":{"message":"down"}}""")
+                : (HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests: "3", tokens: "1000000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        ModelCompletion first = await client.CompleteAsync("s", "u");
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.Equal(1, first.NetworkRetries);
+        Assert.False(second.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     // A call that times out is over as far as the gate is concerned, so the next call is not held
     // behind it.
     [Fact]

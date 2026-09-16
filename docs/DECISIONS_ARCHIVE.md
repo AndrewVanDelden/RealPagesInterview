@@ -4055,3 +4055,19 @@ rule, that no decision in the library reads one, is untouched. Scopes: a new `Ve
 through it; `CliRunner` builds one gate per model; `docs/OPERATIONS.md`. Assumptions: this run is the only
 user of the key's limits while it runs (A23, restated); a 429 caused by another user of the key is still
 retried once, and the SDK's retry policy carries the `Retry-After` header name.
+
+**Review fact, D124 (2026-09-16).** The cold review traced the gate's lock, wake-ups, cancellation and
+every path through `CompleteAsync` and found them sound, and found three gaps. First, the composer and
+the judge each built a gate, so a composer configured as `gpt-4o`, the judge's model, would let each
+gate fill ninety percent of one model's limit; `VendorRateLimitGates` now hands every client of one
+model the same gate for the whole process. Second, a request the SDK retried went out under the one
+reservation and was never counted, while the rate-limit guide states that unsuccessful requests count
+toward the per-minute limit (re-read 2026-09-16); `Complete` now takes the call's retries and gives each
+a place in the window at the prompt estimate. The client test for it fails with retries not counted
+(run made) and passes with them. Third, a comment in `CliRunner` still described calls as unpaced;
+corrected. The review also asked whether limits are enforced over intervals shorter than a minute: the
+guide as read on 2026-09-16 states per-minute and per-day limits only, so no finer pacing was added.
+Two mistakes of this sprint's own tests are recorded here too: a test whose held call had no time bound
+hung rather than failed when its rule was broken, and was given one; and a reading of the SDK was wrong,
+a `ClientResultException` for a request that got no response carries no response, which an existing
+test caught. `.\test.ps1`: 122 and 927 tests, 100 percent line, branch and method.

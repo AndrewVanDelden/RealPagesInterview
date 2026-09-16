@@ -89,9 +89,13 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         VendorCallReservation reservation = await rateLimitGate.ReserveAsync(promptTokenEstimate + ReplyTokenAllowance, cancellationToken);
         int countedTokens = promptTokenEstimate + ReplyTokenAllowance;
         VendorRateLimits? reportedLimits = null;
+
+        // This call's own attempt count, which concurrent calls on this client cannot add to
+        // (CountingRetryPolicy.BeginCall), read by the gate as well as the diagnostics.
+        StrongBox<int> callAttempts = retryPolicy.BeginCall();
         try
         {
-            ModelCompletion completion = await SendAsync(systemPrompt, userPrompt, options, cancellationToken, (limits, inputTokens, outputTokens) =>
+            ModelCompletion completion = await SendAsync(systemPrompt, userPrompt, options, callAttempts, cancellationToken, (limits, inputTokens, outputTokens) =>
             {
                 reportedLimits = limits;
                 countedTokens = Math.Max(promptTokenEstimate, inputTokens) + outputTokens;
@@ -106,7 +110,8 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         }
         finally
         {
-            rateLimitGate.Complete(reservation, countedTokens, reportedLimits);
+            // A call cancelled before it was sent made no attempt, so it has no retry to count.
+            rateLimitGate.Complete(reservation, countedTokens, reportedLimits, retriedRequests: Math.Max(0, callAttempts.Value - 1), tokensPerRetry: promptTokenEstimate);
         }
     }
 
@@ -116,13 +121,10 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         string systemPrompt,
         string userPrompt,
         ChatCompletionOptions options,
+        StrongBox<int> callAttempts,
         CancellationToken cancellationToken,
         Action<VendorRateLimits?, int, int> onResponse)
     {
-        // This call's own attempt count, which concurrent calls on this client cannot add to
-        // (CountingRetryPolicy.BeginCall).
-        StrongBox<int> callAttempts = retryPolicy.BeginCall();
-
         ClientResult<ChatCompletion> result;
         try
         {

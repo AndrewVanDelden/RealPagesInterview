@@ -19,7 +19,7 @@ public class VendorRateLimitGateTests
         Task<VendorCallReservation> next = gate.ReserveAsync(100, CancellationToken.None);
 
         Assert.False(next.IsCompleted);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 500, TokensPerMinute: 200_000));
+        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 500, TokensPerMinute: 200_000), retriedRequests: 0, tokensPerRetry: 0);
         await next.WaitAsync(HeldCallWait);
     }
 
@@ -34,7 +34,7 @@ public class VendorRateLimitGateTests
         Task<VendorCallReservation> second = gate.ReserveAsync(100, CancellationToken.None);
         Task<VendorCallReservation> third = gate.ReserveAsync(100, CancellationToken.None);
 
-        gate.Complete(first, 100, reportedLimits: null);
+        gate.Complete(first, 100, reportedLimits: null, retriedRequests: 0, tokensPerRetry: 0);
         await Task.WhenAny(second, third).WaitAsync(HeldCallWait);
 
         Assert.False(second.IsCompleted && third.IsCompleted);
@@ -48,7 +48,7 @@ public class VendorRateLimitGateTests
         var time = new FakeTimeProvider();
         var gate = new VendorRateLimitGate(time);
         VendorCallReservation probe = await gate.ReserveAsync(10, CancellationToken.None);
-        gate.Complete(probe, 10, new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000));
+        gate.Complete(probe, 10, new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000), retriedRequests: 0, tokensPerRetry: 0);
 
         for (int call = 0; call < 8; call++)
         {
@@ -73,13 +73,13 @@ public class VendorRateLimitGateTests
     {
         var gate = new VendorRateLimitGate(new FakeTimeProvider());
         VendorCallReservation probe = await gate.ReserveAsync(100, CancellationToken.None);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000));
+        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
         VendorCallReservation large = await gate.ReserveAsync(700, CancellationToken.None).WaitAsync(HeldCallWait);
 
         Task<VendorCallReservation> held = gate.ReserveAsync(300, CancellationToken.None);
         Assert.False(held.IsCompleted);
 
-        gate.Complete(large, 200, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000));
+        gate.Complete(large, 200, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
         await held.WaitAsync(HeldCallWait);
     }
 
@@ -91,10 +91,30 @@ public class VendorRateLimitGateTests
         var time = new FakeTimeProvider();
         var gate = new VendorRateLimitGate(time);
         VendorCallReservation probe = await gate.ReserveAsync(100, CancellationToken.None);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000));
+        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
         time.Advance(TimeSpan.FromSeconds(60));
 
         await gate.ReserveAsync(5_000, CancellationToken.None).WaitAsync(HeldCallWait);
+    }
+
+    // A request the SDK retried inside one call still counts against the vendor's per-minute limit,
+    // since failed requests do, so each retry takes a place in the window: with 9 of 10 usable, a
+    // call retried twice leaves room for six more, not eight.
+    [Fact]
+    public async Task Complete_CallWasRetried_EachRetryCountsInTheWindow()
+    {
+        var gate = new VendorRateLimitGate(new FakeTimeProvider());
+        VendorCallReservation probe = await gate.ReserveAsync(10, CancellationToken.None);
+        gate.Complete(probe, 10, new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000), retriedRequests: 2, tokensPerRetry: 10);
+
+        for (int call = 0; call < 6; call++)
+        {
+            await gate.ReserveAsync(10, CancellationToken.None).WaitAsync(HeldCallWait);
+        }
+
+        Task<VendorCallReservation> held = gate.ReserveAsync(10, CancellationToken.None);
+        await Task.WhenAny(held, Task.Delay(TimeSpan.FromMilliseconds(200)));
+        Assert.False(held.IsCompleted);
     }
 
     // A held call observes its caller's token, so a cancelled run is not left waiting on capacity.
