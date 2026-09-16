@@ -1551,6 +1551,8 @@ public class CliRunnerTests
             Assert.Equal(CliExitCodes.UsageError, exitCode);
             Assert.Contains($"Could not open --eval-report '{evalReportPath}'", errorWriter.ToString());
             Assert.Contains("next_message", await File.ReadAllTextAsync(outputPath));
+            Assert.Contains("Task ID", outputWriter.ToString());
+            Assert.DoesNotContain("Full report:", outputWriter.ToString());
         }
         finally
         {
@@ -1584,6 +1586,8 @@ public class CliRunnerTests
             Assert.Equal(CliExitCodes.UsageError, exitCode);
             Assert.Contains($"Could not open --eval-report '{evalReportPath}'", errorWriter.ToString());
             Assert.Contains("Overall:", outputWriter.ToString());
+            Assert.Contains("Task ID", outputWriter.ToString());
+            Assert.DoesNotContain("Full report:", outputWriter.ToString());
         }
         finally
         {
@@ -2235,6 +2239,43 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             File.Delete(diagnosticsPath);
+        }
+    }
+
+    // A judge call that throws is a failure the operator has to see without opening a file, so it
+    // is one plain line on the console even when the run names a log file and the console carries
+    // no log line.
+    [Fact]
+    public async Task RunAsync_JudgeThrowsWithLogFile_EachFailureStillReachesTheConsole()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string logFilePath = TempFilePath(".log");
+        string diagnosticsPath = TempFilePath(".json");
+        string content = string.Join(
+            Environment.NewLine,
+            RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true),
+            RecordJson("t2", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(inputPath, content);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, judgeOverride: new ThrowingJudge());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--log-file", logFilePath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("Record 't1' judge call failed: ", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Injected judge fault for 't1'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Record 't2' judge call failed: ", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("[Error]", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            TestFiles.DeleteWithRetry(logFilePath);
         }
     }
 

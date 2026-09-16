@@ -3965,9 +3965,15 @@ wording; `docs/OPERATIONS.md` sections 1, 2, 3 and 4. The test that asserted the
 the console beside a file is replaced by one asserting the totals on the console and the whole report
 in the file, and one new test asserts a named log file leaves no log line on the console and each
 parse failure on it once. Evidence: the step 99 console transcript the owner pasted; the two new
-tests failing first; `.\test.ps1` at 120 and 916 tests, 100 percent line, branch and method; and a
+tests failing first; `.\test.ps1` at 121 and 916 tests, 100 percent line, branch and method; and a
 `holdout_12.jsonl` template run with every output named, whose console was the six totals lines and
 the report path, with 38 log lines and the 19-line report in their files. Assumptions: none.
+Review fact: the cold review found two failures the first version hid. A report file that could not
+be written left the per-record rows and judge reasons nowhere, since the console had only the totals;
+the console now gets the whole report when the write fails. And with a log file named, a judge call
+that threw was only a log line; the exception now rides the record's result to `RecordFold`, which
+writes `Record '<TaskId>' judge call failed:` to stderr in input order. Each has a test that failed
+first. Three comments the change made false were corrected.
 Retrospective: a run's console output is part of what is handed over, and is read as the operator will
 read it before the run is called ready.
 
