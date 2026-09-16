@@ -253,10 +253,28 @@ public sealed partial class OpenAiMessageComposer(
         // The numbered options are code's like the link: the model dropped them from one sms and
         // translated another's dates, so an sms gets the language set's options sentence, the one the
         // template writes, after the draft and any offer terms and before the opt-out.
-        string bodyWithOptions = isEmail ? bodyWithLink : $"{bodyWithLink} {templates.NumberedOptionsSentence(options!)}";
+        // A voice message is read aloud, so its options are key presses and its opt-out a key press, and
+        // it must say who is calling at its start: a draft that does not name the property is opened
+        // with it (47 CFR 64.1200(b)).
+        bool isVoice = channel == CommunicationChannel.Voice;
+        string spokenBody = isVoice && !Presence.IsAbsent(context.PropertyName) && !bodyWithLink.Contains(context.PropertyName!, StringComparison.OrdinalIgnoreCase)
+            ? $"{string.Format(CultureInfo.InvariantCulture, templates.VoiceCallerOpening, context.PropertyName)} {bodyWithLink}"
+            : bodyWithLink;
+        string bodyWithOptions = channel switch
+        {
+            CommunicationChannel.Email => spokenBody,
+            CommunicationChannel.Voice => $"{spokenBody} {templates.KeyPressOptionsSentence(options!)}",
+            _ => $"{spokenBody} {templates.NumberedOptionsSentence(options!)}",
+        };
 
+        string optOutSentence = channel switch
+        {
+            CommunicationChannel.Email => $"\n{templates.EmailOptOut}",
+            CommunicationChannel.Voice => $" {templates.VoiceOptOut}",
+            _ => $" {templates.SmsOptOut}",
+        };
         string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithOptions)
-            ? isEmail ? $"{bodyWithOptions}\n{templates.EmailOptOut}" : $"{bodyWithOptions} {templates.SmsOptOut}"
+            ? $"{bodyWithOptions}{optOutSentence}"
             : bodyWithOptions;
 
         var cta = new Cta(payload.CtaType, options, link);
@@ -323,6 +341,13 @@ public sealed partial class OpenAiMessageComposer(
             (false, _, null) =>
                 $"This is {channelName}: return the reply options in cta_options; the system appends them to the body, numbered, so do not write reply options in the body. Do not write a link.",
         };
+
+        // A voice message is a script read aloud on a call, so the model writes spoken sentences and
+        // never asks for a text reply; the key-press options and opt-out are appended by the system.
+        if (channel == CommunicationChannel.Voice)
+        {
+            channelInstruction += " The message is read aloud to the person on a phone call: write spoken sentences, say who is calling at the start, and never ask the person to reply by text.";
+        }
 
         // These have to be plain instructions, not <prospect_data> fields: the system
         // prompt tells the model to ignore directives that appear inside that block, so

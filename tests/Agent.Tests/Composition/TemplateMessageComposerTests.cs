@@ -596,6 +596,49 @@ public class TemplateMessageComposerTests
         Assert.True(result.Notes.LocaleApplied);
     }
 
+    // A voice message is read aloud, so it names the caller first, gives its options as key presses and
+    // ends with a key-press opt-out, as a prerecorded telemarketing call must (47 CFR 64.1200(b)).
+    // Nothing in it asks the person to reply by text.
+    [Fact]
+    public async Task ComposeAsync_Voice_IsASpokenScriptWithKeyPressOptionsAndOptOut()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+
+        string body = ComposedOf(outcome).Message.Body!;
+        Assert.StartsWith("This is Oak Ridge Apartments. Hi Taylor!", body);
+        Assert.Contains("Press 1 for ", body);
+        Assert.EndsWith("To stop future calls, press 9.", body);
+        Assert.DoesNotContain("Reply", body);
+        Assert.DoesNotContain("STOP", body);
+    }
+
+    // A record with no property name has no caller to name, so the script opens with the greeting.
+    [Fact]
+    public async Task ComposeAsync_VoiceWithNoPropertyName_OpensWithTheGreeting()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: null);
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+
+        Assert.StartsWith("Hi Taylor!", ComposedOf(outcome).Message.Body);
+    }
+
+    // The spoken script is in the record's language like every other message.
+    [Fact]
+    public async Task ComposeAsync_SpanishVoice_IsASpanishSpokenScript()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "es-MX");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+
+        string body = ComposedOf(outcome).Message.Body!;
+        Assert.StartsWith("Te llama Oak Ridge Apartments. Hola Taylor!", body);
+        Assert.Contains("Marca 1 para ", body);
+        Assert.EndsWith("Para no recibir más llamadas, marca 9.", body);
+    }
+
     // A13: an absent language is the en default the record inherits, so nothing failed to
     // be applied.
     [Fact]

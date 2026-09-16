@@ -18,6 +18,9 @@ public class OptOutInstructionsTests
     [InlineData("Opt\u2013out here.")]
     [InlineData("Opt\u2014out here.")]
     [InlineData("Click here to unsubscribe.")]
+    [InlineData("To stop future calls, press 9.")]
+    [InlineData("Para no recibir más llamadas, marca 9.")]
+    [InlineData("Pour ne plus recevoir nos appels, appuyez sur 9.")]
     [InlineData("Hours at https://oakridge.example/hours. Reply STOP to opt out.")]
     [InlineData("Details at https://oakridge.example/info. STOP to end texts.")]
     public void IsPresent_InstructionInAnyAcceptedForm_True(string text)

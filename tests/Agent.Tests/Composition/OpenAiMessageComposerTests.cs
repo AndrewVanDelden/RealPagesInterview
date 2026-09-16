@@ -553,6 +553,39 @@ public class OpenAiMessageComposerTests
         Assert.True(result.Notes.LocaleApplied);
     }
 
+    // On voice the model is told the message is read aloud, and code appends key-press options and the
+    // key-press opt-out rather than reply options and STOP. A draft that does not name the property is
+    // opened with it, because a prerecorded call must say who is calling at its start.
+    [Fact]
+    public async Task ComposeAsync_Voice_AppendsKeyPressOptionsAndOptOutAndNamesTheCaller()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, we would love to show you around.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+
+        Assert.Contains("read aloud", fakeClient.LastUserPrompt);
+        string body = ComposedOf(outcome).Message.Body!;
+        Assert.StartsWith("This is Oak Ridge Apartments. Hi Taylor", body);
+        Assert.Contains("Press 1 for a visit.", body);
+        Assert.EndsWith("To stop future calls, press 9.", body);
+        Assert.DoesNotContain("Reply", body);
+    }
+
+    // A voice draft that already names the property is not opened with it a second time.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingTheProperty_IsNotPrefixed()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, this is Oak Ridge Apartments.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("Hi Taylor, this is Oak Ridge Apartments.", ComposedOf(outcome).Message.Body);
+    }
+
     // A21: the link is a fact, not prose, and code owns every reproducible fact. Code builds it
     // from the property slug and the catalog's path, and the model is told not to write one, so
     // no email can carry a host the record never stated.

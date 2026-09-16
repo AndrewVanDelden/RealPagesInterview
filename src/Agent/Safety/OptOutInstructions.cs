@@ -21,6 +21,7 @@ public static partial class OptOutInstructions
 
         return StopKeyword().IsMatch(UrlSpan().Replace(folded, " "))
             || StopDirective().IsMatch(folded)
+            || KeyPressOptOut().IsMatch(folded)
             || Phrases.Any(phrase => folded.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -29,6 +30,11 @@ public static partial class OptOutInstructions
 
     [GeneratedRegex(@"\b(?:reply|text)\s+stop\b", RegexOptions.IgnoreCase)]
     private static partial Regex StopDirective();
+
+    // A voice message's opt-out is a key press, "press 9" in each language set's wording, since a
+    // prerecorded call must offer a key-press opt-out and a caller cannot reply STOP.
+    [GeneratedRegex(@"\b(?:press|marca|appuyez sur)\s+9\b", RegexOptions.IgnoreCase)]
+    private static partial Regex KeyPressOptOut();
 
     [GeneratedRegex(@"https?://\S+")]
     private static partial Regex UrlSpan();
