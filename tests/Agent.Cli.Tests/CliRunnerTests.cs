@@ -1456,7 +1456,8 @@ public class CliRunnerTests
                 "Ingest: defaulted=[input.unit, input.move_in_date, input.lease_end_date, input.renewal_offer_id, " +
                 "input.missed_tour_time, input.cancellation_reason, input.profile.city_interest, " +
                 "input.profile.amenity_interest, input.profile.budget_max, input.profile.tenure_months, " +
-                "input.profile.loyalty_status, input.profile.features_enablement] unknown=0 member(s). TaskId=t1",
+                "input.profile.loyalty_status, input.profile.features_enablement, input.profile.age, " +
+                "input.profile.opt_out_requested_at] unknown=0 member(s). TaskId=t1",
                 logContent);
         }
         finally

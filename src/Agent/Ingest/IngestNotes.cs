@@ -39,6 +39,8 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         NoteAbsent(defaulted, profile.TenureMonths is null, "input.profile.tenure_months");
         NoteAbsent(defaulted, Presence.IsAbsent(profile.LoyaltyStatus), "input.profile.loyalty_status");
         NoteAbsent(defaulted, profile.FeaturesEnablement is null or { Count: 0 }, "input.profile.features_enablement");
+        NoteAbsent(defaulted, profile.Age is null, "input.profile.age");
+        NoteAbsent(defaulted, profile.OptOutRequestedAt is null, "input.profile.opt_out_requested_at");
         NoteAbsent(defaulted, constraints.NoPiiLeak is null, "assertions.constraints.no_pii_leak");
         NoteAbsent(defaulted, constraints.IncludeOptOutInstructions is null, "assertions.constraints.include_opt_out_instructions");
         NoteAbsent(defaulted, Presence.IsAbsent(constraints.PrimaryCta), "assertions.constraints.primary_cta");

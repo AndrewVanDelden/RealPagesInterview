@@ -83,6 +83,28 @@ public sealed class LeasingMessageAgent(
 
         CommunicationChannel channel = contactableChannel.Value;
 
+        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
+        // know it, the zone of the state its city_interest names.
+        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
+
+        // Step 1b: a record some rule says must not be messaged is answered here, before anything is
+        // planned or composed: sent nothing, or handed to a person.
+        Option<NextAction> ruled = ContactRules.Check(prospectCase, referenceTime, referenceDate);
+        if (ruled.HasValue)
+        {
+            bool escalated = ruled.Value.Type == ActionTypes.EscalateToHuman;
+            log.LogInformation("Suppressing message: contact rule {Reason}.", ruled.Value.Reason);
+            return Suppressed(
+                prospectCase,
+                escalated ? SuppressionReason.EscalatedToHuman : SuppressionReason.DoNotContact,
+                ruled.Value,
+                actionPlan: null,
+                modelCost: null,
+                networkRetries: null,
+                renewalOfferLoaded: RequiredStateVerdict.NotEvaluated);
+        }
+
         // renewal_offer_loaded is earned by finding the record's renewal offer in the property
         // data, the stand-in for the property management system, and not earned when the run has
         // no property data or it holds no offer for this record.
@@ -92,10 +114,6 @@ public sealed class LeasingMessageAgent(
 
         // Step 2: plan the next action from the horizon (A7), counted in days from the run's
         // reference time as a date in the record's own zone.
-        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
-        // know it, the zone of the state its city_interest names.
-        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
-        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
         PlannedAction planned = planner.Plan(
             prospectCase.Persona,
             prospectCase.LifecycleStage,

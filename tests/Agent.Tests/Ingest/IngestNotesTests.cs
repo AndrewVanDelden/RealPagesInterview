@@ -15,7 +15,7 @@ public class IngestNotesTests
         "\"channel_preferences\":[\"sms\"]," +
         "\"input\":{\"property_name\":\"Oak Ridge\",\"move_date_target\":\"2026-01-10\",\"last_interaction\":\"2025-12-08T15:04:00Z\",\"timezone\":\"America/Chicago\",\"language\":\"en\"," +
         "\"unit\":\"A-204\",\"move_in_date\":\"2026-01-10\",\"lease_end_date\":\"2026-12-31\",\"renewal_offer_id\":\"REN-A204\",\"missed_tour_time\":\"2025-12-08T15:04:00Z\",\"cancellation_reason\":\"schedule_conflict\"," +
-        "\"profile\":{\"first_name\":\"Taylor\",\"city_interest\":\"Richardson, TX\",\"amenity_interest\":[\"pool\"],\"budget_max\":1800,\"tenure_months\":12,\"loyalty_status\":\"enrolled\",\"features_enablement\":[\"keyless_entry\"]}}," +
+        "\"profile\":{\"first_name\":\"Taylor\",\"city_interest\":\"Richardson, TX\",\"amenity_interest\":[\"pool\"],\"budget_max\":1800,\"tenure_months\":12,\"loyalty_status\":\"enrolled\",\"features_enablement\":[\"keyless_entry\"],\"age\":34,\"opt_out_requested_at\":\"2026-01-05T18:12:00Z\"}}," +
         "\"assertions\":{\"required_states\":[],\"constraints\":{\"no_pii_leak\":true,\"include_opt_out_instructions\":true,\"primary_cta\":\"book_tour\"}}," +
         "\"thresholds\":{\"p95_latency_ms\":2000,\"personalization_score_min\":0.85,\"reply_classification_f1_min\":0.9,\"safety_violations_max\":0}}";
 
@@ -90,6 +90,8 @@ public class IngestNotesTests
             "input.profile.tenure_months",
             "input.profile.loyalty_status",
             "input.profile.features_enablement",
+            "input.profile.age",
+            "input.profile.opt_out_requested_at",
             "assertions.constraints.no_pii_leak",
             "assertions.constraints.include_opt_out_instructions",
             "assertions.constraints.primary_cta",
@@ -130,6 +132,8 @@ public class IngestNotesTests
             "input.profile.tenure_months",
             "input.profile.loyalty_status",
             "input.profile.features_enablement",
+            "input.profile.age",
+            "input.profile.opt_out_requested_at",
             "assertions.constraints.no_pii_leak",
             "assertions.constraints.include_opt_out_instructions",
             "assertions.constraints.primary_cta",

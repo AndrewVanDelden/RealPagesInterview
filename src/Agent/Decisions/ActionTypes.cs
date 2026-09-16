@@ -31,7 +31,11 @@ public static class ActionTypes
     // Hold-out resident_renewal_details_branch_email: details sent, the lease signing starts.
     public const string StartEsignFlow = "start_esign_flow";
 
+    // A record a person has to handle before any message: no catalog row emits it; ContactRules does,
+    // with the reason, and the record goes on the review queue.
+    public const string EscalateToHuman = "escalate_to_human";
+
     public static readonly FrozenSet<string> All =
-        new[] { StartCadence, FollowUpInDays, NoOp, ResetCadence, ScheduleSmsReminder, BranchOnIntent, StartEsignFlow }
+        new[] { StartCadence, FollowUpInDays, NoOp, ResetCadence, ScheduleSmsReminder, BranchOnIntent, StartEsignFlow, EscalateToHuman }
             .ToFrozenSet(StringComparer.Ordinal);
 }

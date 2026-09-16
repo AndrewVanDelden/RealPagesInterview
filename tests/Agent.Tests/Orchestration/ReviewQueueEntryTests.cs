@@ -38,6 +38,21 @@ public class ReviewQueueEntryTests
         Assert.False(entry.HasValue);
     }
 
+    // A record handed to a person is a record a person has to pick up, so it is on the queue even
+    // though the planner never ran.
+    [Fact]
+    public void For_EscalatedToAPerson_IsOnTheQueue()
+    {
+        var escalated = new AgentRunResult(
+            new AgentOutput(new NextMessage(CommunicationChannel.None), new NextAction(ActionTypes.EscalateToHuman, Reason: "regulated_communication")),
+            new AgentDiagnostics(new Dictionary<string, RequiredStateVerdict>(), 0, SuppressionReason: SuppressionReason.EscalatedToHuman));
+
+        ReviewQueueEntry entry = ReviewQueueEntry.For(Unseen, escalated).Value;
+
+        Assert.Equal([ReviewReason.EscalatedToHuman], entry.Reasons);
+        Assert.Null(entry.Draft);
+    }
+
     // No consented channel: the planner never ran, so there is no action to review.
     [Fact]
     public void For_NoActionPlan_HasNoEntry()

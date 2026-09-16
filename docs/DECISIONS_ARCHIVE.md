@@ -4265,3 +4265,24 @@ the check now reads the first sentence. An input member named `greeting_name` wa
 reader; the greeting name is now a method, which the reader never binds. The same swallowing applies to
 `amenities` and `city` through the older `Amenities` and `City` properties, which this change did not
 introduce and did not change. Suite: 126 and 1,013 tests at 100 percent line, branch and method.
+
+**D131. Records that are not messaged whatever their consent says (taken 2026-09-16).** Question: seven
+records in the owner's dataset got a message that should have gone to no one or to a person (14, 20, 22,
+37, 38, 46, 47). Options per record were no message, a hand-off to a person, or the message as before; the
+owner took every recommendation. Recommendation taken: a `ContactRules` check after consent and before
+planning, the first rule that applies answering with `next_message` channel `none` and: `no_op`
+`opt_out_on_record` when the profile records `opt_out_requested_at`, whatever the flags say; `no_op`
+`prospect_under_18` for a prospect whose profile `age` is under 18; `no_op` `unsupported_persona` for a
+persona other than prospect, resident or guarantor (the guarantor is served because `synthetic_12.jsonl`
+expects a message for one); `escalate_to_human` `regulated_communication` at `delinquent_collections`;
+`escalate_to_human` `manager_cancellation_requires_review` when `cancellation_reason` begins with
+`screening` (a schedule-conflict cancellation, the hold-out's, is still messaged); `escalate_to_human`
+`lease_end_date_in_past` at a renewal stage whose `lease_end_date` is before the reference date; and `no_op`
+`missed_tour_time_in_future` at `no_show` when `missed_tour_time` is after the reference time. Consent is
+still decided first. Scopes: `ContactRules`; `ActionTypes.EscalateToHuman`; `SuppressionReason`
+`DoNotContact` and `EscalatedToHuman`; `ReviewReason.EscalatedToHuman`, so every hand-off is on the review
+queue; `ProspectProfile.Age` and `OptOutRequestedAt`, declared and named in the ingest notes when absent;
+the agent's step 1b. Evidence: `.\test.ps1` at 126 and 1,038 tests, 100 percent, the pinned tallies of all
+four committed sets unchanged; an offline template run on `TrueTest.jsonl` stopped 14, 20, 22, 37, 46 and
+47 as above and still messaged 38, because at the run's own time, 2026-09-16, that record's tour of
+2026-03-14 is in the past; at the key's date it stops. Assumptions: none new.
