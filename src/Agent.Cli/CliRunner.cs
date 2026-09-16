@@ -197,7 +197,7 @@ public sealed class CliRunner(
         // hit first as a locked log file in its own tests, not as a hypothetical.
         // There is no ILogger yet at this point in the run, so the failure goes straight to
         // error rather than through ReportFailure.
-        Result<FileLoggerProvider?> fileLoggerOpen = TryOpenOptional("--log-file", logFilePath, path => new FileLoggerProvider(path));
+        Result<FileLoggerProvider?> fileLoggerOpen = TryOpenOptional("--log-file", logFilePath, path => new FileLoggerProvider(WithParentDirectories(path)));
         if (!fileLoggerOpen.IsSuccess)
         {
             error.WriteLine(fileLoggerOpen.Error);
@@ -729,7 +729,7 @@ public sealed class CliRunner(
             // The same guard mechanism the three batch output streams get, at the write
             // instead of before the loop. The report is a report on the batch, so there is no
             // earlier moment at which it could be written.
-            Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(evalReportPath, report, cancellationToken));
+            Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(WithParentDirectories(evalReportPath), report, cancellationToken));
             if (!written.IsSuccess)
             {
                 ReportFailure(log, LogLevel.Error, written.Error);
@@ -816,7 +816,19 @@ public sealed class CliRunner(
     // and each names the flag the caller passed. A null path is the flag not being passed at
     // all, which is a success carrying no stream, not a failure.
     private static Result<StreamWriter?> OpenOutputStream(string flag, string? path) =>
-        TryOpenOptional(flag, path, p => new StreamWriter(p));
+        TryOpenOptional(flag, path, p => new StreamWriter(WithParentDirectories(p)));
+
+    // Every file the run writes creates the folders above it, so a first run into a folder that
+    // does not exist yet writes its files instead of failing on a folder the operator has to make
+    // by hand. Combining with ".." and taking the full path names the parent for any path,
+    // including a drive root, where Path.GetDirectoryName returns null. A parent that cannot be
+    // created, such as one whose name is an existing file, throws IOException, which the open
+    // guard around every caller turns into the flag's own "Could not open" line and exit code 1.
+    private static string WithParentDirectories(string path)
+    {
+        Directory.CreateDirectory(Path.GetFullPath(Path.Combine(path, "..")));
+        return path;
+    }
 
     // The mirror of OpenOutputStream for the paths a run reads: --input, --replay and --rules.
     // Same filter and same wording deliberately: a path the caller can fix is one class of

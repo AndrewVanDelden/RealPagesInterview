@@ -155,7 +155,7 @@ seam. Four fixed test first: a judge-side cancellation that discarded an already
 case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
 a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
 
-**D120, Sprint 17 closed (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's check passed again at
-116 and 916 tests, all four sets offline at their pinned tallies. D120 sets the honest-number run:
-a JSONL file and nothing else, the run's own time, model, judge and every output on, once, and
-nothing read before it. The phase returns to 9, step 99.
+**D120 and D121, Sprint 17 closed (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's check
+passed again. D120 sets the honest-number run: one JSONL file, the run's own time, model, judge and
+every output on, once, unread before. The first attempt exited 1 on a missing output folder before
+reading input, unspent; D121 makes written paths create their folders. Phase 9, step 99.

@@ -35,3 +35,4 @@ CLAUDE.local.md
 /q_*.json
 /eval*.txt
 /*.log
+/runs/

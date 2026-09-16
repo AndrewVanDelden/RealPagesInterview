@@ -3921,3 +3921,27 @@ the price-hold and text-reminder sentences of D112 are written in that file and 
 bounds the measurement rather than settling the question: it says nothing about the model path's
 bodies, which are where D104 and D111 spend the feed and where the judge's BodySem check would feel
 its absence. No model run was made.
+
+**D121. A run into a folder that does not exist fails (taken 2026-09-16).** Question: the first attempt
+at step 99 passed every output under `runs\step99\`, a folder that did not exist, and the program
+refused the run with `Could not open --log-file ... DirectoryNotFoundException` and exit code 1. The
+refusal came before the input was opened, so no record was read, no model was called and the one run
+D120 allows was not spent. Should the program create the folders a run writes into? Options: (a)
+every written path creates its parent folders, and a path whose parent cannot be created still fails
+with the flag's own message and exit code 1 before any record runs; (b) keep the refusal and document
+that the folder must be made first; (c) create folders only for `--output`. Recommendation: (a). A
+command-line tool whose documented run fails on its first use because of a folder is a defect in the
+tool, not in the operator, and (b) is how the failure happened: the step that made the folder was
+given as a separate command and was skipped. (c) moves the same failure to the next flag. Scopes:
+`CliRunner`, where `--output`, `--diagnostics`, `--review-queue`, `--log-file` and `--eval-report`
+each open through one helper that creates the parent folders first; the six tests that used a
+missing folder as their unwritable path, which now use a path under an existing file so the clean
+exit code 1 before any model call is still proven; one new test that writes all five files under two
+missing folders; `docs/OPERATIONS.md`; and `/runs/` in `.gitignore`, so a run's files, including the
+owner's dataset's outputs, are never committed. Evidence: the stderr line of the failed attempt; the
+new test failing before the change with exit code 1 against an expected 0; `.\test.ps1` after it at
+117 and 916 tests, 100 percent line, branch and method; and a CLI run of `holdout_12.jsonl` on the
+template composer into `runs/smoke/`, absent before the run, which exited 0, wrote all five files and
+read `Overall: 12/12 passed`, the pinned tally. Assumptions: none. Retrospective: a playbook step that
+gives a run command must be run exactly as written, from a clean checkout, before it is handed over;
+this one was given without being run.

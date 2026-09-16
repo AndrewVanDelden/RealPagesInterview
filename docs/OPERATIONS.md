@@ -18,6 +18,12 @@ dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json
 dotnet run --project src/Agent.Cli -- --input holdout_12.jsonl --replay out.json --eval-report eval.txt --judge
 ```
 
+Every file a run writes (`--output`, `--diagnostics`, `--review-queue`, `--eval-report`,
+`--log-file`) creates the folders above it, so `--output runs\step99\out.json` works on a first
+run with no folder made by hand. `runs/` is ignored by git. A path whose folder cannot be created,
+such as one under an existing file, is one `Could not open` line naming the flag and exit code 1,
+before any record runs.
+
 | Flag | Required | Purpose |
 |---|---|---|
 | `--input <file.jsonl>` | yes | The prospect/resident cases to process, one JSON object per line. |

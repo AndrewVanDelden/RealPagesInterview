@@ -1259,17 +1259,64 @@ public class CliRunnerTests
         }
     }
 
+    // A run names a folder for its files that does not exist yet, as a first run does: every
+    // file the run writes creates the folders above it, rather than failing on a folder the
+    // operator would have to make by hand first.
+    [Fact]
+    public async Task RunAsync_EveryWrittenPathUnderMissingDirectories_CreatesThemAndWritesEveryFile()
+    {
+        string inputPath = TempFilePath();
+        string runDirectory = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}");
+        string filesDirectory = Path.Combine(runDirectory, "step99");
+        string outputPath = Path.Combine(filesDirectory, "out.json");
+        string diagnosticsPath = Path.Combine(filesDirectory, "diag.json");
+        string reviewQueuePath = Path.Combine(filesDirectory, "review_queue.json");
+        string evalReportPath = Path.Combine(filesDirectory, "eval.txt");
+        string logFilePath = Path.Combine(filesDirectory, "run.log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(
+            [
+                "--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath,
+                "--review-queue", reviewQueuePath, "--eval-report", evalReportPath, "--log-file", logFilePath,
+            ]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Contains("next_message", await File.ReadAllTextAsync(outputPath));
+            Assert.True(File.Exists(diagnosticsPath));
+            Assert.True(File.Exists(reviewQueuePath));
+            Assert.Contains("Overall:", await File.ReadAllTextAsync(evalReportPath));
+            Assert.True(File.Exists(logFilePath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            if (Directory.Exists(runDirectory))
+            {
+                Directory.Delete(runDirectory, recursive: true);
+            }
+        }
+    }
+
     // Every other bad-argument case (unknown --composer, missing API key) maps to a clean
     // UsageError + stderr message rather than crashing with a raw unhandled exception -
     // --log-file previously didn't, since FileLoggerProvider's StreamWriter construction
-    // ran outside any try/catch.
+    // ran outside any try/catch. A parent that is a file is a path no folder can be created
+    // on, so it stays unwritable after missing folders are created.
     [Fact]
-    public async Task RunAsync_LogFilePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_LogFilePathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        string logFilePath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "run.log");
+        string blockingFilePath = TempFilePath(".blocker");
+        string logFilePath = Path.Combine(blockingFilePath, "run.log");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
         var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
@@ -1285,6 +1332,7 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+            File.Delete(blockingFilePath);
         }
     }
 
@@ -1294,11 +1342,13 @@ public class CliRunnerTests
     // step 77's fail fast before work that costs time or money: it throws for t1, so a run
     // that reached the record loop would say "Injected fault" on stderr and exit 2.
     [Fact]
-    public async Task RunAsync_OutputPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_OutputPathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
-        string outputPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "out.json");
+        string blockingFilePath = TempFilePath(".blocker");
+        string outputPath = Path.Combine(blockingFilePath, "out.json");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
         var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
@@ -1314,18 +1364,21 @@ public class CliRunnerTests
         finally
         {
             File.Delete(inputPath);
+            File.Delete(blockingFilePath);
         }
     }
 
     // --diagnostics: its own flag in its own message. A guard that named --output for
     // every unwritable path would send an operator to the wrong flag.
     [Fact]
-    public async Task RunAsync_DiagnosticsPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_DiagnosticsPathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        string diagnosticsPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "diag.json");
+        string blockingFilePath = TempFilePath(".blocker");
+        string diagnosticsPath = Path.Combine(blockingFilePath, "diag.json");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
         var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
@@ -1342,17 +1395,20 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+            File.Delete(blockingFilePath);
         }
     }
 
     // --review-queue: same guard, its own flag, and still before the record loop.
     [Fact]
-    public async Task RunAsync_ReviewQueuePathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_ReviewQueuePathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        string reviewQueuePath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "queue.json");
+        string blockingFilePath = TempFilePath(".blocker");
+        string reviewQueuePath = Path.Combine(blockingFilePath, "queue.json");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z"));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
         var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter, new ThrowingComposer("t1"));
@@ -1369,6 +1425,7 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+            File.Delete(blockingFilePath);
         }
     }
 
@@ -1377,12 +1434,14 @@ public class CliRunnerTests
     // is still complete; only the report the run asked for could not be written, and that is
     // exit code 1 with one stderr line naming the flag, not a stack trace.
     [Fact]
-    public async Task RunAsync_EvalReportPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_EvalReportPathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath();
-        string evalReportPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "eval.txt");
+        string blockingFilePath = TempFilePath(".blocker");
+        string evalReportPath = Path.Combine(blockingFilePath, "eval.txt");
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         var outputWriter = new StringWriter();
         var errorWriter = new StringWriter();
         var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
@@ -1399,6 +1458,7 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(outputPath);
+            File.Delete(blockingFilePath);
         }
     }
 
@@ -1406,11 +1466,13 @@ public class CliRunnerTests
     // --eval-report rule holds there too. A guard that reported the failure and still let the
     // run exit 0 would tell a caller the report is on disk when it is not.
     [Fact]
-    public async Task RunAsync_ReplayEvalReportPathHasNoParentDirectory_WritesCleanErrorAndReturnsUsageError()
+    public async Task RunAsync_ReplayEvalReportPathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
     {
         string inputPath = TempFilePath();
         string replayPath = TempFilePath(".json");
-        string evalReportPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "eval.txt");
+        string blockingFilePath = TempFilePath(".blocker");
+        string evalReportPath = Path.Combine(blockingFilePath, "eval.txt");
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
         await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
         await File.WriteAllTextAsync(replayPath, "[{\"next_message\":{\"channel\":\"none\"},\"next_action\":{\"type\":\"no_op\"}}]");
         var outputWriter = new StringWriter();
@@ -1429,6 +1491,7 @@ public class CliRunnerTests
         {
             File.Delete(inputPath);
             File.Delete(replayPath);
+            File.Delete(blockingFilePath);
         }
     }
 
