@@ -14,7 +14,7 @@ internal static class FrenchMessageTemplates
         GreetingWithoutName: "Bonjour",
         SmsWelcome: " Bienvenue à {0}.",
         InterestAmenities: "vous vous intéressez à {0}",
-        InterestCity: "vous cherchez à {0}",
+        InterestCity: "vous cherchez un logement à {0}",
         InterestSentence: "Vous nous avez dit que {0}. ",
         Conjunction: " et ",
         SmsCtaSentence: "Répondez pour {0}.",

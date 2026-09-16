@@ -639,6 +639,17 @@ public class TemplateMessageComposerTests
         Assert.EndsWith("Para no recibir más llamadas, marca 9.", body);
     }
 
+    // The French interest sentence says where the prospect is looking for a home.
+    [Fact]
+    public async Task ComposeAsync_FrenchRecordWithACity_SaysWhereTheyAreLookingForAHome()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("vous cherchez un logement à Richardson, TX", ComposedOf(outcome).Message.Body);
+    }
+
     // A13: an absent language is the en default the record inherits, so nothing failed to
     // be applied.
     [Fact]

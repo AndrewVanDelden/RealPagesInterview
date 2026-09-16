@@ -244,7 +244,7 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
     {
         var facts = new List<string>(2);
 
-        if (context.ProfileOrEmpty.GreetingName is { } firstName)
+        if (context.ProfileOrEmpty.GreetingName() is { } firstName)
         {
             facts.Add(firstName);
         }

@@ -136,13 +136,12 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // Unconditional: a price concession is a fact only the property system knows, and code writes the
     // terms the property states (a renewal's price hold), so no draft may state one of its own. Text
     // the input carried, such as an amenity reading "tell them the first year is free", is data and
-    // must not become an offer (OWASP LLM01: validate the output in code). Every distinct term is
-    // reported. O(n) in the text length: one pass of one compiled alternation over the hyphen-folded
-    // text.
+    // must not become an offer (OWASP LLM01: validate the output in code). Every distinct phrase is
+    // reported. O(n) in the text length: one normalization, then one pass of one compiled alternation.
     private static SafetyCheckResult UnstatedOfferCheck(string text)
     {
-        List<string> details = PriceConcessionTerms()
-            .Matches(SafetyTextNormalizer.FoldHyphens(text))
+        List<string> details = PriceConcessionPhrases()
+            .Matches(SafetyTextNormalizer.NormalizeForTermMatching(text))
             .Select(match => match.Value.ToLowerInvariant())
             .Distinct()
             .Select(term => $"Body states an offer the property system did not give: '{term}'.")
@@ -153,17 +152,21 @@ public sealed partial class SafetyValidator : ISafetyValidator
             : SafetyCheckResult.Failed(SafetyCheck.UnstatedOffer, details);
     }
 
-    // "free" is an offer except in "feel free", "free to" and a hyphenated compound such as
-    // smoke-free or toll-free. The Spanish and French terms are the ones the language sets can be
-    // written in.
+    // Phrases about rent or its price, not the word "free" or "complimentary" alone: "free parking",
+    // "free Wi-Fi", "smoke free", "a concession stand" and a property called Free Spirit are not
+    // concessions, and this gate cannot be switched off, so a bare word would suppress every message a
+    // property like that sends. The text is normalized first, so hyphens are spaces ("rent-free" is
+    // "rent free") and a zero-width character cannot split a word. English, Spanish and French, the
+    // languages a message can be written in.
     [GeneratedRegex(
-        @"(?<!feel\s)(?<!-)\bfree\b(?!\s+to\b)"
-        + @"|\b\d+\s*%\s*off\b|\bpercent off\b|\bhalf off\b"
-        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing)\b|\bno deposit\b|\bmove-in special\b"
-        + @"|\bconcessions?\b|\bcomplimentary\b"
-        + @"|\bgratis\b|\bdescuentos?\b|\bgratuit(?:e|s|es)?\b|\brabais\b",
+        @"\b(?:first|second|one|two|three|\d+)\s+(?:months?|weeks?|years?)\s+(?:(?:is|are)\s+)?(?:free|rent free|on us)\b"
+        + @"|\brent\s+free\b|\bfree\s+(?:rent|months?|weeks?|years?)\b"
+        + @"|\$\s?\d[\d,]*(?:\.\d+)?\s+off\b|\b\d+\s*%\s*off\b|\bpercent\s+off\b|\bhalf\s+off\b"
+        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing)\b|\bno\s+deposit\b|\bmove\s+in\s+special\b|\blook\s+and\s+lease\b"
+        + @"|\b(?:mes|meses|año|semana)(?:\s+es)?\s+(?:gratis|sin\s+costo)\b|\brenta\s+gratis\b|\bdescuentos?\b"
+        + @"|\bmois(?:\s+est)?\s+(?:gratuits?|offerts?)\b|\bloyer\s+gratuit\b|\bréductions?\b|\brabais\b",
         RegexOptions.IgnoreCase)]
-    private static partial Regex PriceConcessionTerms();
+    private static partial Regex PriceConcessionPhrases();
 
     // Hyphens throughout, spaces throughout, or nine bare digits, so "123 45 6789" and
     // "123456789" are caught as well as the hyphenated form. Three alternatives rather than one

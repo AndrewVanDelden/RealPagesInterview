@@ -44,6 +44,16 @@ public class IngestNotesTests
         Assert.Contains("consent", notes.DefaultedFields);
     }
 
+    // The greeting name is derived, not an input member, so an input member called greeting_name is kept
+    // and listed like any other undeclared member rather than silently dropped.
+    [Fact]
+    public void Describe_ProfileMemberNamedGreetingName_IsListedAsUnknown()
+    {
+        IngestNotes notes = IngestNotes.Describe(Parse(RequiredOnlyLine.Replace("\"channel_preferences\"", "\"input\":{\"profile\":{\"first_name\":\"Sam\",\"greeting_name\":\"Bob\"}},\"channel_preferences\"")));
+
+        Assert.Contains("input.profile.greeting_name", notes.UnknownMembers);
+    }
+
     // A first name that is only an emoji names no one, so it is a defaulted input like an absent one.
     [Fact]
     public void Describe_FirstNameIsOnlyAnEmoji_NamesTheFirstName()

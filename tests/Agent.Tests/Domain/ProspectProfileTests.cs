@@ -59,24 +59,28 @@ public class ProspectProfileTests
     // kept, punctuation and markup included; cleaning markup is not this rule.
     [Theory]
     [InlineData("  \U0001F642 Sam \U0001F642 ", "Sam")]
-    [InlineData(" Sam‍", "Sam")]
-    [InlineData("❤️ Ana", "Ana")]
-    [InlineData("Ana️", "Ana")]
-    [InlineData("\U0001F468‍\U0001F469‍\U0001F467 Kai", "Kai")]
+    [InlineData("\u00A0Sam\u200D", "Sam")]
+    [InlineData("\u2764\uFE0F Ana", "Ana")]
+    [InlineData("Ana\uFE0F", "Ana")]
+    [InlineData("\U0001F468\u200D\U0001F469\u200D\U0001F467 Kai", "Kai")]
     [InlineData("\tSam\r\n", "Sam")]
-    [InlineData("​Sam﻿", "Sam")]
-    [InlineData("́Sam", "Sam")]
-    [InlineData("Sam", "Sam")]
-    [InlineData("José", "José")]
+    [InlineData("\u200BSam\uFEFF", "Sam")]
+    [InlineData("\u0301Sam", "Sam")]
+    [InlineData("\uE000Sam", "Sam")]
+    [InlineData("Jose\u0301", "Jose\u0301")]
     [InlineData("O'Neil", "O'Neil")]
-    [InlineData("Mary-Jane Jr.", "Mary-Jane Jr.")]
+    [InlineData("Mary-Jane Jr.", "Mary-Jane Jr")]
+    [InlineData("$Ana$", "Ana")]
+    [InlineData("(Ana \U0001F389)", "Ana")]
+    [InlineData("Ana \U0001F389!", "Ana")]
+    [InlineData("Ana 1\uFE0F\u20E3", "Ana")]
     [InlineData("<b>Dev</b>", "<b>Dev</b>")]
     [InlineData("ليلى", "ليلى")]
     public void GreetingName_FirstNameWithSurroundingSymbols_IsTheNameAlone(string firstName, string expected)
     {
         var profile = new ProspectProfile(firstName);
 
-        Assert.Equal(expected, profile.GreetingName);
+        Assert.Equal(expected, profile.GreetingName());
     }
 
     // A lone surrogate is text the JSON reader can accept, and it must not throw: it is trimmed as the
@@ -86,7 +90,7 @@ public class ProspectProfileTests
     {
         var profile = new ProspectProfile(new string([(char)0xD83D, 'S', 'a', 'm']));
 
-        Assert.Equal("Sam", profile.GreetingName);
+        Assert.Equal("Sam", profile.GreetingName());
     }
 
     // A first name that is nothing but whitespace or symbols names no one, so there is no greeting name.
@@ -95,10 +99,14 @@ public class ProspectProfileTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("\U0001F642\U0001F642")]
+    [InlineData("!!!")]
+    [InlineData("-")]
+    [InlineData("?")]
+    [InlineData("#\uFE0F\u20E3")]
     public void GreetingName_NoLettersOrDigits_IsNull(string? firstName)
     {
         var profile = new ProspectProfile(firstName);
 
-        Assert.Null(profile.GreetingName);
+        Assert.Null(profile.GreetingName());
     }
 }

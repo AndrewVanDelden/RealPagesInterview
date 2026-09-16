@@ -228,11 +228,14 @@ public sealed partial class OpenAiMessageComposer(
         // link, so they are sent whatever the model returned. Only a call to action the set has no
         // row for keeps the model's options, and when the model left those out too, the set's
         // generic pair goes out rather than an sms with no payload at all.
-        IReadOnlyList<string>? options = isEmail
+        // On a call, key 9 is the opt-out, so a spoken list stops at eight options and no option is 9.
+        bool isVoice = channel == CommunicationChannel.Voice;
+        IReadOnlyList<string>? listedOptions = isEmail
             ? null
             : namedOptions ?? (payload.CtaOptions is { Count: > 0 } modelOptions
                 ? [.. modelOptions.Select(WithoutLeadingNumber)]
                 : templates.SmsOptions(payload.CtaType, Personas.IsProspect(prospectCase.Persona)));
+        IReadOnlyList<string>? options = isVoice ? [.. listedOptions!.Take(MaxSpokenOptions)] : listedOptions;
 
         // The link in the body is code's the way the link itself is: a draft that left it out gets
         // the language set's link line, the one the template writes, and a draft that carries it is
@@ -242,7 +245,7 @@ public sealed partial class OpenAiMessageComposer(
             ? $"{draftBody}\n{string.Format(CultureInfo.InvariantCulture, templates.EmailLinkLine, link)}"
             : draftBody;
         string bodyWithLink = renewalOffer.HasValue
-            ? WithRenewalOfferTerms(linkedBody, link, isEmail, renewalOffer.Value, templates)
+            ? WithRenewalOfferTerms(linkedBody, link, isEmail, canReplyByText: !isVoice, renewalOffer.Value, templates)
             : linkedBody;
 
         // A required disclosure is a reproducible decision, so it is code's, as the link is,
@@ -254,10 +257,10 @@ public sealed partial class OpenAiMessageComposer(
         // translated another's dates, so an sms gets the language set's options sentence, the one the
         // template writes, after the draft and any offer terms and before the opt-out.
         // A voice message is read aloud, so its options are key presses and its opt-out a key press, and
-        // it must say who is calling at its start: a draft that does not name the property is opened
-        // with it (47 CFR 64.1200(b)).
-        bool isVoice = channel == CommunicationChannel.Voice;
-        string spokenBody = isVoice && !Presence.IsAbsent(context.PropertyName) && !bodyWithLink.Contains(context.PropertyName!, StringComparison.OrdinalIgnoreCase)
+        // it must say who is calling at its start: a draft whose first sentence does not name the property
+        // is opened with it (47 CFR 64.1200(b)).
+        string firstSentence = SentenceEnd().Split(bodyWithLink, 2)[0];
+        string spokenBody = isVoice && !Presence.IsAbsent(context.PropertyName) && !firstSentence.Contains(context.PropertyName!, StringComparison.OrdinalIgnoreCase)
             ? $"{string.Format(CultureInfo.InvariantCulture, templates.VoiceCallerOpening, context.PropertyName)} {bodyWithLink}"
             : bodyWithLink;
         string bodyWithOptions = channel switch
@@ -273,7 +276,12 @@ public sealed partial class OpenAiMessageComposer(
             CommunicationChannel.Voice => $" {templates.VoiceOptOut}",
             _ => $" {templates.SmsOptOut}",
         };
-        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithOptions)
+        // On a call only the set's own key-press opt-out counts: a draft's "Reply STOP" or "press 9 to
+        // speak with us" is nothing a caller can use to stop calls, so a voice message always gets it.
+        bool hasOptOut = isVoice
+            ? bodyWithOptions.Contains(templates.VoiceOptOut, StringComparison.Ordinal)
+            : OptOutInstructions.IsPresent(bodyWithOptions);
+        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !hasOptOut
             ? $"{bodyWithOptions}{optOutSentence}"
             : bodyWithOptions;
 
@@ -401,7 +409,7 @@ public sealed partial class OpenAiMessageComposer(
             $"language: {Describe(context.Language)}\n" +
             $"persona: {Describe(prospectCase.Persona)}\n" +
             $"lifecycle_stage: {Describe(prospectCase.LifecycleStage)}\n" +
-            $"first_name: {Describe(profile.GreetingName)}\n" +
+            $"first_name: {Describe(profile.GreetingName())}\n" +
             $"property: {Describe(context.PropertyName)}\n" +
             $"stated_interest: {interest}\n" +
             $"move_date_target: {DescribeDate(context.MoveDateTarget)}\n" +
@@ -475,15 +483,16 @@ public sealed partial class OpenAiMessageComposer(
     // The offer's terms in the record's language, each only when the offer states it: the price hold
     // on its own line before the link's line, where the reader sees the deadline before the link that
     // acts on it, and the text-reminder offer after the link. With no link, an sms or an email whose
-    // record has no unit, each follows the draft. O(n) in the body length.
-    private static string WithRenewalOfferTerms(string body, Uri? link, bool isEmail, RenewalOffer offer, MessageTemplates templates)
+    // record has no unit, each follows the draft. The text-reminder offer asks for a reply by text, so
+    // it is written only where the person can reply, never on a call. O(n) in the body length.
+    private static string WithRenewalOfferTerms(string body, Uri? link, bool isEmail, bool canReplyByText, RenewalOffer offer, MessageTemplates templates)
     {
         string separator = isEmail ? "\n" : " ";
         string withPriceHold = offer.PriceHoldDays is { } days
             ? WithPriceHoldSentence(body, link, separator, string.Format(CultureInfo.InvariantCulture, templates.RenewalPriceHoldSentence, days))
             : body;
 
-        return offer.TextRemindersOffered == true ? $"{withPriceHold}{separator}{templates.RenewalTextRemindersSentence}" : withPriceHold;
+        return offer.TextRemindersOffered == true && canReplyByText ? $"{withPriceHold}{separator}{templates.RenewalTextRemindersSentence}" : withPriceHold;
     }
 
     // A link is always in the body by the time the terms are written, since a draft that left it out
@@ -526,6 +535,13 @@ public sealed partial class OpenAiMessageComposer(
 
     [GeneratedRegex(@"^\s*\d{1,2}\s*[.)\-]\s+")]
     private static partial Regex LeadingNumber();
+
+    // A sentence ends at a period, exclamation mark or question mark followed by whitespace.
+    [GeneratedRegex(@"(?<=[.!?])\s")]
+    private static partial Regex SentenceEnd();
+
+    // Keys 1 to 8 for options, since key 9 is the opt-out on a call.
+    private const int MaxSpokenOptions = 8;
 
     // The brand rule allows one exclamation mark, and brand style is code's rule, so a draft keeps
     // its first and every later one becomes a period. O(n) in the body length.

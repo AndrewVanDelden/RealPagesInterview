@@ -32,7 +32,7 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         NoteAbsent(defaulted, Presence.IsAbsent(context.RenewalOfferId), "input.renewal_offer_id");
         NoteAbsent(defaulted, context.MissedTourTime is null, "input.missed_tour_time");
         NoteAbsent(defaulted, Presence.IsAbsent(context.CancellationReason), "input.cancellation_reason");
-        NoteAbsent(defaulted, profile.GreetingName is null, "input.profile.first_name");
+        NoteAbsent(defaulted, profile.GreetingName() is null, "input.profile.first_name");
         NoteAbsent(defaulted, profile.City.Length == 0, "input.profile.city_interest");
         NoteAbsent(defaulted, profile.Amenities.Count == 0, "input.profile.amenity_interest");
         NoteAbsent(defaulted, profile.BudgetMax is null, "input.profile.budget_max");

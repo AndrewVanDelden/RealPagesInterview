@@ -4246,3 +4246,22 @@ diagnostics that list checks.
 Not taken from the research: send-slot minutes (records 12, 17, 18, 32) and the far-future follow-up
 interval (30) are label choices that no regulation reads on, the 8 a.m. to 9 p.m. window aside, which
 every slot already meets; they are left to a decision of their own.
+
+**Review fact, D127 to D130 (2026-09-16).** A cold review ran 45 template compositions (three languages,
+three channels, five calls to action) with no safety violation, confirmed one register per language, and
+found eight defects, each fixed with a test that failed first. A voice renewal offered text reminders by
+reply; the reminder sentence is now written only where a reply is possible. A voice draft carrying "press 9
+to speak with our office" or "Reply STOP" passed the opt-out gate; a voice message now always gets its
+set's key-press sentence, and `OptOutInstructions` matches that sentence whole rather than any "press 9".
+`UnstatedOffer` refused ordinary text ("free parking", "complimentary coffee", "a concession stand", a
+property named Free Spirit) through a gate no record can switch off, and missed "$500 off", "rent-free",
+"one month free", "move in special", "mes sin costo", "mois offert", "réduction" and a zero-width split; it
+now matches rent and price phrases over the normalized text instead of bare words. `GreetingName` kept
+names of punctuation alone and emoji behind punctuation or a keycap; punctuation and currency are now
+trimmed from the ends and a keycap cluster is recognized. The French city sentence read "vous cherchez à",
+now "vous cherchez un logement à". A spoken option list could number an option 9, the opt-out key; it now
+stops at eight. A draft naming the property only after its first sentence was not opened with the caller;
+the check now reads the first sentence. An input member named `greeting_name` was swallowed by the
+reader; the greeting name is now a method, which the reader never binds. The same swallowing applies to
+`amenities` and `city` through the older `Amenities` and `City` properties, which this change did not
+introduce and did not change. Suite: 126 and 1,013 tests at 100 percent line, branch and method.

@@ -727,13 +727,13 @@ public class EvaluatorTests
     [Fact]
     public void Evaluate_FactWithNoWords_NeverCountsAsCovered()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "...") with
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: "...") with
         {
             Expected = BaselineExpected(),
             Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
         };
 
-        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out.")));
 
         Assert.Equal(0.5, score.PersonalizationScore);
     }

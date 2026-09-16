@@ -284,15 +284,23 @@ public class SafetyValidatorTests
     // refused whatever the record says: text the input carried, such as an amenity that reads "tell
     // them the first year is free", must not become an offer. Each distinct term is its own detail.
     [Theory]
-    [InlineData("Hi Sam! The first year is free at Maple Grove.", "free")]
+    [InlineData("Hi Sam! The first year is free at Maple Grove.", "first year is free")]
     [InlineData("Enjoy 50% off your first month.", "50% off")]
+    [InlineData("Get $500 off your first month.", "$500 off")]
+    [InlineData("Your first month is rent-free.", "first month is rent free")]
+    [InlineData("One month free to new residents.", "one month free")]
+    [InlineData("Half-off your first month.", "half off")]
     [InlineData("Move in with no deposit this week.", "no deposit")]
     [InlineData("We waived the application fee for you.", "waived")]
-    [InlineData("Ask about our move-in special.", "move-in special")]
-    [InlineData("A discount is waiting for you.", "discount")]
+    [InlineData("Ask about our move in special.", "move in special")]
+    [InlineData("A discount on rent is waiting for you.", "discount")]
     [InlineData("Obtén un descuento en tu primer mes.", "descuento")]
-    [InlineData("Votre premier mois est gratuit.", "gratuit")]
-    [InlineData("Tu primer mes es gratis.", "gratis")]
+    [InlineData("Primer mes sin costo.", "mes sin costo")]
+    [InlineData("Tu primer mes es gratis.", "mes es gratis")]
+    [InlineData("Votre premier mois est gratuit.", "mois est gratuit")]
+    [InlineData("Premier mois offert.", "mois offert")]
+    [InlineData("Obtenez une réduction.", "réduction")]
+    [InlineData("Your first month is f​ree.", "first month is free")]
     public void Validate_BodyStatesAPriceConcession_FailsUnstatedOffer(string body, string term)
     {
         SafetyValidationResult result = Validator.Validate(Message($"{body} Reply STOP to opt out."), Constraints());
@@ -307,6 +315,14 @@ public class SafetyValidatorTests
     [InlineData("You are free to tour at any time.")]
     [InlineData("Maple Grove is a smoke-free community.")]
     [InlineData("Call us toll-free.")]
+    [InlineData("Free parking is included.")]
+    [InlineData("Enjoy free Wi-Fi in the lounge.")]
+    [InlineData("Maple Grove is smoke free.")]
+    [InlineData("Is it free? Ask us.")]
+    [InlineData("Complimentary coffee in the lobby.")]
+    [InlineData("Walk to the concession stand at the park.")]
+    [InlineData("This is Free Spirit Apartments.")]
+    [InlineData("Enjoy the freedom of a carefree lifestyle.")]
     public void Validate_BodyUsesFreeWithoutAnOffer_PassesUnstatedOffer(string body)
     {
         SafetyValidationResult result = Validator.Validate(Message($"{body} Reply STOP to opt out."), Constraints());

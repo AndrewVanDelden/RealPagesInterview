@@ -912,6 +912,64 @@ public class OpenAiMessageComposerTests
             ComposedOf(outcome).Message.Body);
     }
 
+    // A renewal read aloud keeps the price hold but never offers text reminders by reply, which a caller
+    // cannot give on a call.
+    [Fact]
+    public async Task ComposeAsync_RenewalReviewVoice_WritesThePriceHoldAndNoTextReplyOffer()
+    {
+        const string json = """{"subject":null,"body":"Hi Jordan, this is Oak Ridge Apartments.","cta_type":"review_renewal","cta_options":["yes","no"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json), propertyData: SamplePropertyData.OakRidge());
+
+        ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Voice);
+
+        Assert.Equal(
+            "Hi Jordan, this is Oak Ridge Apartments. We've reserved current pricing for 10 days. Press 1 for yes; 2 for no. To stop future calls, press 9.",
+            ComposedOf(outcome).Message.Body);
+    }
+
+    // A voice draft whose own words mention a key or a text opt-out still gets the key-press opt-out:
+    // on a call only the set's opt-out sentence counts, so "press 9 to speak with us" or "Reply STOP"
+    // never stands in for it.
+    [Theory]
+    [InlineData("Hi Taylor, this is Oak Ridge Apartments. Press 9 to speak with our office.")]
+    [InlineData("Hi Taylor, this is Oak Ridge Apartments. Reply STOP to opt out.")]
+    public async Task ComposeAsync_VoiceDraftWithAnotherOptOut_StillEndsWithTheKeyPressOptOut(string draft)
+    {
+        string json = $$"""{"subject":null,"body":"{{draft}}","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.EndsWith("To stop future calls, press 9.", ComposedOf(outcome).Message.Body);
+    }
+
+    // Key 9 is the opt-out on a call, so a spoken list stops at eight options and never numbers one 9.
+    [Fact]
+    public async Task ComposeAsync_VoiceWithTenModelOptions_ReadsEightSoKeyNineIsOnlyTheOptOut()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, this is Oak Ridge Apartments.","cta_type":"reply","cta_options":["a","b","c","d","e","f","g","h","i","j"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: "reply"), CommunicationChannel.Voice);
+
+        NextMessage message = ComposedOf(outcome).Message;
+        Assert.Equal(8, message.Cta!.Options!.Count);
+        Assert.DoesNotContain("9 for", message.Body);
+    }
+
+    // The caller is named at the start: a draft that names the property only later is still opened
+    // with it.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingThePropertyOnlyLater_IsOpenedWithTheCaller()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor! We'd love to show you Oak Ridge Apartments.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("This is Oak Ridge Apartments. Hi Taylor!", ComposedOf(outcome).Message.Body);
+    }
+
     // An offer found by its id on a record with no unit has no link to place the price hold before,
     // so the price hold follows the draft on its own line.
     [Fact]
