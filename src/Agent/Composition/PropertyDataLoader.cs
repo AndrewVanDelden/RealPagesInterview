@@ -72,7 +72,8 @@ public static class PropertyDataLoader
 
             failures.AddRange(PriceFailures(label, entry.StartingPrices ?? []));
             failures.AddRange(OfferFailures(label, entry.RenewalOffers ?? []));
-            properties.Add(new PropertyFacts(entry.PropertyName, entry.TourAvailability, entry.StartingPrices, entry.RenewalOffers, entry.ExtendedTourHours));
+            failures.AddRange(CalendarFailures(label, entry));
+            properties.Add(new PropertyFacts(entry.PropertyName, entry.TourAvailability, entry.StartingPrices, entry.RenewalOffers, entry.ExtendedTourHours, CalendarOf(entry)));
         }
 
         return failures.Count == 0
@@ -126,6 +127,71 @@ public static class PropertyDataLoader
         }
     }
 
+    // A calendar that could offer no slot, or the wrong one, is refused: an empty list of days, a day
+    // that is not a weekday's name, a time not written as 24-hour hours and minutes, and a null closed
+    // date. O(d + c) in the days and closed dates.
+    private static IEnumerable<string> CalendarFailures(string label, PropertyFileEntry entry)
+    {
+        if (entry.TourDays is { Count: 0 })
+        {
+            yield return $"{label}: tour_days is empty, so no tour could be offered.";
+        }
+
+        IReadOnlyList<string?> days = entry.TourDays ?? [];
+
+        for (int index = 0; index < days.Count; index++)
+        {
+            if (!TryReadWeekday(days[index], out _))
+            {
+                yield return $"{label}: tour day {index + 1} is not a weekday name.";
+            }
+        }
+
+        if (entry.TourTime is not null && !TryReadTourTime(entry.TourTime, out _))
+        {
+            yield return $"{label}: tour_time must be 24-hour HH:mm.";
+        }
+
+        IReadOnlyList<DateOnly?> closedDates = entry.TourClosedDates ?? [];
+
+        for (int index = 0; index < closedDates.Count; index++)
+        {
+            if (closedDates[index] is null)
+            {
+                yield return $"{label}: tour closed date {index + 1} is null.";
+            }
+        }
+    }
+
+    // The calendar the file states, or none when the property states no calendar member. Only the
+    // readable members are kept; CalendarFailures has already refused the file for any other.
+    private static TourCalendar? CalendarOf(PropertyFileEntry entry)
+    {
+        if (entry.TourDays is null && entry.TourTime is null && entry.TourClosedDates is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<DayOfWeek>? openDays = entry.TourDays is null
+            ? null
+            : [.. entry.TourDays.Select(name => TryReadWeekday(name, out DayOfWeek day) ? (DayOfWeek?)day : null).OfType<DayOfWeek>()];
+        TimeOnly? tourTime = entry.TourTime is not null && TryReadTourTime(entry.TourTime, out TimeOnly time) ? time : null;
+        IReadOnlyList<DateOnly>? closedDates = entry.TourClosedDates is null ? null : [.. entry.TourClosedDates.OfType<DateOnly>()];
+
+        return new TourCalendar(openDays, tourTime, closedDates);
+    }
+
+    // A weekday's English name in any case. Letters only, because Enum.TryParse would also accept a
+    // number such as "1" as a weekday.
+    private static bool TryReadWeekday(string? name, out DayOfWeek day)
+    {
+        day = default;
+        return name is not null && name.All(char.IsLetter) && Enum.TryParse(name, ignoreCase: true, out day);
+    }
+
+    private static bool TryReadTourTime(string text, out TimeOnly time) =>
+        TimeOnly.TryParseExact(text, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out time);
+
     // A property's name as the file wrote it, trimmed and lowercased, read before the property
     // itself so a property that cannot be read is still named.
     private static string NameAsWritten(JsonElement element) =>
@@ -145,4 +211,7 @@ internal sealed record PropertyFileEntry(
     string? TourAvailability = null,
     IReadOnlyList<StartingPrice>? StartingPrices = null,
     IReadOnlyList<RenewalOffer>? RenewalOffers = null,
-    string? ExtendedTourHours = null);
+    string? ExtendedTourHours = null,
+    IReadOnlyList<string?>? TourDays = null,
+    string? TourTime = null,
+    IReadOnlyList<DateOnly?>? TourClosedDates = null);

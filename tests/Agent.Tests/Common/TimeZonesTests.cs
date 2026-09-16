@@ -34,6 +34,31 @@ public class TimeZonesTests
         Assert.Equal(TimeZoneInfo.Utc, timeZone);
     }
 
+    // A zone id the runtime knows is kept; one it does not know falls back to the zone of the US state
+    // the record's city_interest ends with, "City, ST"; with no such state the id is kept, and it
+    // resolves as UTC downstream as before.
+    [Theory]
+    [InlineData("America/Denver", "Dallas, TX", "America/Denver")]
+    [InlineData("America/Dallas", "Dallas, TX", "America/Chicago")]
+    [InlineData(null, "Pasadena, CA", "America/Los_Angeles")]
+    [InlineData("Not/AZone", " Phoenix ,  az ", "America/Phoenix")]
+    [InlineData("America/Dallas", "Dallas", "America/Dallas")]
+    [InlineData("America/Dallas", "Nowhere, ZZ", "America/Dallas")]
+    [InlineData("America/Dallas", null, "America/Dallas")]
+    public void EffectiveZoneId_UnknownZone_FallsBackToTheStateInCityInterest(string? timeZoneId, string? cityInterest, string? expected)
+    {
+        Assert.Equal(expected, TimeZones.EffectiveZoneId(timeZoneId, cityInterest));
+    }
+
+    // Every zone the state table names is one the runtime recognizes, so the fallback never names a
+    // zone that would itself resolve as UTC.
+    [Fact]
+    public void StateZoneIds_EveryZone_IsRecognized()
+    {
+        Assert.Equal(51, TimeZones.StateZoneIds.Count);
+        Assert.All(TimeZones.StateZoneIds, pair => Assert.True(TimeZones.TryResolve(pair.Value, out _), pair.Key));
+    }
+
     // 2025-12-25T02:30:00Z is 2025-12-24 18:30 in America/Los_Angeles (UTC-8 in December).
     // The local date, not the UTC date, is the one horizons are counted from.
     [Fact]

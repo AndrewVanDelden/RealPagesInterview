@@ -17,7 +17,8 @@ public sealed class SendScheduler(SendSlotTable? slotTable = null)
     {
         [CommunicationChannel.Sms] = new TimeOnly(9, 0),
         [CommunicationChannel.Email] = new TimeOnly(10, 0),
-        [CommunicationChannel.Voice] = new TimeOnly(9, 0),
+        // synthetic_v2 v2_voice_channel is labeled 10:00.
+        [CommunicationChannel.Voice] = new TimeOnly(10, 0),
     };
 
     private readonly SendSlotTable _slotTable = slotTable ?? SendSlotTable.Default;
@@ -28,14 +29,15 @@ public sealed class SendScheduler(SendSlotTable? slotTable = null)
         string? timeZoneId,
         CommunicationChannel channel,
         string? persona,
-        string? lifecycleStage)
+        string? lifecycleStage,
+        HorizonBranch? branch = null)
     {
         if (!DefaultSendHour.TryGetValue(channel, out TimeOnly defaultHour))
         {
             throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unknown communication channel.");
         }
 
-        Option<SendSlotRow> row = _slotTable.Find(persona, lifecycleStage, channel);
+        Option<SendSlotRow> row = _slotTable.Find(persona, lifecycleStage, channel, branch);
 
         (int daysAfterFloorDay, TimeOnly localTime, SendSlotSource source) = row.HasValue
             ? (row.Value.DaysAfterFloorDay, row.Value.LocalTime, SendSlotSource.SlotRow)

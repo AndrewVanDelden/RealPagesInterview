@@ -388,6 +388,57 @@ public class EvaluatorTests
         Assert.Equal(expected, score.CtaPayload);
     }
 
+    // The product offers dated tour slots and the labels name weekdays. A label's weekday means the
+    // first date with that weekday after the label's own send date, in the label's own offset, so an
+    // option naming that date passes whatever its time, and dates carry no language, so a Spanish
+    // label's weekday is the same date as an English one's.
+    [Theory]
+    // Tuesday 2025-12-09: Thu and Fri are the 11th and 12th.
+    [InlineData("2025-12-09T09:00:00-06:00", new[] { "Thu", "Fri" }, new[] { "Dec 11, 2025, 10:00 AM", "Dec 12, 2025, 10:00 AM" }, CheckResult.Passed)]
+    [InlineData("2025-12-09T09:00:00-06:00", new[] { "jueves", "viernes" }, new[] { "Dec 11, 2025, 2:00 PM", "Dec 12, 2025, 2:00 PM" }, CheckResult.Passed)]
+    [InlineData("2025-12-09T09:00:00-06:00", new[] { "Thu", "Fri" }, new[] { "Dec 10, 2025, 10:00 AM", "Dec 11, 2025, 10:00 AM" }, CheckResult.Failed)]
+    // Sunday 2026-10-25: Mon and Tue are the 26th and 27th.
+    [InlineData("2026-10-25T09:00:00-05:00", new[] { "Mon", "Tue" }, new[] { "Oct 26, 2026, 10:00 AM", "Oct 27, 2026, 10:00 AM" }, CheckResult.Passed)]
+    [InlineData("2026-10-25T09:00:00-05:00", new[] { "Mon", "Tue" }, new[] { "Oct 27, 2026, 10:00 AM", "Oct 28, 2026, 10:00 AM" }, CheckResult.Failed)]
+    // A same-weekday send: the label's Tuesday is the next one, a week out, not the send day itself.
+    [InlineData("2025-12-09T09:00:00-06:00", new[] { "Tue" }, new[] { "Dec 16, 2025, 10:00 AM" }, CheckResult.Passed)]
+    // A label option that is not a weekday is compared as text.
+    [InlineData("2025-12-09T09:00:00-06:00", new[] { "tour", "update" }, new[] { "Dec 11, 2025, 10:00 AM", "Dec 12, 2025, 10:00 AM" }, CheckResult.Failed)]
+    public void Evaluate_DatedOptionsAgainstALabelsWeekdays_PassWhenTheyNameTheSameDates(string labelSendAt, string[] labelOptions, string[] options, CheckResult expected)
+    {
+        var label = new NextMessage(CommunicationChannel.Sms, DateTimeOffset.Parse(labelSendAt), null, "expected", new Cta("schedule_tour", labelOptions));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(label));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: options)));
+
+        Assert.Equal(expected, score.CtaPayload);
+    }
+
+    // A label that states no send date gives its weekdays no date to count from, so they are compared
+    // as text and a dated option does not match them.
+    [Fact]
+    public void Evaluate_DatedOptionsAgainstALabelWithNoSendDate_ComparedAsText()
+    {
+        var label = new NextMessage(CommunicationChannel.Sms, null, null, "expected", new Cta("schedule_tour", ["Thu", "Fri"]));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(label));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, EnglishSmsBody, options: ["Dec 11, 2025, 10:00 AM", "Dec 12, 2025, 10:00 AM"])));
+
+        Assert.Equal(CheckResult.Failed, score.CtaPayload);
+    }
+
+    // A label that sends nothing states no call to action, so an email the agent sent anyway is
+    // measured on its link's presence alone; the channel check is the one that fails it.
+    [Fact]
+    public void Evaluate_LabelSendsNothingAndTheAgentSendsAnEmail_PayloadIsMeasuredOnPresence()
+    {
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(Suppressed()));
+
+        RecordScore score = ScoreOf(Run(prospectCase, EmailMessage(EnglishSmsBody)));
+
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
     // A label with no options has nothing to compare against, so presence is what the check can
     // measure.
     [Fact]

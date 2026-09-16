@@ -203,10 +203,31 @@ public class ActionCatalogTests
     {
         ActionCatalog catalog = CatalogOf(Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()));
 
-        ActionCatalogMatch match = catalog.Resolve("resident", "renewal", HorizonBranch.Short);
+        ActionCatalogMatch match = catalog.Resolve("prospect", "toured", HorizonBranch.Short);
 
         Assert.Equal(Cadence, match.Action);
         Assert.Equal(ActionSource.GenericRowNoMatch, match.Source);
+    }
+
+    // The generic row's short action names a prospect cadence, and no evidence shows one for anyone
+    // else, so a record whose persona is not a prospect, an absent persona included, takes the generic
+    // row's long action on every branch, whether no row matched or its row did not state the branch.
+    [Theory]
+    [InlineData("resident", "renewal", HorizonBranch.Short, ActionSource.GenericRowNoMatch)]
+    [InlineData("guarantor", "screening", HorizonBranch.Short, ActionSource.GenericRowNoMatch)]
+    [InlineData(null, "new", HorizonBranch.Short, ActionSource.GenericRowNoMatch)]
+    [InlineData("resident", "welcome", HorizonBranch.Short, ActionSource.GenericRowNoBranch)]
+    [InlineData("resident", "welcome", HorizonBranch.Long, ActionSource.GenericRowNoBranch)]
+    public void Resolve_PersonaThatIsNotAProspect_TakesTheGenericRowsLongActionOnEveryBranch(string? persona, string stage, HorizonBranch branch, ActionSource source)
+    {
+        ActionCatalog catalog = CatalogOf(
+            Row("prospect", "new", Option<NextAction>.Some(Cadence), Option<NextAction>.None()),
+            Row("resident", "welcome", Option<NextAction>.None(), Option<NextAction>.None(), Option<NextAction>.Some(new NextAction(ActionTypes.FollowUpInDays, Value: 2))));
+
+        ActionCatalogMatch match = catalog.Resolve(persona, stage, branch);
+
+        Assert.Equal(FollowUp, match.Action);
+        Assert.Equal(source, match.Source);
     }
 
     [Theory]
@@ -235,7 +256,7 @@ public class ActionCatalogTests
     // Branches no record showed: the row does not state them, so they come from the generic
     // row and the diagnostics can say so.
     [Theory]
-    [InlineData("prospect", "open", HorizonBranch.Short)]
+    [InlineData("prospect", "no_show", HorizonBranch.Short)]
     [InlineData("resident", "renewal_window", HorizonBranch.Short)]
     [InlineData("resident", "renewal_window", HorizonBranch.Long)]
     public void Default_UnobservedBranchOfAKnownRow_ComesFromTheGenericRow(string persona, string stage, HorizonBranch branch)
@@ -338,10 +359,42 @@ public class ActionCatalogTests
         Assert.False(written.Equals(null));
     }
 
+    // The rows synthetic_v2.jsonl sets, each on the branch its record showed.
+    [Theory]
+    [InlineData("prospect", "toured", HorizonBranch.Short, ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("prospect", "applied", HorizonBranch.Short, ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("prospect", "approved", HorizonBranch.Short, ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("prospect", "open", HorizonBranch.Short, ActionTypes.FollowUpInDays, null, 2)]
+    [InlineData("resident", "move_in", HorizonBranch.Short, ActionTypes.StartCadence, "resident_move_in_prep", null)]
+    [InlineData("resident", "active", HorizonBranch.NoMoveDate, ActionTypes.FollowUpInDays, null, 7)]
+    [InlineData("resident", "renewal", HorizonBranch.NoMoveDate, ActionTypes.StartCadence, "resident_renewal", null)]
+    public void Default_BlindSetStage_ComesFromItsRow(string persona, string stage, HorizonBranch branch, string type, string? name, int? value)
+    {
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve(persona, stage, branch);
+
+        Assert.Equal(new NextAction(type, name, value), match.Action);
+        Assert.Equal(ActionSource.CatalogRow, match.Source);
+    }
+
+    // A closed lead and a prospect at a resident's stage are sent nothing, whatever the horizon.
+    [Theory]
+    [InlineData("lost", "lead_closed")]
+    [InlineData("renewal", "persona_stage_mismatch")]
+    public void Default_StageThatMustNotBeContacted_IsNoOpOnEveryBranch(string stage, string reason)
+    {
+        Assert.All(Enum.GetValues<HorizonBranch>(), branch =>
+        {
+            ActionCatalogMatch match = ActionCatalog.Default.Resolve("prospect", stage, branch);
+
+            Assert.Equal(new NextAction(ActionTypes.NoOp, Reason: reason), match.Action);
+            Assert.Equal(ActionSource.CatalogRow, match.Source);
+        });
+    }
+
     [Fact]
     public void Default_UnknownPersona_ComesFromTheGenericRow()
     {
-        ActionCatalogMatch match = ActionCatalog.Default.Resolve("resident", "renewal", HorizonBranch.Long);
+        ActionCatalogMatch match = ActionCatalog.Default.Resolve("resident", "vacated", HorizonBranch.Long);
 
         Assert.Equal(ActionTypes.FollowUpInDays, match.Action.Type);
         Assert.Equal(3, match.Action.Value);

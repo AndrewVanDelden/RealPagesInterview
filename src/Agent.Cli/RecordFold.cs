@@ -109,7 +109,7 @@ internal sealed class RecordFold(
 
         if (evaluator is not null)
         {
-            Score(evaluator, new ScoredRun(completed.Case, result.Output, result.Diagnostics.SafetyViolationCount, completed.LatencyMs), completed.Judgement);
+            Score(evaluator, completed.ScoredRun, completed.Judgement);
         }
     }
 

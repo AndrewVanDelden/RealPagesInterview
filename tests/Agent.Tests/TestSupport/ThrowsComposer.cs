@@ -12,6 +12,8 @@ internal sealed class ThrowsComposer : IMessageComposer
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null) =>
         throw new InvalidOperationException("Simulated unhandled failure deep in the compose step.");
 }

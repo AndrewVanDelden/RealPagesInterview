@@ -150,7 +150,7 @@ public static class RulesFileLoader
             && entry.LocalTime is { } text
             && TryParseLocalTime(text, out TimeOnly localTime))
         {
-            return Result<SendSlotRow>.Success(new SendSlotRow(entry.Persona ?? string.Empty, entry.LifecycleStage ?? string.Empty, channel, days, localTime));
+            return Result<SendSlotRow>.Success(new SendSlotRow(entry.Persona ?? string.Empty, entry.LifecycleStage ?? string.Empty, channel, days, localTime, entry.Branch));
         }
 
         List<string> failures = [];

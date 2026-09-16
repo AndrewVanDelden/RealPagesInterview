@@ -49,7 +49,7 @@ public class SendSchedulerTests
     [InlineData("resident", "renewal_details_requested", CommunicationChannel.Email, "2025-12-14T09:10:00-06:00")]
     public void Resolve_PersonaStageAndChannelWithASlotRow_SendsAtTheRowsDayAndLocalTime(string persona, string lifecycleStage, CommunicationChannel channel, string expectedSendAt)
     {
-        ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", channel, persona, lifecycleStage);
+        ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", channel, persona, lifecycleStage, HorizonBranch.NoMoveDate);
 
         Assert.Equal(DateTimeOffset.Parse(expectedSendAt), scheduled.SendAt);
         Assert.Equal(TimeSpan.FromHours(-6), scheduled.SendAt.Offset);
@@ -175,12 +175,28 @@ public class SendSchedulerTests
         Assert.Equal(ScheduleFloor.ReferenceTime, scheduled.Floor);
     }
 
+    // synthetic_v2's voice record is labeled 10:00.
     [Fact]
-    public void Resolve_VoiceChannel_ResolvesToNineAmLocal()
+    public void Resolve_VoiceChannel_ResolvesToTenAmLocal()
     {
         ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Voice, null, null);
 
-        Assert.Equal(new TimeOnly(9, 0), TimeOnly.FromDateTime(scheduled.SendAt.DateTime));
+        Assert.Equal(new TimeOnly(10, 0), TimeOnly.FromDateTime(scheduled.SendAt.DateTime));
+    }
+
+    // The prospect/new email slot at 09:05 comes from a hold-out record with no move date, and every
+    // synthetic_v2 prospect/new email that states a move date is labeled at the channel's 10:00, so the
+    // row applies only on the no-move-date branch.
+    [Theory]
+    [InlineData(HorizonBranch.NoMoveDate, "2025-12-09T09:05:00-06:00", SendSlotSource.SlotRow)]
+    [InlineData(HorizonBranch.Short, "2025-12-09T10:00:00-06:00", SendSlotSource.ChannelDefault)]
+    [InlineData(HorizonBranch.Long, "2025-12-09T10:00:00-06:00", SendSlotSource.ChannelDefault)]
+    public void Resolve_ProspectNewEmail_TakesTheNineOhFiveSlotOnlyWithNoMoveDate(HorizonBranch branch, string expectedSendAt, SendSlotSource source)
+    {
+        ScheduledSend scheduled = Scheduler.Resolve(ReferenceTime, null, "America/Chicago", CommunicationChannel.Email, "prospect", "new", branch);
+
+        Assert.Equal(DateTimeOffset.Parse(expectedSendAt), scheduled.SendAt);
+        Assert.Equal(source, scheduled.Source);
     }
 
     [Fact]

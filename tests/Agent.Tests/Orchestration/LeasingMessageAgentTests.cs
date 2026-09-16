@@ -60,6 +60,25 @@ public class LeasingMessageAgentTests
         Assert.Equal(expected, result.Diagnostics.RequiredStates["renewal_offer_loaded"]);
     }
 
+    // The tour options are planned from the message's own send time, so the agent schedules before it
+    // composes: an sms sent Tuesday 09:00 offers Thursday and Friday at 10:00, and a property whose
+    // calendar tours only on Saturdays at 11:00 offers the next two Saturdays.
+    [Theory]
+    [InlineData(false, new[] { "Dec 11, 2025, 10:00 AM", "Dec 12, 2025, 10:00 AM" })]
+    [InlineData(true, new[] { "Dec 13, 2025, 11:00 AM", "Dec 20, 2025, 11:00 AM" })]
+    public async Task RunAsync_TourSms_OffersTheSlotsPlannedFromItsSendTime(bool withCalendar, string[] expectedOptions)
+    {
+        PropertyData? propertyData = withCalendar
+            ? new PropertyData([new PropertyFacts("Oak Ridge Apartments", TourCalendar: new TourCalendar(OpenDays: [DayOfWeek.Saturday], TourTime: new TimeOnly(11, 0)))])
+            : null;
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent(propertyData: propertyData);
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(), ReferenceTime);
+
+        Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage!.SendAt);
+        Assert.Equal(expectedOptions, result.Output.NextMessage.Cta!.Options);
+    }
+
     // A record with no consented channel reaches no step past the channel selection, so the offer
     // was never looked up and the state is not evaluated.
     [Fact]
@@ -161,6 +180,41 @@ public class LeasingMessageAgentTests
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
         Assert.Null(result.Diagnostics.ActionPlan);
         Assert.Null(result.Diagnostics.Schedule);
+    }
+
+    // A stage whose action is no_op, a closed lead or a prospect at a resident's stage, is sent
+    // nothing: channel none, the action's own reason on the wire, and the suppression named, with the
+    // plan that chose it and no schedule.
+    [Theory]
+    [InlineData("lost", "lead_closed")]
+    [InlineData("renewal", "persona_stage_mismatch")]
+    public async Task RunAsync_StageWhoseActionIsNoOp_SuppressesTheMessage(string stage, string reason)
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+
+        AgentRunResult result = await agent.RunAsync(SampleProspectCases.Minimal(lifecycleStage: stage), ReferenceTime);
+
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Null(result.Output.NextMessage.Body);
+        Assert.Equal(new NextAction(ActionTypes.NoOp, Reason: reason), result.Output.NextAction);
+        Assert.Equal(SuppressionReason.NoOpAction, result.Diagnostics.SuppressionReason);
+        Assert.NotNull(result.Diagnostics.ActionPlan);
+        Assert.Null(result.Diagnostics.Schedule);
+    }
+
+    // A timezone id the runtime does not know falls back to the zone of the state the record's
+    // city_interest names before UTC: "America/Dallas" with "Dallas, TX" is scheduled in Central time.
+    [Fact]
+    public async Task RunAsync_UnknownTimeZoneWithAStateInCityInterest_SchedulesInThatStatesZone()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase minimal = SampleProspectCases.Minimal(cityInterest: "Dallas, TX");
+        ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { TimeZoneId = "America/Dallas" } };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Equal(DateTimeOffset.Parse("2025-12-09T09:00:00-06:00"), result.Output.NextMessage!.SendAt);
+        Assert.Equal("America/Chicago", result.Diagnostics.Schedule!.TimeZoneId);
     }
 
     // A8 through the whole agent: a record that states no persona and no lifecycle stage has

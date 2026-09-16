@@ -24,6 +24,23 @@ public class ValidatingMessageComposerTests
     private static ComposedMessage ComposedOf(ComposeOutcome outcome) =>
         Assert.IsType<ComposeOutcome.Composed>(outcome).Message;
 
+    // The tour slots are the agent's decision for this record, so the loop hands them to whichever
+    // composer answers: the attempt, and the fallback after an attempt that returned no message.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ComposeAsync_TourSlots_ReachTheComposerThatAnswers(bool attemptFails)
+    {
+        IMessageComposer attempt = attemptFails
+            ? new SequenceMessageComposer(Result<NextMessage>.Failure("boom"))
+            : new TemplateMessageComposer();
+        var composer = new ValidatingMessageComposer(attempt, Validator, FallbackComposer);
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
+
+        Assert.Equal(SampleTourSlots.TuesdayText, ComposedOf(outcome).Message.Cta!.Options);
+    }
+
     // Both exits that return a message hand out the verdict that passed it, so the agent's
     // final gate can read it instead of asking the same validator again. A model attempt that
     // passes is the first exit.

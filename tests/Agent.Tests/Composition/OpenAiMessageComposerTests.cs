@@ -34,7 +34,7 @@ public class OpenAiMessageComposerTests
 
         ComposedMessage result = ComposedOf(outcome);
         NextMessage message = result.Message;
-        Assert.Equal("Hi Taylor, book a tour! Reply STOP to opt out.", message.Body);
+        Assert.Equal("Hi Taylor, book a tour! Reply STOP to opt out. Reply 1 for Thu; 2 for Fri.", message.Body);
         Assert.Equal("Tour Oak Ridge", message.Subject);
         Assert.Equal("schedule_tour", message.Cta!.Type);
         Assert.Equal(["Thu", "Fri"], message.Cta.Options);
@@ -205,12 +205,13 @@ public class OpenAiMessageComposerTests
 
     // A required disclosure is a reproducible decision, so code owns it and the model writes
     // only prose. A body the model wrote without an opt-out gets the record's own language set's
-    // sentence, the one the template writes: after a space on sms, on its own line on email, where
-    // it follows the link line a draft without the link also gets, so it stays the last line.
+    // sentence, the one the template writes: after a space on sms, where it follows the numbered
+    // options sentence code also writes, on its own line on email, where it follows the link line a
+    // draft without the link also gets, so it stays the last line.
     [Theory]
-    [InlineData("en", CommunicationChannel.Sms, "hi Reply STOP to opt out.")]
+    [InlineData("en", CommunicationChannel.Sms, "hi Reply 1 for a question; 2 for a tour. Reply STOP to opt out.")]
     [InlineData("en", CommunicationChannel.Email, "hi\nGet started: https://oakridge.example/tour\nTo opt out of emails, reply STOP.")]
-    [InlineData("es", CommunicationChannel.Sms, "hi Responde STOP para cancelar.")]
+    [InlineData("es", CommunicationChannel.Sms, "hi Responde 1 para una pregunta; 2 para una visita. Responde STOP para cancelar.")]
     [InlineData("es", CommunicationChannel.Email, "hi\nEmpieza aquí: https://oakridge.example/tour\nPara cancelar los correos, responde STOP.")]
     public async Task ComposeAsync_OptOutRequiredAndTheModelWroteNone_AppendsTheLanguageSetsSentence(string language, CommunicationChannel channel, string expectedBody)
     {
@@ -234,12 +235,13 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal("Hi Taylor. Reply STOP to opt out.", ComposedOf(outcome).Message.Body);
+        Assert.Equal("Hi Taylor. Reply STOP to opt out. Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
     }
 
-    // Nothing is appended that the record did not ask for.
+    // No opt-out is appended that the record did not ask for; the numbered options still are, since
+    // an sms always carries its options (A10).
     [Fact]
-    public async Task ComposeAsync_OptOutNotRequired_AppendsNothing()
+    public async Task ComposeAsync_OptOutNotRequired_AppendsOnlyTheOptions()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
@@ -247,7 +249,24 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
-        Assert.Equal("hi", ComposedOf(outcome).Message.Body);
+        Assert.Equal("hi Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
+    }
+
+    // The model dropped the numbered options from one sms and translated the dates of another, so
+    // code writes the options sentence the template writes, in the record's language around options
+    // that read the same in every language, and the body and cta.options always agree.
+    [Theory]
+    [InlineData("en", "hi Reply 1 for Dec 11, 2025, 10:00 AM; 2 for Dec 12, 2025, 10:00 AM. Reply STOP to opt out.")]
+    [InlineData("es", "hi Responde 1 para Dec 11, 2025, 10:00 AM; 2 para Dec 12, 2025, 10:00 AM. Responde STOP para cancelar.")]
+    public async Task ComposeAsync_TourSms_CodeWritesTheNumberedOptionsSentence(string language, string expectedBody)
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(language: language), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
+
+        Assert.Equal(expectedBody, ComposedOf(outcome).Message.Body);
+        Assert.Equal(SampleTourSlots.TuesdayText, ComposedOf(outcome).Message.Cta!.Options);
     }
 
     [Fact]
@@ -567,7 +586,7 @@ public class OpenAiMessageComposerTests
         string block = prompt[blockStartIndex..prompt.IndexOf("</prospect_data>", StringComparison.Ordinal)];
         Assert.Contains("unit: B‑118\n", block);
         Assert.Contains("move_in_date: 2025-12-12\n", block);
-        Assert.Contains("lease_end_date: 2026-03-10\n", block);
+        Assert.DoesNotContain("lease_end_date", prompt);
         Assert.Contains("renewal_offer_id: REN‑A204‑2026\n", block);
         Assert.Contains("missed_tour_time: 2025-12-08T14:00:00-06:00\n", block);
         Assert.Contains("cancellation_reason: schedule_conflict\n", block);
@@ -644,19 +663,21 @@ public class OpenAiMessageComposerTests
         Assert.Equal("hi\nTo opt out of emails, reply STOP.", ComposedOf(outcome).Message.Body);
     }
 
-    // The reply options are the language set's row for the call to action, the list the template
-    // sends and the labels spell, so the model is told to offer exactly those, in the record's
-    // language.
+    // A tour invitation's reply options are the tour slots the agent planned, written as dates the
+    // same way in every language, so the model is told to offer exactly those, joined with a
+    // semicolon because each carries commas; a call to action with a language-set row gets that row.
     [Theory]
-    [InlineData("en", "offer exactly these reply options, numbered in this order: Thu, Fri.")]
-    [InlineData("es", "offer exactly these reply options, numbered in this order: jueves, viernes.")]
-    public async Task ComposeAsync_SmsUserPrompt_NamesTheLanguageSetsOptions(string language, string expectedInstruction)
+    [InlineData("en", null, "schedule_tour", "the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options.")]
+    [InlineData("es", null, "schedule_tour", "the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options.")]
+    [InlineData("es", "reschedule_tour", "reschedule", "the system appends these reply options to the body, numbered in this order: hoy; mañana. Do not write reply options in the body; return the same options in cta_options.")]
+    public async Task ComposeAsync_SmsUserPrompt_NamesTheOptionsCodeChose(string language, string? primaryCta, string ctaType, string expectedInstruction)
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        string json = $$"""{"subject":null,"body":"hi","cta_type":"{{ctaType}}","cta_options":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: language, primaryCta: primaryCta ?? "book_tour", lifecycleStage: primaryCta is null ? "new" : "no_show");
 
-        await composer.ComposeAsync(SampleProspectCases.Minimal(language: language), CommunicationChannel.Sms);
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         Assert.Contains(expectedInstruction, fakeClient.LastUserPrompt);
     }
@@ -672,7 +693,7 @@ public class OpenAiMessageComposerTests
 
         await composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: null, lifecycleStage: "open"), CommunicationChannel.Sms);
 
-        Assert.Contains("This is sms: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.", fakeClient.LastUserPrompt);
+        Assert.Contains("This is sms: return the reply options in cta_options; the system appends them to the body, numbered, so do not write reply options in the body. Do not write a link.", fakeClient.LastUserPrompt);
     }
 
     // TemplateMessageComposerTests pins the same input for the offline composer
@@ -708,17 +729,17 @@ public class OpenAiMessageComposerTests
         Assert.Null(result.Message.Cta.Link);
     }
 
-    // The language set holds the options a call to action's label offers, so an sms carries
-    // those whatever the model returned, the way an email carries code's link.
+    // The tour slots are code's decision, so a tour sms carries them whatever the model returned, the
+    // way an email carries code's link.
     [Fact]
-    public async Task ComposeAsync_SmsWhoseCallToActionTheSetHasOptionsFor_CarriesTheSetsOptionsNotTheModels()
+    public async Task ComposeAsync_TourSms_CarriesTheTourSlotsNotTheModelsOptions()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":["Yes, book a tour","No, thanks"]}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
 
-        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
-        Assert.Equal(["Thu", "Fri"], ComposedOf(outcome).Message.Cta!.Options);
+        Assert.Equal(SampleTourSlots.TuesdayText, ComposedOf(outcome).Message.Cta!.Options);
     }
 
     // The purpose of a call to action is a decision, so code states it to the model, one sentence
@@ -764,52 +785,85 @@ public class OpenAiMessageComposerTests
         return minimal with { Input = minimal.ContextOrEmpty with { Unit = unit } };
     }
 
-    // Tour availability, prices and renewal offers are the property management system's facts,
-    // never the model's. Code chooses which serve the call to action: a renewal review gets the
-    // renewal offer and not the property's tour facts, and the model is told to state each fact it
-    // is given.
-    [Fact]
-    public async Task ComposeAsync_RenewalReview_ListsOnlyTheRenewalOfferFactsAndAsksForEach()
+    // A renewal offer's terms are an offer the property makes, so code writes them in the record's
+    // language exactly as the property system states them, and the model, which reworded the price
+    // hold and dropped the reminder offer when it was handed them as facts, is told the system
+    // appends them. The price hold goes on its own line before the link's line and the reminder
+    // offer after it, above the opt-out.
+    [Theory]
+    [InlineData("en", "Hi Jordan, it is time to review your renewal offer.\nhttps://oakridge.example/renewal/A-204", "Hi Jordan, it is time to review your renewal offer.\nWe've reserved current pricing for 10 days.\nhttps://oakridge.example/renewal/A-204\nIf you prefer text, reply YES to get reminders by SMS.\nTo opt out of emails, reply STOP.")]
+    [InlineData("en", "Hi Jordan, it is time to review your renewal offer.", "Hi Jordan, it is time to review your renewal offer.\nWe've reserved current pricing for 10 days.\nGet started: https://oakridge.example/renewal/A-204\nIf you prefer text, reply YES to get reminders by SMS.\nTo opt out of emails, reply STOP.")]
+    [InlineData("es", "Hola Jordan, revisa tu oferta de renovación.", "Hola Jordan, revisa tu oferta de renovación.\nReservamos el precio actual por 10 días.\nEmpieza aquí: https://oakridge.example/renewal/A-204\nSi prefieres mensajes de texto, responde SÍ para recibir recordatorios por SMS.\nPara cancelar los correos, responde STOP.")]
+    public async Task ComposeAsync_RenewalReviewEmail_CodeWritesTheOfferTermsAroundTheLink(string language, string draftBody, string expectedBody)
     {
-        const string json = """{"subject":"Your renewal","body":"hi","cta_type":"review_renewal","cta_options":null}""";
+        string json = JsonSerializer.Serialize(new { subject = "Your renewal", body = draftBody, cta_type = "review_renewal", cta_options = (string[]?)null });
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient, propertyData: SamplePropertyData.OakRidge());
+        ProspectCase renewal = RenewalCase("A‑204");
+        ProspectCase prospectCase = renewal with { Input = renewal.ContextOrEmpty with { Language = language } };
 
-        await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Email);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
+        Assert.Equal(expectedBody, ComposedOf(outcome).Message.Body);
         string prompt = fakeClient.LastUserPrompt!;
-        Assert.Contains(
-            "</prospect_data>\n<property_facts>\n" +
-            "renewal_price_hold_days: 10\n" +
-            "renewal_text_reminders_offered: yes\n" +
-            "</property_facts>",
-            prompt);
-        int instructionIndex = prompt.IndexOf(
-            "Property facts inside <property_facts> come from the property management system and were chosen for this call to action: state each of them, exactly as given.\n",
-            StringComparison.Ordinal);
+        Assert.DoesNotContain("property_facts>", prompt);
+        int instructionIndex = prompt.IndexOf("Renewal offer terms: the system appends them, so do not write any.\n", StringComparison.Ordinal);
         int blockStartIndex = prompt.LastIndexOf("<prospect_data>", StringComparison.Ordinal);
-        Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the property facts instruction must come before <prospect_data>");
+        Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the renewal offer instruction must come before <prospect_data>");
     }
 
-    // Only the facts the property data states are listed: an offer states only the members it
-    // carries, and a text-reminder offer can be a no.
+    // An sms has no link line, so the offer terms follow the draft as sentences, before the opt-out.
     [Fact]
-    public async Task ComposeAsync_PropertyDataHoldsSomeFacts_ListsOnlyThose()
+    public async Task ComposeAsync_RenewalReviewSms_AppendsTheOfferTermsAsSentences()
     {
-        const string json = """{"subject":"Your renewal","body":"hi","cta_type":"review_renewal","cta_options":null}""";
+        const string json = """{"subject":null,"body":"Hi Jordan, review your renewal offer.","cta_type":"review_renewal","cta_options":["yes","no"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json), propertyData: SamplePropertyData.OakRidge());
+
+        ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Sms);
+
+        Assert.Equal(
+            "Hi Jordan, review your renewal offer. We've reserved current pricing for 10 days. If you prefer text, reply YES to get reminders by SMS. Reply 1 for yes; 2 for no. Reply STOP to opt out.",
+            ComposedOf(outcome).Message.Body);
+    }
+
+    // An offer found by its id on a record with no unit has no link to place the price hold before,
+    // so the price hold follows the draft on its own line.
+    [Fact]
+    public async Task ComposeAsync_RenewalReviewEmailWithNoLink_AppendsThePriceHoldLine()
+    {
+        const string json = """{"subject":"Your renewal","body":"Hi Jordan.","cta_type":"review_renewal","cta_options":null}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json), propertyData: SamplePropertyData.OakRidge());
+        ProspectCase renewal = RenewalCase("A‑204");
+        ProspectCase prospectCase = renewal with { Input = renewal.ContextOrEmpty with { Unit = null, RenewalOfferId = "REN‑A204‑2026" } };
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Equal(
+            "Hi Jordan.\nWe've reserved current pricing for 10 days.\nIf you prefer text, reply YES to get reminders by SMS.\nTo opt out of emails, reply STOP.",
+            ComposedOf(outcome).Message.Body);
+    }
+
+    // Only the terms the property data states are written: an offer with no price hold writes no
+    // price hold, and a text-reminder offer that is a no writes no reminder sentence.
+    [Fact]
+    public async Task ComposeAsync_OfferWithNoPriceHoldAndNoReminders_WritesNeither()
+    {
+        const string json = """{"subject":"Your renewal","body":"Hi Jordan.","cta_type":"review_renewal","cta_options":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var propertyData = new PropertyData([new PropertyFacts("Oak Ridge Apartments", "Tours on weekends.", [], [new RenewalOffer(Unit: "A‑204", TextRemindersOffered: false)])]);
         var composer = new OpenAiMessageComposer(fakeClient, propertyData: propertyData);
 
-        await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Email);
+        ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Email);
 
-        Assert.Contains("<property_facts>\nrenewal_text_reminders_offered: no\n</property_facts>", fakeClient.LastUserPrompt);
+        Assert.Equal("Hi Jordan.\nGet started: https://oakridge.example/renewal/A-204\nTo opt out of emails, reply STOP.", ComposedOf(outcome).Message.Body);
+        Assert.DoesNotContain("property_facts>", fakeClient.LastUserPrompt);
     }
 
-    // A tour invitation gets the property's tour availability always, its extended tour hours only
-    // when the prospect cancelled over a schedule conflict, the objection those hours answer, and
-    // its starting price only when the prospect stated a budget, the question a price answers. It
-    // never gets a renewal offer, even on a record whose unit has one.
+    // A tour invitation the record names gets the property's tour availability, except after a
+    // schedule-conflict cancellation, where the extended tour hours take its place, since they answer
+    // the objection the week's ordinary times raised. Its starting price comes only when the prospect
+    // stated a budget, the question a price answers. It never gets a renewal offer, even on a record
+    // whose unit has one.
     [Theory]
     [InlineData(null, null, false, false)]
     [InlineData("schedule_conflict", null, true, false)]
@@ -838,11 +892,27 @@ public class OpenAiMessageComposerTests
         await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         string expectedBlock = "<property_facts>\n" +
-            $"tour_availability: {SamplePropertyData.TourAvailability}\n" +
+            (extendedHours ? string.Empty : $"tour_availability: {SamplePropertyData.TourAvailability}\n") +
             (extendedHours ? $"extended_tour_hours: {SamplePropertyData.ExtendedTourHours}\n" : string.Empty) +
             (price ? "starting_total_monthly_price: studio $1650 as of 2025-12-08 (every mandatory monthly fee included)\n" : string.Empty) +
             "</property_facts>";
         Assert.Contains(expectedBlock, fakeClient.LastUserPrompt);
+    }
+
+    // A tour invitation the record does not name, the stage's own default, is a welcome and not a
+    // push to book this week, so the property's availability is not offered to it.
+    [Fact]
+    public async Task ComposeAsync_TourInvitationTheRecordDoesNotName_HasNoTourAvailability()
+    {
+        const string json = """{"subject":"Welcome","body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient, propertyData: SamplePropertyData.OakRidge());
+        ProspectCase minimal = SampleProspectCases.Minimal(primaryCta: null);
+        ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { MoveDateTarget = null } };
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.DoesNotContain("tour_availability", fakeClient.LastUserPrompt);
     }
 
     // A prospect who stated a budget at a property whose data holds no prices and no tour facts has
@@ -877,21 +947,22 @@ public class OpenAiMessageComposerTests
         Assert.DoesNotContain("property_facts>", fakeClient.LastUserPrompt);
     }
 
-    // A prospect's stated move date is told to the model as a timeline code computes, early, mid or
-    // late in the month, with an instruction to mention it; the model is not left to phrase or drop it.
+    // A prospect's stated move date is told to the model on an email as a timeline code computes,
+    // early, mid or late in the month, with an instruction to mention it; the model is not left to
+    // phrase or drop it.
     [Theory]
     [InlineData(2026, 1, 10, "early January")]
     [InlineData(2026, 2, 15, "mid-February")]
     [InlineData(2026, 3, 28, "late March")]
-    public async Task ComposeAsync_ProspectWithAMoveDate_IsToldToMentionTheTimelineCodeComputed(int year, int month, int day, string timeline)
+    public async Task ComposeAsync_ProspectEmailWithAMoveDate_IsToldToMentionTheTimelineCodeComputed(int year, int month, int day, string timeline)
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        const string json = """{"subject":"Tour","body":"hi","cta_type":"schedule_tour","cta_options":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
         ProspectCase minimal = SampleProspectCases.Minimal();
         ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { MoveDateTarget = new DateOnly(year, month, day) } };
 
-        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
 
         string prompt = fakeClient.LastUserPrompt!;
         int instructionIndex = prompt.IndexOf($"Mention the prospect's move timeline: {timeline}.\n", StringComparison.Ordinal);
@@ -899,15 +970,16 @@ public class OpenAiMessageComposerTests
         Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the timeline instruction must come before <prospect_data>");
     }
 
-    // A resident's dates and a prospect with no move date carry no timeline instruction: the dates
-    // stay data, and nothing tells the model to restate them.
+    // On an email, the one channel that carries a timeline, a resident's dates and a prospect with no
+    // move date still carry no timeline instruction: the dates stay data, and nothing tells the model
+    // to restate them.
     [Theory]
     [InlineData("resident", true)]
     [InlineData(null, true)]
     [InlineData("prospect", false)]
-    public async Task ComposeAsync_NoProspectMoveDate_HasNoTimelineInstruction(string? persona, bool withMoveDate)
+    public async Task ComposeAsync_EmailWithNoProspectMoveDate_HasNoTimelineInstruction(string? persona, bool withMoveDate)
     {
-        const string json = """{"subject":null,"body":"hi","cta_type":"reply","cta_options":null}""";
+        const string json = """{"subject":"Hello","body":"hi","cta_type":"reply","cta_options":null}""";
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
         ProspectCase minimal = SampleProspectCases.Minimal(primaryCta: null, persona: persona, lifecycleStage: "open");
@@ -916,7 +988,61 @@ public class OpenAiMessageComposerTests
             Input = minimal.ContextOrEmpty with { MoveDateTarget = withMoveDate ? new DateOnly(2026, 1, 10) : null, MoveInDate = new DateOnly(2025, 12, 12) },
         };
 
-        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.DoesNotContain("Mention the prospect's move timeline", fakeClient.LastUserPrompt);
+    }
+
+    // A move date already past is a timeline to qualify again, not one to repeat, so an email is told
+    // to mention the timeline only when the move date is on or after the run's reference date; a caller
+    // that gives no reference date keeps the instruction.
+    [Theory]
+    [InlineData("2026-01-10", false)]
+    [InlineData("2026-01-09", true)]
+    [InlineData(null, true)]
+    public async Task ComposeAsync_ProspectEmail_MentionsTheTimelineOnlyWhenTheMoveDateIsNotPast(string? referenceDate, bool expectsTimeline)
+    {
+        const string json = """{"subject":"Tour","body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase prospectCase = minimal with { Input = minimal.ContextOrEmpty with { MoveDateTarget = new DateOnly(2026, 1, 9) } };
+
+        await composer.ComposeAsync(
+            prospectCase,
+            CommunicationChannel.Email,
+            referenceDate: referenceDate is null ? null : DateOnly.Parse(referenceDate, System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.Equal(expectsTimeline, fakeClient.LastUserPrompt!.Contains("Mention the prospect's move timeline", StringComparison.Ordinal));
+    }
+
+    // The model's options for a call to action with no code-owned list sometimes arrive already
+    // numbered, and code numbers them, so a leading "1. ", "2) " or "3 - " is stripped first; a number
+    // that is the option itself, such as a time or a distance, is kept.
+    [Fact]
+    public async Task ComposeAsync_ModelOptionsAlreadyNumbered_AreStrippedBeforeCodeNumbersThem()
+    {
+        const string json = """{"subject":null,"body":"Hi Dana.","cta_type":"start_application","cta_options":["1. Start Application","2) Ask a Question"," 3 - Schedule a Follow-Up","10:00 AM","1.5 miles"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "start_application", lifecycleStage: "toured", includeOptOutInstructions: false);
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        NextMessage message = ComposedOf(outcome).Message;
+        Assert.Equal(["Start Application", "Ask a Question", "Schedule a Follow-Up", "10:00 AM", "1.5 miles"], message.Cta!.Options);
+        Assert.Equal("Hi Dana. Reply 1 for Start Application; 2 for Ask a Question; 3 for Schedule a Follow-Up; 4 for 10:00 AM; 5 for 1.5 miles.", message.Body);
+    }
+
+    // An sms carries its call to action and its reply options and nothing more, since every character
+    // past one segment is a second billed segment, so a prospect's move date stays data there.
+    [Fact]
+    public async Task ComposeAsync_ProspectSmsWithAMoveDate_HasNoTimelineInstruction()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+
+        await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
 
         Assert.DoesNotContain("Mention the prospect's move timeline", fakeClient.LastUserPrompt);
     }
@@ -931,21 +1057,22 @@ public class OpenAiMessageComposerTests
 
         ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(includeOptOutInstructions: false), CommunicationChannel.Sms);
 
-        Assert.Equal("Hi Taylor! Welcome to Oak Ridge. Book a tour today.", ComposedOf(outcome).Message.Body);
+        Assert.Equal("Hi Taylor! Welcome to Oak Ridge. Book a tour today. Reply 1 for a question; 2 for a tour.", ComposedOf(outcome).Message.Body);
     }
 
-    // An offer that states only its price hold lists only that.
+    // An offer that states only its price hold writes only that, with the data's own number of days.
     [Fact]
-    public async Task ComposeAsync_RenewalOfferStatesOnlyItsPriceHold_ListsOnlyThatLine()
+    public async Task ComposeAsync_RenewalOfferStatesOnlyItsPriceHold_WritesOnlyThatLine()
     {
-        const string json = """{"subject":"Your renewal","body":"hi","cta_type":"review_renewal","cta_options":null}""";
-        var fakeClient = new FakeCompletionClient(json);
+        const string json = """{"subject":"Your renewal","body":"Hi Jordan.","cta_type":"review_renewal","cta_options":null}""";
         var propertyData = new PropertyData([new PropertyFacts("Oak Ridge Apartments", RenewalOffers: [new RenewalOffer(Unit: "A‑204", PriceHoldDays: 7)])]);
-        var composer = new OpenAiMessageComposer(fakeClient, propertyData: propertyData);
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json), propertyData: propertyData);
 
-        await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Email);
+        ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Email);
 
-        Assert.Contains("<property_facts>\nrenewal_price_hold_days: 7\n</property_facts>", fakeClient.LastUserPrompt);
+        Assert.Equal(
+            "Hi Jordan.\nWe've reserved current pricing for 7 days.\nGet started: https://oakridge.example/renewal/A-204\nTo opt out of emails, reply STOP.",
+            ComposedOf(outcome).Message.Body);
     }
 
     // No property data, a property the data does not hold, or a property it holds with no facts:
@@ -1063,7 +1190,7 @@ public class OpenAiMessageComposerTests
         var fakeClient = new FakeCompletionClient(json);
         var composer = new OpenAiMessageComposer(fakeClient);
 
-        await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms);
+        await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Sms, tourSlots: SampleTourSlots.Tuesday);
 
         Assert.Equal(
             """
@@ -1071,9 +1198,8 @@ public class OpenAiMessageComposerTests
             Write the message in the language 'en'.
             The call to action must be exactly 'schedule_tour'.
             Purpose of the call to action: invite the prospect to book a tour.
-            Mention the prospect's move timeline: early January.
             Opt-out instructions: the system appends them, so do not write any.
-            This is sms: offer exactly these reply options, numbered in this order: Thu, Fri. Put them in the body and return the same options in cta_options. Do not write a link.
+            This is sms: the system appends these reply options to the body, numbered in this order: Dec 11, 2025, 10:00 AM; Dec 12, 2025, 10:00 AM. Do not write reply options in the body; return the same options in cta_options. Do not write a link.
             <prospect_data>
             channel: sms
             language: en
@@ -1089,11 +1215,12 @@ public class OpenAiMessageComposerTests
             Normalized(fakeClient.LastUserPrompt));
     }
 
-    // A10: the payload shape is the channel's rule, not the model's choice. A model that
-    // legally returns no options still has to produce an sms with options, and they come
-    // from the record's own language set so a Spanish message does not get English ones.
+    // A10: the payload shape is the channel's rule, not the model's choice. A tour sms with no planned
+    // slots and a model that legally returns no options still has to produce an sms with options, and
+    // they are the record's own language set's generic pair so a Spanish message does not get English
+    // ones and no day is invented.
     [Fact]
-    public async Task ComposeAsync_SmsAndTheModelReturnsNoOptions_FallsBackToTheLanguageSetsOptions()
+    public async Task ComposeAsync_TourSmsWithNoSlotsAndTheModelReturnsNoOptions_FallsBackToTheLanguageSetsGenericPair()
     {
         const string json = """{"subject":null,"body":"hola","cta_type":"schedule_tour","cta_options":null}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
@@ -1103,21 +1230,39 @@ public class OpenAiMessageComposerTests
 
         ComposedMessage result = ComposedOf(outcome);
 
-        Assert.Equal(["jueves", "viernes"], result.Message.Cta!.Options);
+        Assert.Equal(["una pregunta", "una visita"], result.Message.Cta!.Options);
+    }
+
+    // The generic fallback leaves out the tour for a record whose persona is not a prospect, and an
+    // unrecognized email call to action gets no link, so the model is told not to write one.
+    [Fact]
+    public async Task ComposeAsync_ResidentsUnknownCallToAction_GetsNoTourOptionAndNoLink()
+    {
+        const string smsJson = """{"subject":null,"body":"hi","cta_type":"request_parking","cta_options":null}""";
+        const string emailJson = """{"subject":"Hello","body":"hi","cta_type":"request_parking","cta_options":null}""";
+        var emailClient = new FakeCompletionClient(emailJson);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(primaryCta: "request_parking", persona: "resident", lifecycleStage: "move_in");
+
+        ComposeOutcome sms = await new OpenAiMessageComposer(new FakeCompletionClient(smsJson)).ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome email = await new OpenAiMessageComposer(emailClient).ComposeAsync(prospectCase, CommunicationChannel.Email);
+
+        Assert.Equal(["a question"], ComposedOf(sms).Message.Cta!.Options);
+        Assert.Null(ComposedOf(email).Message.Cta!.Link);
+        Assert.Contains("This is email: return a subject line and no reply options. Do not write a link.", emailClient.LastUserPrompt);
     }
 
     [Fact]
-    public async Task ComposeAsync_SmsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsOptions()
+    public async Task ComposeAsync_TourSmsWithEmptySlotsAndTheModelReturnsEmptyOptions_FallsBackToTheLanguageSetsGenericPair()
     {
         const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":[]}""";
         var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
-        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms, tourSlots: []);
 
         ComposedMessage result = ComposedOf(outcome);
 
-        Assert.Equal(["Thu", "Fri"], result.Message.Cta!.Options);
+        Assert.Equal(["a question", "a tour"], result.Message.Cta!.Options);
     }
 
     // Cost state three of three (no call, abandoned, completed): a call that completed carries

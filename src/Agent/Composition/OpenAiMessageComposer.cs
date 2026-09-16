@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Agent.Common;
 using Agent.Domain;
 using Agent.Safety;
@@ -11,7 +12,7 @@ namespace Agent.Composition;
 
 // propertyData is the property management system's facts for the run, null when the run was given
 // none; a fact it does not hold is one the model is never offered.
-public sealed class OpenAiMessageComposer(
+public sealed partial class OpenAiMessageComposer(
     ICompletionClient completionClient,
     ILogger<OpenAiMessageComposer>? logger = null,
     PropertyData? propertyData = null) : IMessageComposer
@@ -78,7 +79,9 @@ public sealed class OpenAiMessageComposer(
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         // The call to action is a decision, and code owns decisions, so code resolves it the way
         // the template does: the record's primary_cta through the catalog, and when it is absent
@@ -98,12 +101,18 @@ public sealed class OpenAiMessageComposer(
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail ? PropertyLink.For(context.PropertyName, callToAction.LinkPath, context.Unit) : null;
 
-        // A10: the options are the record's language set's row for this call to action when the
-        // set has one, the list the template sends; a call to action with no row leaves them to
-        // the model, since the set's generic pair answers no particular question.
-        IReadOnlyList<string>? namedOptions = !isEmail && templates.SmsOptionsByCtaType.TryGetValue(requiredCtaType, out IReadOnlyList<string>? setOptions)
-            ? setOptions
-            : null;
+        // A10: a tour invitation's options are the tour slots the agent planned, written as dates; any
+        // other call to action takes the record's language set's row when the set has one, the list
+        // the template sends; a call to action with neither leaves them to the model, since the set's
+        // generic pair answers no particular question.
+        IReadOnlyList<string>? namedOptions = isEmail
+            ? null
+            : TourSlotText.OptionsFor(requiredCtaType, tourSlots)
+                ?? (templates.SmsOptionsByCtaType.TryGetValue(requiredCtaType, out IReadOnlyList<string>? setOptions) ? setOptions : null);
+
+        // A renewal offer's terms are an offer the property makes, so code writes them after the
+        // model does, in the record's language and exactly as the property system states them.
+        Option<RenewalOffer> renewalOffer = RenewalOfferFor(propertyData, context, callToAction);
 
         string userPrompt = BuildUserPrompt(
             prospectCase,
@@ -111,7 +120,9 @@ public sealed class OpenAiMessageComposer(
             callToAction,
             link,
             namedOptions,
-            DescribePropertyFacts(propertyData, context, callToAction),
+            DescribePropertyFacts(propertyData, context, callToAction, prospectCase.ConstraintsOrEmpty.PrimaryCta),
+            renewalOffer.HasValue,
+            referenceDate,
             priorViolations);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
@@ -219,25 +230,33 @@ public sealed class OpenAiMessageComposer(
         IReadOnlyList<string>? options = isEmail
             ? null
             : namedOptions ?? (payload.CtaOptions is { Count: > 0 } modelOptions
-                ? modelOptions
-                : templates.SmsOptions(payload.CtaType));
+                ? [.. modelOptions.Select(WithoutLeadingNumber)]
+                : templates.SmsOptions(payload.CtaType, Personas.IsProspect(prospectCase.Persona)));
 
         // The link in the body is code's the way the link itself is: a draft that left it out gets
         // the language set's link line, the one the template writes, and a draft that carries it is
         // left as the model wrote it.
         string draftBody = KeepFirstExclamationMark(payload.Body);
-        string bodyWithLink = link is not null && !draftBody.Contains(link.AbsoluteUri, StringComparison.Ordinal)
+        string linkedBody = link is not null && !draftBody.Contains(link.AbsoluteUri, StringComparison.Ordinal)
             ? $"{draftBody}\n{string.Format(CultureInfo.InvariantCulture, templates.EmailLinkLine, link)}"
             : draftBody;
+        string bodyWithLink = renewalOffer.HasValue
+            ? WithRenewalOfferTerms(linkedBody, link, isEmail, renewalOffer.Value, templates)
+            : linkedBody;
 
         // A required disclosure is a reproducible decision, so it is code's, as the link is,
         // and no draft is refused only for leaving it out. A body with no opt-out by
         // OptOutInstructions, the one definition the gate and the scorer use, gets the record's
         // language set's sentence, the one the template writes, after the link line so it stays
         // the last line; a body that has one is left as the model wrote it.
-        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithLink)
-            ? isEmail ? $"{bodyWithLink}\n{templates.EmailOptOut}" : $"{bodyWithLink} {templates.SmsOptOut}"
-            : bodyWithLink;
+        // The numbered options are code's like the link: the model dropped them from one sms and
+        // translated another's dates, so an sms gets the language set's options sentence, the one the
+        // template writes, after the draft and any offer terms and before the opt-out.
+        string bodyWithOptions = isEmail ? bodyWithLink : $"{bodyWithLink} {templates.NumberedOptionsSentence(options!)}";
+
+        string body = prospectCase.ConstraintsOrEmpty.RequiresOptOutInstructions() && !OptOutInstructions.IsPresent(bodyWithOptions)
+            ? isEmail ? $"{bodyWithOptions}\n{templates.EmailOptOut}" : $"{bodyWithOptions} {templates.SmsOptOut}"
+            : bodyWithOptions;
 
         var cta = new Cta(payload.CtaType, options, link);
         var message = new NextMessage(channel, null, payload.Subject, body, cta);
@@ -269,6 +288,8 @@ public sealed class OpenAiMessageComposer(
         Uri? link,
         IReadOnlyList<string>? namedOptions,
         string propertyFacts,
+        bool hasRenewalOffer,
+        DateOnly? referenceDate,
         IReadOnlyList<string>? priorViolations)
     {
         string requiredCtaType = callToAction.Type;
@@ -297,9 +318,9 @@ public sealed class OpenAiMessageComposer(
             (true, null, _) =>
                 $"This is {channelName}: return a subject line and no reply options. Do not write a link.",
             (false, _, { } options) =>
-                $"This is {channelName}: offer exactly these reply options, numbered in this order: {string.Join(", ", options)}. Put them in the body and return the same options in cta_options. Do not write a link.",
+                $"This is {channelName}: the system appends these reply options to the body, numbered in this order: {string.Join("; ", options)}. Do not write reply options in the body; return the same options in cta_options. Do not write a link.",
             (false, _, null) =>
-                $"This is {channelName}: put the numbered reply options in the body and return the same options in cta_options. Do not write a link.",
+                $"This is {channelName}: return the reply options in cta_options; the system appends them to the body, numbered, so do not write reply options in the body. Do not write a link.",
         };
 
         // These have to be plain instructions, not <prospect_data> fields: the system
@@ -312,12 +333,20 @@ public sealed class OpenAiMessageComposer(
         // message is for, and one they do not show states none rather than an invented one.
         string purposeInstruction = callToAction.Purpose is { } purpose ? $"Purpose of the call to action: {purpose}.\n" : string.Empty;
 
-        // A prospect's stated move date is a fact the message should carry, so code states it as
-        // the timeline a person would say and tells the model to mention it. A resident's dates
-        // stay data: nothing tells the model to restate them.
-        string timelineInstruction = IsProspect(prospectCase.Persona) && context.MoveDateTarget is { } moveDate
+        // A prospect's stated move date is a fact an email should carry, so code states it as the
+        // timeline a person would say and tells the model to mention it. An sms carries its call to
+        // action and its reply options and nothing more, since every character past one segment is
+        // a second billed segment, so there the date stays data, as a resident's dates do. A move date
+        // already past is a timeline to qualify again, not one to repeat, so it gets no instruction; a
+        // caller that gives no reference date keeps the instruction.
+        string timelineInstruction = channel == CommunicationChannel.Email
+            && Personas.IsProspect(prospectCase.Persona)
+            && context.MoveDateTarget is { } moveDate
+            && (referenceDate is not { } today || moveDate >= today)
             ? $"Mention the prospect's move timeline: {MoveTimeline(moveDate)}.\n"
             : string.Empty;
+
+        string renewalOfferInstruction = hasRenewalOffer ? "Renewal offer terms: the system appends them, so do not write any.\n" : string.Empty;
 
         // Property facts are the property system's, and code has chosen the ones that serve this
         // call to action, so the model states each of them, and only as given.
@@ -338,6 +367,7 @@ public sealed class OpenAiMessageComposer(
             purposeInstruction +
             timelineInstruction +
             $"Opt-out instructions: {optOutDirective}.\n" +
+            renewalOfferInstruction +
             channelInstruction + "\n" +
             propertyFactsInstruction +
             "<prospect_data>\n" +
@@ -359,15 +389,16 @@ public sealed class OpenAiMessageComposer(
     // The cancellation reason extended tour hours answer.
     private const string ScheduleConflict = "schedule_conflict";
 
-    // The property system's facts for the record's property that serve its call to action, each by
-    // name and only when stated. The call-to-action table names the kinds; the record's own input
-    // decides two of them: extended tour hours only for a prospect who cancelled over a schedule
-    // conflict, the objection they answer, and a starting price only for one who stated a budget,
-    // the question a price answers. A price is the total monthly price with its as-of date, and the
-    // renewal offer is the one found by the record's offer id or unit. Empty when the run has no
-    // property data, it holds nothing for this record, or nothing it holds serves the call to action.
-    // O(k + o) in the property's prices and offers.
-    private static string DescribePropertyFacts(PropertyData? propertyData, ProspectContext context, CallToAction callToAction)
+    // The property system's facts for the record's property that the model words for its call to
+    // action, each by name and only when stated. The call-to-action table names the kinds; the
+    // record's own input decides three of them: tour availability only for a tour invitation the
+    // record names, since the stage's default invitation is a welcome and not a push to book this
+    // week, and never after a schedule-conflict cancellation; extended tour hours only after one, the
+    // objection they answer in the week's ordinary times' place; and a starting price only for a
+    // prospect who stated a budget, the question a price answers. A price is the total monthly price
+    // with its as-of date. Empty when the run has no property data, it holds nothing for this record,
+    // or nothing it holds serves the call to action. O(k) in the property's prices.
+    private static string DescribePropertyFacts(PropertyData? propertyData, ProspectContext context, CallToAction callToAction, string? primaryCta)
     {
         Option<PropertyFacts> found = propertyData is null ? Option<PropertyFacts>.None() : propertyData.FactsFor(context.PropertyName);
 
@@ -377,26 +408,72 @@ public sealed class OpenAiMessageComposer(
         }
 
         PropertyFacts facts = found.Value;
-        Option<RenewalOffer> offer = kinds.Contains(PropertyFactKind.RenewalOffer)
-            ? facts.RenewalOfferFor(context.Unit, context.RenewalOfferId)
-            : Option<RenewalOffer>.None();
+        bool scheduleConflict = IsScheduleConflict(context.CancellationReason);
+        var lines = new List<string>();
 
-        return string.Concat(
-            kinds.Contains(PropertyFactKind.TourAvailability) ? StatedLine("tour_availability", facts.TourAvailability) : string.Empty,
-            kinds.Contains(PropertyFactKind.ExtendedTourHours) && IsScheduleConflict(context.CancellationReason)
-                ? StatedLine("extended_tour_hours", facts.ExtendedTourHours)
-                : string.Empty,
-            kinds.Contains(PropertyFactKind.StartingPrice) && context.ProfileOrEmpty.BudgetMax is not null
-                ? string.Concat((facts.StartingPrices ?? []).Select(price => string.Create(
+        if (kinds.Contains(PropertyFactKind.TourAvailability) && !Presence.IsAbsent(primaryCta) && !scheduleConflict)
+        {
+            lines.Add(StatedLine("tour_availability", facts.TourAvailability));
+        }
+
+        if (kinds.Contains(PropertyFactKind.ExtendedTourHours) && scheduleConflict)
+        {
+            lines.Add(StatedLine("extended_tour_hours", facts.ExtendedTourHours));
+        }
+
+        if (kinds.Contains(PropertyFactKind.StartingPrice) && context.ProfileOrEmpty.BudgetMax is not null)
+        {
+            foreach (StartingPrice price in facts.StartingPrices ?? [])
+            {
+                lines.Add(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"starting_total_monthly_price: {price.FloorPlan} ${price.TotalMonthlyPrice:0.##} as of {price.AsOf:yyyy-MM-dd} (every mandatory monthly fee included)\n")))
-                : string.Empty,
-            offer.HasValue ? StatedLine("renewal_price_hold_days", offer.Value.PriceHoldDays?.ToString(CultureInfo.InvariantCulture)) : string.Empty,
-            offer.HasValue ? StatedLine("renewal_text_reminders_offered", offer.Value.TextRemindersOffered is { } offered ? offered ? "yes" : "no" : null) : string.Empty);
+                    $"starting_total_monthly_price: {price.FloorPlan} ${price.TotalMonthlyPrice:0.##} as of {price.AsOf:yyyy-MM-dd} (every mandatory monthly fee included)\n"));
+            }
+        }
+
+        return string.Concat(lines);
     }
 
-    private static bool IsProspect(string? persona) =>
-        persona is not null && string.Equals(persona.Trim(), "prospect", StringComparison.OrdinalIgnoreCase);
+    // The renewal offer a renewal review carries: the one the property data holds for the record's
+    // offer id or unit. None when the run has no property data, the call to action is not one an
+    // offer serves, or no offer matches. O(o) in the property's offers.
+    private static Option<RenewalOffer> RenewalOfferFor(PropertyData? propertyData, ProspectContext context, CallToAction callToAction)
+    {
+        Option<PropertyFacts> found = propertyData is null ? Option<PropertyFacts>.None() : propertyData.FactsFor(context.PropertyName);
+
+        return found.HasValue && callToAction.FactKinds is { } kinds && kinds.Contains(PropertyFactKind.RenewalOffer)
+            ? found.Value.RenewalOfferFor(context.Unit, context.RenewalOfferId)
+            : Option<RenewalOffer>.None();
+    }
+
+    // The offer's terms in the record's language, each only when the offer states it: the price hold
+    // on its own line before the link's line, where the reader sees the deadline before the link that
+    // acts on it, and the text-reminder offer after the link. With no link, an sms or an email whose
+    // record has no unit, each follows the draft. O(n) in the body length.
+    private static string WithRenewalOfferTerms(string body, Uri? link, bool isEmail, RenewalOffer offer, MessageTemplates templates)
+    {
+        string separator = isEmail ? "\n" : " ";
+        string withPriceHold = offer.PriceHoldDays is { } days
+            ? WithPriceHoldSentence(body, link, separator, string.Format(CultureInfo.InvariantCulture, templates.RenewalPriceHoldSentence, days))
+            : body;
+
+        return offer.TextRemindersOffered == true ? $"{withPriceHold}{separator}{templates.RenewalTextRemindersSentence}" : withPriceHold;
+    }
+
+    // A link is always in the body by the time the terms are written, since a draft that left it out
+    // already has the link line, so the sentence goes at the start of the line that holds it.
+    private static string WithPriceHoldSentence(string body, Uri? link, string separator, string sentence)
+    {
+        if (link is null)
+        {
+            return $"{body}{separator}{sentence}";
+        }
+
+        int linkIndex = body.IndexOf(link.AbsoluteUri, StringComparison.Ordinal);
+        int lineStart = body.LastIndexOf('\n', linkIndex) + 1;
+
+        return body.Insert(lineStart, $"{sentence}\n");
+    }
 
     private static bool IsScheduleConflict(string? cancellationReason) =>
         cancellationReason is not null && string.Equals(cancellationReason.Trim(), ScheduleConflict, StringComparison.OrdinalIgnoreCase);
@@ -415,6 +492,15 @@ public sealed class OpenAiMessageComposer(
         };
     }
 
+    // The model sometimes numbers the options it returns, and code numbers them in the options
+    // sentence, so a leading "1. ", "2) " or "3 - " is removed first. One or two digits, a period, a
+    // closing parenthesis or a hyphen, then a space: "10:00 AM" and "1.5 miles" are left whole. O(n) in
+    // the option's length.
+    private static string WithoutLeadingNumber(string option) => LeadingNumber().Replace(option, string.Empty);
+
+    [GeneratedRegex(@"^\s*\d{1,2}\s*[.)\-]\s+")]
+    private static partial Regex LeadingNumber();
+
     // The brand rule allows one exclamation mark, and brand style is code's rule, so a draft keeps
     // its first and every later one becomes a period. O(n) in the body length.
     private static string KeepFirstExclamationMark(string body)
@@ -426,12 +512,14 @@ public sealed class OpenAiMessageComposer(
 
     // The facts a lifecycle stage's message can need, each by its input name and only when the
     // record states it: most records carry none of them, so they are left out rather than listed
-    // as a column of unknowns the model reads on every call. O(f) in the number of features.
+    // as a column of unknowns the model reads on every call. The lease end date is not one: no
+    // labeled message states it, the model restated it when it was listed, and the deadline a
+    // renewal message carries is the offer's price hold, which code writes. O(f) in the number of
+    // features.
     private static string DescribeStageFacts(ProspectContext context, ProspectProfile profile) =>
         string.Concat(
             StatedLine("unit", context.Unit),
             StatedLine("move_in_date", context.MoveInDate is { } moveIn ? DescribeDate(moveIn) : null),
-            StatedLine("lease_end_date", context.LeaseEndDate is { } leaseEnd ? DescribeDate(leaseEnd) : null),
             StatedLine("renewal_offer_id", context.RenewalOfferId),
             StatedLine("missed_tour_time", context.MissedTourTime is { } missedTour ? DescribeInstant(missedTour) : null),
             StatedLine("cancellation_reason", context.CancellationReason),

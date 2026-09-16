@@ -21,7 +21,9 @@ public sealed class TemplateMessageComposer : IMessageComposer
         ProspectCase prospectCase,
         CommunicationChannel channel,
         IReadOnlyList<string>? priorViolations = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<DateTimeOffset>? tourSlots = null,
+        DateOnly? referenceDate = null)
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;
@@ -42,7 +44,8 @@ public sealed class TemplateMessageComposer : IMessageComposer
         // from. Only the content comes from the catalog and the language set.
         bool isEmail = channel == CommunicationChannel.Email;
         Uri? link = isEmail ? PropertyLink.For(propertyName, callToAction.LinkPath, context.Unit) : null;
-        IReadOnlyList<string> optionTexts = templates.SmsOptions(callToAction.Type);
+        IReadOnlyList<string> optionTexts = TourSlotText.OptionsFor(callToAction.Type, tourSlots)
+            ?? templates.SmsOptions(callToAction.Type, Personas.IsProspect(prospectCase.Persona));
 
         string body = isEmail
             ? EmailBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, link)
@@ -67,7 +70,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
         IReadOnlyList<string> optionTexts)
     {
         string welcome = propertyName is null ? string.Empty : Fill(templates.SmsWelcome, propertyName);
-        string options = Fill(templates.SmsOptionsSentence, NumberedOptions(templates, optionTexts));
+        string options = templates.NumberedOptionsSentence(optionTexts);
 
         return $"{greeting}!{welcome} {interestPhrase}{Fill(templates.SmsCtaSentence, ctaPhrase)} {options} {templates.SmsOptOut}";
     }
@@ -90,12 +93,6 @@ public sealed class TemplateMessageComposer : IMessageComposer
 
     private static string Fill(string template, params object[] values) =>
         string.Format(CultureInfo.InvariantCulture, template, values);
-
-    // A10: sample 1's own spelling, "Reply 1 for Thu, 2 for Fri.", so the body and
-    // cta.options carry the same list and a reader of the message can act on it.
-    // O(n) in the number of options, which is the language set's row, not input.
-    private static string NumberedOptions(MessageTemplates templates, IReadOnlyList<string> optionTexts) =>
-        string.Join(", ", optionTexts.Select((option, index) => Fill(templates.SmsOption, index + 1, option)));
 
     private static string BuildInterestPhrase(ProspectProfile profile, MessageTemplates templates)
     {
