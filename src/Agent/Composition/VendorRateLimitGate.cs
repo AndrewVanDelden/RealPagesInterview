@@ -1,3 +1,5 @@
+using Agent.Common;
+
 namespace Agent.Composition;
 
 // Keeps one model's calls under the vendor's per-minute limits instead of retrying after hitting
@@ -16,7 +18,7 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
 
     private readonly object sync = new();
     private readonly Queue<VendorCallReservation> sent = new();
-    private VendorRateLimits? limits;
+    private Option<VendorRateLimits> limits = Option<VendorRateLimits>.None();
     private bool unlimitedCallInFlight;
     private TaskCompletionSource capacityChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -45,7 +47,7 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
                 }
 
                 wake = capacityChanged.Task;
-                if (limits is not null)
+                if (limits.HasValue)
                 {
                     untilOldestLeaves = sent.Peek().SentAt + Window - now;
                 }
@@ -67,7 +69,7 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
     // SDK retried inside the call went out under the same reservation, and the vendor counts failed
     // requests against its limits too, so each retry takes its own place in the window from now.
     // O(r) in the retries, which the client's retry limit bounds.
-    public void Complete(VendorCallReservation reservation, int countedTokens, VendorRateLimits? reportedLimits, int retriedRequests, int tokensPerRetry)
+    public void Complete(VendorCallReservation reservation, int countedTokens, Option<VendorRateLimits> reportedLimits, int retriedRequests, int tokensPerRetry)
     {
         TaskCompletionSource woken;
         lock (sync)
@@ -79,7 +81,7 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
                 sent.Enqueue(new VendorCallReservation(now, tokensPerRetry));
             }
 
-            limits = reportedLimits ?? limits;
+            limits = reportedLimits.HasValue ? reportedLimits : limits;
             unlimitedCallInFlight = false;
             woken = capacityChanged;
             capacityChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -93,7 +95,7 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
     // larger than the whole allowance would otherwise wait forever.
     private VendorCallReservation? TryAdmit(int estimatedTokens, DateTimeOffset now)
     {
-        if (limits is null)
+        if (!limits.HasValue)
         {
             if (unlimitedCallInFlight)
             {
@@ -104,8 +106,8 @@ public sealed class VendorRateLimitGate(TimeProvider timeProvider)
             return Send(estimatedTokens, now);
         }
 
-        int usableRequests = Math.Max(1, (int)(limits.RequestsPerMinute * Headroom));
-        int usableTokens = Math.Max(1, (int)(limits.TokensPerMinute * Headroom));
+        int usableRequests = Math.Max(1, (int)(limits.Value.RequestsPerMinute * Headroom));
+        int usableTokens = Math.Max(1, (int)(limits.Value.TokensPerMinute * Headroom));
         bool fits = sent.Count + 1 <= usableRequests && sent.Sum(call => (long)call.Tokens) + estimatedTokens <= usableTokens;
         return fits || sent.Count == 0 ? Send(estimatedTokens, now) : null;
     }

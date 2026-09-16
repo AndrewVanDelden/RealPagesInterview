@@ -24,4 +24,15 @@ public class VendorRateLimitGatesTests
 
         Assert.NotSame(gates.For("gpt-4o"), gates.For("gpt-4o-mini"));
     }
+
+    // The vendor's model name is the same key whatever case it is typed in: a judge pinned to the
+    // lowercase constant and a composer configured with the vendor's own "GPT-4o" branding still
+    // name one model, and would otherwise each fill ninety percent of its limit on their own gate.
+    [Fact]
+    public void For_SameModelDifferentCase_ReturnsTheSameGate()
+    {
+        var gates = new VendorRateLimitGates(new FakeTimeProvider());
+
+        Assert.Same(gates.For("gpt-4o"), gates.For("GPT-4o"));
+    }
 }

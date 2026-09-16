@@ -1,5 +1,6 @@
 using System.ClientModel.Primitives;
 using System.Globalization;
+using Agent.Common;
 
 namespace Agent.Composition;
 
@@ -11,15 +12,15 @@ public sealed record VendorRateLimits(int RequestsPerMinute, int TokensPerMinute
     private const string RequestsHeader = "x-ratelimit-limit-requests";
     private const string TokensHeader = "x-ratelimit-limit-tokens";
 
-    // Null when either header is absent or is not a positive whole number: a response that does not
+    // None when either header is absent or is not a positive whole number: a response that does not
     // state both limits leaves them unknown rather than half known.
-    public static VendorRateLimits? FromHeaders(PipelineResponseHeaders headers)
+    public static Option<VendorRateLimits> FromHeaders(PipelineResponseHeaders headers)
     {
         int? requests = ReadPositive(headers, RequestsHeader);
         int? tokens = ReadPositive(headers, TokensHeader);
         return requests is { } requestsPerMinute && tokens is { } tokensPerMinute
-            ? new VendorRateLimits(requestsPerMinute, tokensPerMinute)
-            : null;
+            ? Option<VendorRateLimits>.Some(new VendorRateLimits(requestsPerMinute, tokensPerMinute))
+            : Option<VendorRateLimits>.None();
     }
 
     private static int? ReadPositive(PipelineResponseHeaders headers, string name) =>

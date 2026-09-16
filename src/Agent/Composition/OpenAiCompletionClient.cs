@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Runtime.CompilerServices;
+using Agent.Common;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -88,7 +89,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         int promptTokenEstimate = (systemPrompt.Length + userPrompt.Length + (responseJsonSchema?.Length ?? 0) + 2) / 3;
         VendorCallReservation reservation = await rateLimitGate.ReserveAsync(promptTokenEstimate + ReplyTokenAllowance, cancellationToken);
         int countedTokens = promptTokenEstimate + ReplyTokenAllowance;
-        VendorRateLimits? reportedLimits = null;
+        Option<VendorRateLimits> reportedLimits = Option<VendorRateLimits>.None();
 
         // This call's own attempt count, which concurrent calls on this client cannot add to
         // (CountingRetryPolicy.BeginCall), read by the gate as well as the diagnostics.
@@ -105,13 +106,16 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         catch (ClientResultException ex)
         {
             // A request that failed with no response at all carries none, and so reports no limits.
-            reportedLimits = ex.GetRawResponse() is { } response ? VendorRateLimits.FromHeaders(response.Headers) : null;
+            reportedLimits = ex.GetRawResponse() is { } response ? VendorRateLimits.FromHeaders(response.Headers) : Option<VendorRateLimits>.None();
             throw;
         }
         finally
         {
-            // A call cancelled before it was sent made no attempt, so it has no retry to count.
-            rateLimitGate.Complete(reservation, countedTokens, reportedLimits, retriedRequests: Math.Max(0, callAttempts.Value - 1), tokensPerRetry: promptTokenEstimate);
+            // A call cancelled before it was sent made no attempt, so it has no retry to count. A
+            // retry is billed like the attempt it repeats, at the larger of its max_tokens and a
+            // character estimate, before any response exists, so its place in the window costs the
+            // same as the original reservation: the prompt estimate plus the reply allowance.
+            rateLimitGate.Complete(reservation, countedTokens, reportedLimits, retriedRequests: Math.Max(0, callAttempts.Value - 1), tokensPerRetry: promptTokenEstimate + ReplyTokenAllowance);
         }
     }
 
@@ -123,7 +127,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         ChatCompletionOptions options,
         StrongBox<int> callAttempts,
         CancellationToken cancellationToken,
-        Action<VendorRateLimits?, int, int> onResponse)
+        Action<Option<VendorRateLimits>, int, int> onResponse)
     {
         ClientResult<ChatCompletion> result;
         try

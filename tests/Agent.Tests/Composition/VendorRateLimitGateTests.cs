@@ -1,3 +1,4 @@
+using Agent.Common;
 using Agent.Composition;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -19,7 +20,7 @@ public class VendorRateLimitGateTests
         Task<VendorCallReservation> next = gate.ReserveAsync(100, CancellationToken.None);
 
         Assert.False(next.IsCompleted);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 500, TokensPerMinute: 200_000), retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(probe, 100, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 500, TokensPerMinute: 200_000)), retriedRequests: 0, tokensPerRetry: 0);
         await next.WaitAsync(HeldCallWait);
     }
 
@@ -34,7 +35,7 @@ public class VendorRateLimitGateTests
         Task<VendorCallReservation> second = gate.ReserveAsync(100, CancellationToken.None);
         Task<VendorCallReservation> third = gate.ReserveAsync(100, CancellationToken.None);
 
-        gate.Complete(first, 100, reportedLimits: null, retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(first, 100, reportedLimits: Option<VendorRateLimits>.None(), retriedRequests: 0, tokensPerRetry: 0);
         await Task.WhenAny(second, third).WaitAsync(HeldCallWait);
 
         Assert.False(second.IsCompleted && third.IsCompleted);
@@ -48,7 +49,7 @@ public class VendorRateLimitGateTests
         var time = new FakeTimeProvider();
         var gate = new VendorRateLimitGate(time);
         VendorCallReservation probe = await gate.ReserveAsync(10, CancellationToken.None);
-        gate.Complete(probe, 10, new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000), retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(probe, 10, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000)), retriedRequests: 0, tokensPerRetry: 0);
 
         for (int call = 0; call < 8; call++)
         {
@@ -73,13 +74,13 @@ public class VendorRateLimitGateTests
     {
         var gate = new VendorRateLimitGate(new FakeTimeProvider());
         VendorCallReservation probe = await gate.ReserveAsync(100, CancellationToken.None);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(probe, 100, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000)), retriedRequests: 0, tokensPerRetry: 0);
         VendorCallReservation large = await gate.ReserveAsync(700, CancellationToken.None).WaitAsync(HeldCallWait);
 
         Task<VendorCallReservation> held = gate.ReserveAsync(300, CancellationToken.None);
         Assert.False(held.IsCompleted);
 
-        gate.Complete(large, 200, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(large, 200, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000)), retriedRequests: 0, tokensPerRetry: 0);
         await held.WaitAsync(HeldCallWait);
     }
 
@@ -91,7 +92,7 @@ public class VendorRateLimitGateTests
         var time = new FakeTimeProvider();
         var gate = new VendorRateLimitGate(time);
         VendorCallReservation probe = await gate.ReserveAsync(100, CancellationToken.None);
-        gate.Complete(probe, 100, new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000), retriedRequests: 0, tokensPerRetry: 0);
+        gate.Complete(probe, 100, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 100, TokensPerMinute: 1_000)), retriedRequests: 0, tokensPerRetry: 0);
         time.Advance(TimeSpan.FromSeconds(60));
 
         await gate.ReserveAsync(5_000, CancellationToken.None).WaitAsync(HeldCallWait);
@@ -105,7 +106,7 @@ public class VendorRateLimitGateTests
     {
         var gate = new VendorRateLimitGate(new FakeTimeProvider());
         VendorCallReservation probe = await gate.ReserveAsync(10, CancellationToken.None);
-        gate.Complete(probe, 10, new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000), retriedRequests: 2, tokensPerRetry: 10);
+        gate.Complete(probe, 10, Option<VendorRateLimits>.Some(new VendorRateLimits(RequestsPerMinute: 10, TokensPerMinute: 1_000_000)), retriedRequests: 2, tokensPerRetry: 10);
 
         for (int call = 0; call < 6; call++)
         {

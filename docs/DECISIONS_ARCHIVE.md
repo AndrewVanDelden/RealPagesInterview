@@ -4071,3 +4071,21 @@ Two mistakes of this sprint's own tests are recorded here too: a test whose held
 hung rather than failed when its rule was broken, and was given one; and a reading of the SDK was wrong,
 a `ClientResultException` for a request that got no response carries no response, which an existing
 test caught. `.\test.ps1`: 122 and 927 tests, 100 percent line, branch and method.
+
+**Review fact, D124, second review (2026-09-16).** An automated `/code-review` pass over the PR found
+three more gaps. First, `VendorRateLimitGates` keyed its dictionary with `StringComparer.Ordinal`, so a
+composer model that named the judge's `"gpt-4o"` in a different case (its own branding `"GPT-4o"`, say)
+got a gate of its own instead of sharing one, reopening the two-gates gap the first review fact fixed;
+keyed case-insensitively now (`For_SameModelDifferentCase_ReturnsTheSameGate`). Second, a retried
+request's placeholder in the window was reserved at the bare prompt estimate, not the prompt estimate
+plus the reply allowance the original attempt reserved, though the guide states every attempt, retried
+or not, is billed at the larger of its `max_tokens` and a character estimate before any response
+exists; `OpenAiCompletionClient.CompleteAsync` now reserves the full estimate for a retry too, with a
+test that fails on the estimate alone
+(`CompleteAsync_CallWasRetried_TheRetryReservesThePromptEstimatePlusTheReplyAllowance`). Third,
+`VendorRateLimits.FromHeaders` returned a nullable reference for the headers-absent case rather than
+`Option<VendorRateLimits>`, the convention every other expected-absence value in `Composition` already
+follows (`PropertyData.FactsFor`, `PropertyFacts.RenewalOfferFor`); `VendorRateLimits`,
+`VendorRateLimitGate` and `OpenAiCompletionClient` now carry `Option<VendorRateLimits>` throughout, a
+non-behavioral rename with no failing test of its own. `.\test.ps1`: 122 and 929 tests, 100 percent
+line, branch and method.

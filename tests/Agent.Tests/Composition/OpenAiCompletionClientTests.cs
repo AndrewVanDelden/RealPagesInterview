@@ -535,6 +535,35 @@ public class OpenAiCompletionClientTests
         await second.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    // A retry is billed by the vendor like the attempt it repeats, at the larger of its max_tokens
+    // and a character estimate, before any response exists: its place in the window should cost the
+    // prompt estimate plus the reply allowance, not the prompt estimate alone. With 2,000 tokens a
+    // minute, 1,800 usable: the first call's corrected cost (18) plus a correctly sized retry (1,001)
+    // leaves room for none of a second 1,001-token call, which must wait for the window. Counting the
+    // retry at the prompt estimate alone (1) would leave room and let the second call through at once.
+    [Fact]
+    public async Task CompleteAsync_CallWasRetried_TheRetryReservesThePromptEstimatePlusTheReplyAllowance()
+    {
+        var time = new FakeTimeProvider();
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult(Interlocked.Increment(ref requests) == 1
+                ? (HttpStatusCode.ServiceUnavailable, """{"error":{"message":"down"}}""")
+                : (HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests: "100", tokens: "2000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        await client.CompleteAsync("s", "u");
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.False(second.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     // A call that times out is over as far as the gate is concerned, so the next call is not held
     // behind it.
     [Fact]
