@@ -4015,3 +4015,12 @@ cancellation tests lose the assertion that later records never start, which no l
 that the run throws, leaves no finished output file, and folds no line after the cancel.
 Evidence: D122's run fact; `.\test.ps1` at 121 and 910 tests, 100 percent line, branch and method, and
 the CLI tests run five more times with no failure. No model run was made. Assumptions: A22, A23.
+
+**Review fact, D123 (2026-09-16).** The cold review of D123's commit found three things. First, no
+test covered the check that stops a record read after the run is cancelled from starting: the reviewer
+deleted that line and all 121 CLI tests passed. A new test cancels the run from the warning logged
+while line 1 is parsed and asserts no line carries t1's TaskId; it passes with the check and fails
+with it removed (`Found: "TaskId=t1"`), both runs made. Second, running every record at once has no
+bound and no rate-limit benchmark (BC); that is the owner's instruction, recorded as a scope-out in
+`docs/CODE_REVIEW.md` with what happens past the limit. Third, a comment claimed every stderr line
+keeps input order, which holds for the fold's failure lines and not for log lines; corrected.

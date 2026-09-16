@@ -779,6 +779,33 @@ public class CliRunnerTests
         }
     }
 
+    // A record read after the run is cancelled never starts. t1's unparseable expected field is
+    // logged while its line is parsed, and that log line cancels the run, so the batch sees the
+    // cancel before deciding to start t1: nothing carries t1's TaskId and the run throws.
+    [Fact]
+    public async Task RunAsync_CancelledWhileALineIsRead_StartsNoRecordForItAndThrows()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")[..^1] + ",\"expected\":\"not an object\"}");
+        using var cancellation = new CancellationTokenSource();
+        var errorWriter = new CancellingOnLineWriter("Could not parse the 'expected' field", cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
+
+            Assert.Contains("Could not parse the 'expected' field", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("TaskId=t1", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
     // Nothing in a record observes the token here: t1 cancels the run and then fails with a fault
     // that is not a cancellation. The fold's own check before each line is what stops the batch,
     // so once t1 has finished, the malformed line after it is never folded or reported and the

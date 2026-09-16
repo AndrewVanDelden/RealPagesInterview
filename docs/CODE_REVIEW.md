@@ -199,3 +199,15 @@ or human) doesn't re-flag them as missing behavior.
   catch the guard's own tests already exercise. The six faults and their proofs, including
   that uncovered case, are in `docs/FAULT_INJECTION.md`. Do not flag the absence of a real
   out-of-space test.
+
+- **Every record runs at once, with no concurrency limit and no rate-limit measurement (D123).**
+  The owner's instruction of 2026-09-16 removed D37's limit of four: every record starts as soon as
+  it is read, so a batch of n records holds n records in memory and puts up to n composer calls and
+  n judge calls in flight together. The vendor's per-minute limit has never been measured, and no
+  benchmark at n, 10n and 100n was run, because each point is a paid model run. What happens past
+  the limit, stated rather than implied: a 429 is retried once after the SDK's backoff; if the retry
+  also gets a 429, the composer's record falls back to the template composer and the judge's verdict
+  reads not measured, both logged per record and visible in `--diagnostics` (`composition.composer`,
+  `model_cost`), and the run still exits 0. Do not flag the missing bound or the missing benchmark;
+  flag a run whose diagnostics show fallbacks caused by 429s, which is the measurement that would
+  reopen D123.

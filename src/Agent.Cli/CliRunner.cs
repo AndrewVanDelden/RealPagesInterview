@@ -407,8 +407,9 @@ public sealed class CliRunner(
     // Starts every record as soon as its line is read, with no limit on how many run at once: each
     // record's model and judge calls are paid for, and one waiting behind a slow earlier record
     // gains nothing. Records share no state while they run (RunRecordAsync), and the fold then
-    // takes the results in input order, so every file and every stderr line keeps input order
-    // whatever order records finish in. A line that did not parse keeps its place in that order,
+    // takes the results in input order, so every file and every failure line the fold writes keeps
+    // input order whatever order records finish in; log lines are written as they happen, and their
+    // TaskId is what separates one record's from another's. A line that did not parse keeps its place in that order,
     // and its failure text is all that is kept of it, for the scorecard. On a cancel or a throw,
     // the records still running are cancelled and awaited before the exception leaves.
     // O(n) time in the input lines and O(n) space: every parsed record is held until it is folded,
