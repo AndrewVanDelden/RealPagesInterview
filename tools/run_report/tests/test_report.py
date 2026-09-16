@@ -43,6 +43,15 @@ def test_record_grid_svg_marks_each_cell_with_a_glyph_as_well_as_a_color(write_r
     assert "t1" in svg
 
 
+def test_record_grid_svg_shows_a_task_id_with_dollar_signs_as_written(write_run: Any) -> None:
+    run = load_run(write_run(scorecard([record("unit_4$B_vs_$^"), record("probe$\\alpha x$")])))
+
+    svg = record_grid_svg(run.records, run.checks)
+
+    assert "unit_4$B_vs_$^" in svg
+    assert "probe$\\alpha x$" in svg
+
+
 def test_latency_svg_draws_the_budget_and_the_p95_as_labelled_lines(write_run: Any) -> None:
     run = _run(write_run)
 
@@ -62,6 +71,8 @@ def test_render_page_leads_with_the_totals_and_escapes_every_value_from_the_run(
     assert "Offers &lt;script&gt;x&lt;/script&gt; days." in page
     assert "prospect_&lt;b&gt;bold&lt;/b&gt;" in page
     assert "Day, Hour" in page
+    assert "scorecard order" in page
+    assert "Record (input order)" not in page
     assert page.count("<svg") == 3
 
 

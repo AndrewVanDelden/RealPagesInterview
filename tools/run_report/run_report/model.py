@@ -118,11 +118,18 @@ def load_run(run_dir: Path) -> RunReport:
     # A scorecard rebuilt with --replay timed nothing and called no model, so its p95 and both costs
     # are empty. The live run recorded them per record on its diagnostics rows: the costs are those
     # rows summed, and the p95 is the program's own nearest-rank p95 over their latencies.
+    # Only a rebuilt scorecard is filled in, and only from rows the scorecard scored: a row it could
+    # not score carries no latency there, and a live scorecard's unmeasured p95 stays unmeasured.
     latency_p95_ms = scorecard.get("latency_p95_ms")
-    latency_p95 = _result(scorecard.get("latency_p95", "not_measured"), "the scorecard")
+    try:
+        latency_p95 = _result(scorecard.get("latency_p95", "not_measured"), "eval.json")
+    except _RowError as error:
+        raise ReportInputError(f"eval.json has an unknown latency_p95 '{scorecard.get('latency_p95')}'.") from error
     budget_ms = scorecard.get("latency_budget_ms")
-    if latency_p95_ms is None:
-        latency_p95_ms = _nearest_rank_p95([row.latency_ms for row in rows if row.latency_ms is not None])
+    if latency_p95_ms is None and scorecard.get("batch_latency_ms") is None:
+        latency_p95_ms = _nearest_rank_p95(
+            [row.latency_ms for row in rows if row.latency_ms is not None and row.scoring_error is None]
+        )
         if latency_p95_ms is not None and budget_ms is not None:
             latency_p95 = CheckResult.PASSED if latency_p95_ms <= budget_ms else CheckResult.FAILED
 
@@ -155,6 +162,10 @@ def _read_json(path: Path, required: bool) -> Any:
 
 def _read_row(index: int, row: Any, diagnostics_row: Any, problems: list[str]) -> RecordRow:
     position = index + 1
+    if not isinstance(row, dict):
+        raise _RowError(f"Row {position} of eval.json is not a record object; it is left out of the report.")
+    if "results" in row and not isinstance(row["results"], dict):
+        raise _RowError(f"Row {position} of eval.json has results that are not an object; it is left out of the report.")
     try:
         task_id = str(row["task_id"])
         results = {check: _result(value, f"Row {position} of eval.json") for check, value in row["results"].items()}

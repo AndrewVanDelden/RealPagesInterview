@@ -77,6 +77,54 @@ def test_load_run_takes_cost_and_p95_from_the_diagnostics_when_the_scorecard_was
     assert run.judge_model_cost is not None and run.judge_model_cost.output_tokens == 20
 
 
+def test_load_run_leaves_unscored_rows_out_of_a_rebuilt_p95_as_the_scorecard_does(write_run: Any) -> None:
+    unlabelled = record("t2", passed=False)
+    unlabelled["scoring_error"] = "No expected outcome."
+    replayed = scorecard([record("t1"), unlabelled], batch_latency_ms=None)
+    replayed["latency_p95_ms"] = None
+    replayed["latency_p95"] = "not_measured"
+    fast, slow = diagnostics_row("t1"), diagnostics_row("t2")
+    fast["latency_ms"], slow["latency_ms"] = 900.0, 9000.0
+
+    run = load_run(write_run(replayed, [fast, slow]))
+
+    assert run.latency_p95_ms == 900.0
+    assert run.latency_p95 is CheckResult.PASSED
+
+
+def test_load_run_keeps_a_live_scorecards_unmeasured_p95_unmeasured(write_run: Any) -> None:
+    live = scorecard([record("t1")])
+    live["latency_p95_ms"] = None
+    live["latency_p95"] = "not_measured"
+
+    run = load_run(write_run(live, [diagnostics_row("t1")]))
+
+    assert run.latency_p95_ms is None
+    assert run.latency_p95 is CheckResult.NOT_MEASURED
+
+
+@pytest.mark.parametrize(
+    ("replace", "problem"),
+    [
+        (lambda row: "not a record", "Row 2 of eval.json is not a record object; it is left out of the report."),
+        (lambda row: {**row, "results": None}, "Row 2 of eval.json has results that are not an object; it is left out of the report."),
+    ],
+)
+def test_load_run_reports_a_row_of_the_wrong_shape_and_keeps_every_other_row(write_run: Any, replace: Any, problem: str) -> None:
+    run = load_run(write_run(scorecard([record("t1"), replace(record("t2")), record("t3")])))
+
+    assert [row.task_id for row in run.records] == ["t1", "t3"]
+    assert run.problems == [problem]
+
+
+def test_load_run_with_an_unknown_batch_p95_result_raises_naming_the_file(write_run: Any) -> None:
+    broken = scorecard([record("t1")])
+    broken["latency_p95"] = "ok"
+
+    with pytest.raises(ReportInputError, match="eval.json has an unknown latency_p95 'ok'"):
+        load_run(write_run(broken))
+
+
 def test_load_run_leaves_a_row_without_a_diagnostics_row_unjoined(write_run: Any) -> None:
     unparsed = record("(did not parse)", passed=False)
     unparsed["scoring_error"] = "Line 2 failed to parse"

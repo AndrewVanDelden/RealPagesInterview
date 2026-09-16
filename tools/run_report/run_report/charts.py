@@ -37,6 +37,9 @@ FILLS = {CheckResult.PASSED: PASSED, CheckResult.FAILED: FAILED, CheckResult.NOT
 plt.rcParams.update(
     {
         "svg.fonttype": "none",
+        # Task ids come from the input file, and a "$" in one must print as written, never be read as
+        # matplotlib math, which garbles the label or raises and loses the whole report.
+        "text.parse_math": False,
         "font.family": ["Segoe UI", "DejaVu Sans"],
         "font.size": 10,
         "text.color": INK,
@@ -109,7 +112,7 @@ def record_grid_svg(records: list[RecordRow], checks: list[CheckTally]) -> str:
 
 
 def latency_svg(records: list[RecordRow], budget_ms: int | None, p95_ms: float | None) -> str:
-    """Each measured record's latency in input order, against the budget and the batch p95. O(n).
+    """Each measured record's latency in scorecard order, against the budget and the batch p95. O(n).
 
     Both reference lines are labelled in the right margin, clear of the bars.
     """
@@ -126,7 +129,7 @@ def latency_svg(records: list[RecordRow], budget_ms: int | None, p95_ms: float |
         axes.axhline(p95_ms / 1000, color=INK, linewidth=1, linestyle=":")
         axes.text(1.005, p95_ms / 1000, f"p95 {p95_ms / 1000:.1f} s", transform=axes.get_yaxis_transform(), va="center", color=INK, fontsize=9)
 
-    axes.set_xlabel("Record (input order)")
+    axes.set_xlabel("Record (scorecard order)")
     axes.set_ylabel("Seconds")
     axes.set_xlim(0.3, max(positions, default=1) + 0.7)
     _recessive(axes, grid_axis="y")

@@ -51,11 +51,12 @@ def render_page(run: RunReport, run_label: str) -> str:
         "The number is passed over measured.</p>",
         f"<figure>{check_tallies_svg(run.checks, len(run.records))}</figure>",
         _tally_table(run),
-        "<h2>Every record</h2><p class=\"note\">One row per record in input order, one column per check. "
+        "<h2>Every record</h2><p class=\"note\">One row per record in scorecard order: every record the run processed, "
+        "in input order, then any line that did not parse or record that failed. One column per check. "
         "✓ passed, ✗ failed, – not measured.</p>",
         f"<figure>{record_grid_svg(run.records, run.checks)}</figure>",
         "<h2>Latency</h2><p class=\"note\">Each record's time from start to its decision, including every model call "
-        "and any wait for the rate limit.</p>",
+        "and any wait for the rate limit, numbered as in the grid above.</p>",
         f"<figure>{latency_svg(run.records, run.latency_budget_ms, run.latency_p95_ms)}</figure>",
         f"<h2>Failed records ({len(failed_rows)})</h2>",
         _failures_table(failed_rows, labels),

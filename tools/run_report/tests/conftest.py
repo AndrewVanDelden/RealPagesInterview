@@ -36,16 +36,20 @@ def record(task_id: str, passed: bool = True, **results: str) -> dict[str, Any]:
     }
 
 
-def scorecard(records: list[dict[str, Any]], batch_latency_ms: float | None = 3000.0) -> dict[str, Any]:
+def _has_results(row: Any) -> bool:
+    return isinstance(row, dict) and isinstance(row.get("results"), dict)
+
+
+def scorecard(records: list[Any], batch_latency_ms: float | None = 3000.0) -> dict[str, Any]:
     return {
-        "passed": sum(1 for row in records if row["passed"]),
+        "passed": sum(1 for row in records if isinstance(row, dict) and row["passed"]),
         "total": len(records),
         "checks": [
             {
                 "check": check,
                 "label": label,
-                "passed": sum(1 for row in records if "results" in row and row["results"][check] == "passed"),
-                "measured": sum(1 for row in records if "results" in row and row["results"][check] != "not_measured"),
+                "passed": sum(1 for row in records if _has_results(row) and row["results"][check] == "passed"),
+                "measured": sum(1 for row in records if _has_results(row) and row["results"][check] != "not_measured"),
             }
             for check, label in CHECKS
         ],
