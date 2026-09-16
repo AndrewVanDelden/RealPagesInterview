@@ -2,6 +2,7 @@ using Agent.Common;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
+using Agent.Ingest;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
 
@@ -48,9 +49,12 @@ public sealed class LeasingMessageAgent(
         // callers still see the exact same exception; they're no longer the only place
         // it's ever recorded. Cancellation is excluded: it isn't a bug, and logging it as
         // Error would make a clean shutdown indistinguishable from a real crash.
+        // Every input field is cleaned before anything reads it, whoever called the agent: the same
+        // cleaning CliRunner applies, and cleaning an already cleaned record changes nothing.
+        ProspectCase sanitized = InputSanitizer.Sanitize(prospectCase).Case;
         try
         {
-            return await RunUnguardedAsync(prospectCase, referenceTime, cancellationToken);
+            return await RunUnguardedAsync(sanitized, referenceTime, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

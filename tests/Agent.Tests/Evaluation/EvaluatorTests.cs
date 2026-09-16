@@ -724,6 +724,22 @@ public class EvaluatorTests
         Assert.Equal(1.0, score.PersonalizationScore);
     }
 
+    // The scorer reads the record as the agent did, cleaned, so a first name wrapped in markup is the
+    // name the message greeted.
+    [Fact]
+    public void Evaluate_FirstNameWrappedInMarkup_CountsTheCleanedNameAsCovered()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "<b>Taylor</b>") with
+        {
+            Expected = BaselineExpected(),
+            Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
+        };
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
+
+        Assert.Equal(1.0, score.PersonalizationScore);
+    }
+
     [Fact]
     public void Evaluate_FactWithNoWords_NeverCountsAsCovered()
     {

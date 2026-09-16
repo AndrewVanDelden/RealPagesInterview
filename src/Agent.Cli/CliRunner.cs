@@ -509,6 +509,10 @@ public sealed class CliRunner(
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
     {
+        // The record is cleaned before its scope opens, so a line break in a task id cannot forge a log
+        // line; the notes are computed from the raw record so they can name what the cleaning changed.
+        ProspectCase rawCase = prospectCase;
+        prospectCase = InputSanitizer.Sanitize(rawCase).Case;
         using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
         // One line per record naming every defaulted decision input and how many
@@ -517,11 +521,12 @@ public sealed class CliRunner(
         // an unknown member's name is not (step 68), because a record chose it. The
         // count is the fact an operator reads this line for, and --diagnostics, which
         // is a file a person opens rather than a log stream, still carries every name.
-        IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
+        IngestNotes ingestNotes = IngestNotes.Describe(rawCase);
         log.LogInformation(
-            "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
+            "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s) sanitized=[{SanitizedFields}].",
             string.Join(", ", ingestNotes.DefaultedFields),
-            ingestNotes.UnknownMembers.Count);
+            ingestNotes.UnknownMembers.Count,
+            string.Join(", ", ingestNotes.SanitizedFields));
 
         Stopwatch stopwatch = Stopwatch.StartNew();
         AgentRunResult result;

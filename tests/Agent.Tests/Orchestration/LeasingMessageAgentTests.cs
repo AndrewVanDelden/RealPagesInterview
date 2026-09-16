@@ -521,6 +521,20 @@ public class LeasingMessageAgentTests
         Assert.Empty(result.Diagnostics.RequiredStates);
     }
 
+    // The agent cleans every input field before it decides anything, so markup in a first name never
+    // reaches a message, whoever called the agent.
+    [Fact]
+    public async Task RunAsync_FirstNameCarriesMarkup_GreetsTheCleanedName()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "<script>alert(1)</script>Dev");
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.StartsWith("Hi Dev!", result.Output.NextMessage!.Body);
+        Assert.DoesNotContain("<", result.Output.NextMessage.Body);
+    }
+
     // A record a contact rule stops is answered before anything is planned or composed: a rule that
     // sends nothing is a no_op, a rule that needs a person is escalate_to_human, and neither composes.
     // The composer throws if it is called at all.

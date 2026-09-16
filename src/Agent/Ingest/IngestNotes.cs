@@ -6,12 +6,16 @@ namespace Agent.Ingest;
 // What the reader defaulted and what it did not recognize, per record, so no default is
 // silent. DefaultedFields names every decision input that was absent (or, for the timezone,
 // unrecognized); UnknownMembers names every member the record types do not declare, by its
-// path.
-public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnlyList<string> UnknownMembers)
+// path; SanitizedFields names every field the input sanitizer changed. The defaulted fields are those
+// of the record as it was cleaned, which is the record every decision reads, so a field the cleaning
+// emptied is defaulted too.
+public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnlyList<string> UnknownMembers, IReadOnlyList<string> SanitizedFields)
 {
     // O(m) in the number of members on the record; no member is visited twice.
-    public static IngestNotes Describe(ProspectCase prospectCase)
+    public static IngestNotes Describe(ProspectCase rawCase)
     {
+        SanitizedInput sanitized = InputSanitizer.Sanitize(rawCase);
+        ProspectCase prospectCase = sanitized.Case;
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;
         CaseConstraints constraints = prospectCase.ConstraintsOrEmpty;
@@ -58,7 +62,7 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         Collect(unknown, prospectCase.Assertions?.Constraints, "assertions.constraints.");
         Collect(unknown, prospectCase.Thresholds, "thresholds.");
 
-        return new IngestNotes(defaulted, unknown);
+        return new IngestNotes(defaulted, unknown, sanitized.ChangedFields);
     }
 
     private static void NoteAbsent(List<string> defaulted, bool absent, string path)

@@ -1,6 +1,7 @@
 using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
+using Agent.Ingest;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
 
@@ -84,7 +85,9 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 
     private static RecordScore Score(ScoredRun run)
     {
-        ProspectCase prospectCase = run.ProspectCase;
+        // The facts are read from the record as the agent read it, cleaned; the label is not input and
+        // the cleaning leaves it as it is.
+        ProspectCase prospectCase = InputSanitizer.Sanitize(run.ProspectCase).Case;
         ExpectedOutcome? expected = prospectCase.Expected;
 
         if (expected is null)
