@@ -141,7 +141,7 @@ public class JsonlRecordReaderTests
         Assert.DoesNotContain("Missing required member", result.Error);
     }
 
-    // Every member is optional except task_id, consent, and
+    // Every member is optional except task_id and
     // channel_preferences. An absent optional value type is null, never a silent default
     // (the year-0001 dates of retrospective finding 4), and never an error row.
     [Fact]

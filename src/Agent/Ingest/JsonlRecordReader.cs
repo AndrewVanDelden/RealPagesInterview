@@ -8,7 +8,8 @@ namespace Agent.Ingest;
 
 public sealed class JsonlRecordReader
 {
-    // The three members a record must carry; a line missing one is an error row naming it.
+    // The members a record must carry, task_id and channel_preferences; a line missing one is an
+    // error row naming it.
     // The deserializer's own message would name it too, but that message quotes the record's
     // text and is never reported (step 68), so the names come from this program's own schema
     // rather than from anything the record wrote.

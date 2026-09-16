@@ -55,7 +55,7 @@ public class RequiredStateMapTests
 
     // A record that asserts nothing has asked no question, so the map is the complete answer
     // to a list with no items rather than an absent answer. Absent assertions (every
-    // member below task_id, consent and channel_preferences is optional) and an absent list
+    // member below task_id and channel_preferences is optional) and an absent list
     // reach the same place.
     [Fact]
     public void For_NoRequiredStates_IsAnEmptyMapRatherThanNull()

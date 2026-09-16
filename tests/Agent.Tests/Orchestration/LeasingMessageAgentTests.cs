@@ -313,7 +313,7 @@ public class LeasingMessageAgentTests
         Assert.Equal(SuppressionReason.CompositionFailed, result.Diagnostics.SuppressionReason);
     }
 
-    // End to end, only three members are required: a record carrying just those runs to a message
+    // End to end, a record carrying only task_id, a consent object and channel_preferences runs to a message
     // (A12 greeting without a name, A6 UTC, A7 long horizon), never to an exception.
     [Fact]
     public async Task RunAsync_OnlyRequiredMembers_ComposesInUtcWithTheLongHorizonAction()

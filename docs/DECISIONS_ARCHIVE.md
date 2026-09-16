@@ -4117,3 +4117,5 @@ diagnostics row with no composition and no model cost that names `consent` as de
 review queue. Proof that the tests guard the rule rather than the label: with `ConsentOrEmpty` changed to
 opt in to every channel, the agent test and the CLI test both fail (run made 2026-09-16), and pass once it
 is restored. `.\test.ps1`: 123 and 933 tests, 100 percent line, branch and method. Assumptions: A17.
+
+**Review fact, D125 (2026-09-16).** The cold review traced every read of consent in `src`: the agent reads `ConsentOrEmpty` once, the channel selector opts a channel in only on an explicit true, and nothing else reads consent. It ran the CLI on thirteen consent shapes: absent, null, `{}`, `{"sms_opt_in":null}`, unknown members only, and wrongly cased keys all gave channel `none` and `no_contact_consent`; `"yes"`, `true`, `[]`, `{"sms_opt_in":"true"}` and `{"sms_opt_in":1}` were refused as lines, never read as consent. Its one finding, five comments in `src` and `tests` still calling consent required, was fixed.
