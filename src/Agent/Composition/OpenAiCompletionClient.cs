@@ -24,9 +24,10 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     // seed, so variance is measured (Phase 7 step 83) rather than assumed away.
     private const float Temperature = 0.2f;
 
-    // Only reached when no record in the batch states p95_latency_ms. It exists to stop a
-    // hung call, not to express a budget.
-    private static readonly TimeSpan DefaultCallBudget = TimeSpan.FromSeconds(30);
+    // What one attempt may take unless the caller states otherwise. Sixty seconds, not a record's
+    // p95_latency_ms: every call is paid for, and a call cut short spends the money and returns no
+    // message. It stops a hung call; the p95 check still reports a run against the records' budget.
+    public static readonly TimeSpan DefaultCallBudget = TimeSpan.FromSeconds(60);
 
     private const string StructuredOutputSchemaName = "composed_message";
 

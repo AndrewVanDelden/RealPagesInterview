@@ -50,15 +50,6 @@ public sealed class CliRunner(
     // because a run may legitimately want to compare models; the instrument may not.
     private const string JudgeModel = "gpt-4o";
 
-    // How many records the batch loop runs at once. A constant, not a flag: no second value
-    // has earned a setting (step 41). One model call was measured at about 1.5 to 4.5 s and one
-    // record's calls run one after another, so a sequential batch's wall clock is the sum of
-    // seconds per record. Four puts at most four requests in flight against a per-minute vendor
-    // limit this project has never measured, and every 429 it returns costs a retry and its
-    // backoff, since a 429 is one of the transient statuses the client retries. The template
-    // path spends well under a millisecond a record, so the bound costs it nothing.
-    private const int MaxConcurrentRecords = 4;
-
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
         string? inputPath = GetOption(args, "--input");
@@ -166,9 +157,8 @@ public sealed class CliRunner(
             return CliExitCodes.UsageError;
         }
 
-        // An evaluation run's own budget for the composer's model calls, in place of the one
-        // derived from the strictest p95_latency_ms the records state, which few completions
-        // measured so far fit, so without it most records fall back to the template. A positive
+        // A run's own budget for the composer's model calls, in place of the client's default of
+        // 60 seconds. A positive
         // whole number of milliseconds, and only on the composer that makes model calls: anywhere
         // else it would bound nothing, and a flag that silently does nothing is a flag someone
         // trusts. The scorecard's p95 check still judges the run against the records' own budget.
@@ -279,10 +269,8 @@ public sealed class CliRunner(
             log.LogInformation("Property data loaded: {PropertyCount} property record(s).", propertyData.Properties.Count);
         }
 
-        // A model call is bounded by the strictest latency budget the records state, so the
-        // model composer is built after a first pass over the file finds it. Nothing that costs
-        // time or money has happened yet: reading the file is local, and a bad composer name or
-        // a missing key still returns a usage error before the first call.
+        // Nothing that costs time or money has happened yet: a bad composer name or a missing key
+        // still returns a usage error before the first call.
         var templateFallback = new TemplateMessageComposer();
         IMessageComposer baseComposer;
         try
@@ -290,7 +278,7 @@ public sealed class CliRunner(
             baseComposer = composerOverride ?? composerName switch
             {
                 ComposerNames.Template => templateFallback,
-                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, ModelCallBudgetFromInput(inputReader, modelCallBudget), propertyData),
+                ComposerNames.OpenAi => BuildOpenAiComposer(configuration, loggerFactory, modelCallBudget, propertyData),
                 _ => throw new ArgumentException(
                     $"Unknown composer '{composerName}'. Expected '{ComposerNames.Template}' or '{ComposerNames.OpenAi}'."),
             };
@@ -357,8 +345,8 @@ public sealed class CliRunner(
 
         log.LogInformation("Reference time for this run: {ReferenceTime}.", referenceTime.ToString("O", CultureInfo.InvariantCulture));
 
-        // Each file gets a record's rows as the record is folded, so memory holds the window of
-        // runs waiting on an earlier record, never the batch's rows. With --eval-report each
+        // Each file gets a record's rows as the record is folded, so memory holds the runs waiting
+        // on an earlier record, never the batch's written rows. With --eval-report each
         // record is scored as it is folded and keeps one small score row, because the p95, the
         // tallies and the report cover the whole batch; with --judge each record's grade arrives
         // with its run, so no run is held for grading afterwards.
@@ -380,7 +368,7 @@ public sealed class CliRunner(
         // does: a run cancelled before it starts writes nothing and starts no record.
         cancellationToken.ThrowIfCancellationRequested();
         await fold.BeginAsync(cancellationToken);
-        (int recordsRead, List<string> parseFailures) = await RunWindowedAsync(
+        (int recordsRead, List<string> parseFailures) = await RunAllAtOnceAsync(
             agent, judge, new JsonlRecordReader().ReadEach(inputReader), referenceTime, log, fold, cancellationToken);
 
         batchStopwatch.Stop();
@@ -416,14 +404,17 @@ public sealed class CliRunner(
         return failureCount == 0 ? CliExitCodes.Success : CliExitCodes.PartialFailure;
     }
 
-    // Reads the input a line at a time and keeps at most MaxConcurrentRecords runs ahead of the
-    // fold, which takes them in input order, so memory holds that window and never the batch; a
-    // slow record at the head holds back later starts until it finishes. A line that did not
-    // parse is reported once every earlier record is folded, so stderr keeps input order, and
-    // its failure text is all that is kept of it, for the scorecard. On a cancel or a throw, the
-    // records in flight are cancelled and awaited before the exception leaves.
-    // O(n) time in the input lines; O(MaxConcurrentRecords + f) space, f the lines that did not parse.
-    private async Task<(int RecordsRead, List<string> ParseFailures)> RunWindowedAsync(
+    // Starts every record as soon as its line is read, with no limit on how many run at once: each
+    // record's model and judge calls are paid for, and one waiting behind a slow earlier record
+    // gains nothing. Records share no state while they run (RunRecordAsync), and the fold then
+    // takes the results in input order, so every file and every stderr line keeps input order
+    // whatever order records finish in. A line that did not parse keeps its place in that order,
+    // and its failure text is all that is kept of it, for the scorecard. On a cancel or a throw,
+    // the records still running are cancelled and awaited before the exception leaves.
+    // O(n) time in the input lines and O(n) space: every parsed record is held until it is folded,
+    // and n records make up to n model calls in flight at once, each bounded by its call budget.
+    // A vendor rate limit answers the excess with 429, which the completion client retries once.
+    private async Task<(int RecordsRead, List<string> ParseFailures)> RunAllAtOnceAsync(
         LeasingMessageAgent agent,
         ISemanticJudge? judge,
         IEnumerable<Result<ProspectCase>> reads,
@@ -433,7 +424,10 @@ public sealed class CliRunner(
         CancellationToken cancellationToken)
     {
         using var inFlightCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var window = new Queue<Task<RecordRun>>(MaxConcurrentRecords);
+
+        // One entry per non-blank line in input order: a started run, or the text of a line that
+        // did not parse.
+        var lines = new Queue<(Task<RecordRun>? Run, string? ParseError)>();
         var parseFailures = new List<string>();
         int recordsRead = 0;
         try
@@ -446,77 +440,44 @@ public sealed class CliRunner(
 
                 if (!read.IsSuccess)
                 {
-                    await FoldEveryRunAsync(window, fold, cancellationToken);
-                    parseFailures.Add(read.Error);
-                    ReportFailure(log, LogLevel.Error, $"Record failed to parse: {read.Error}");
+                    lines.Enqueue((null, read.Error));
                     continue;
-                }
-
-                if (window.Count == MaxConcurrentRecords)
-                {
-                    await fold.AddAsync(await window.Dequeue(), cancellationToken);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 ProspectCase prospectCase = read.Value;
-                window.Enqueue(Task.Run(() => RunRecordAsync(agent, judge, prospectCase, referenceTime, log, inFlightCancellation.Token)));
+                lines.Enqueue((Task.Run(() => RunRecordAsync(agent, judge, prospectCase, referenceTime, log, inFlightCancellation.Token)), null));
             }
 
-            await FoldEveryRunAsync(window, fold, cancellationToken);
+            while (lines.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                (Task<RecordRun>? run, string? parseError) = lines.Dequeue();
+                if (run is null)
+                {
+                    parseFailures.Add(parseError!);
+                    ReportFailure(log, LogLevel.Error, $"Record failed to parse: {parseError}");
+                    continue;
+                }
+
+                await fold.AddAsync(await run, cancellationToken);
+            }
         }
         finally
         {
-            if (window.Count > 0)
+            Task[] running = [.. lines.Select(line => line.Run).OfType<Task>()];
+            if (running.Length > 0)
             {
                 await inFlightCancellation.CancelAsync();
-
-                // Awaited as a plain Task: suppressing the throw is refused on a task with a result.
-                await Task.WhenAll((IEnumerable<Task>)window).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                await Task.WhenAll(running).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
 
         return (recordsRead, parseFailures);
     }
 
-    // Folds every run still in the window, oldest first. O(MaxConcurrentRecords).
-    private static async Task FoldEveryRunAsync(Queue<Task<RecordRun>> window, RecordFold fold, CancellationToken cancellationToken)
-    {
-        while (window.Count > 0)
-        {
-            await fold.AddAsync(await window.Dequeue(), cancellationToken);
-        }
-    }
-
-    // The per-call budget for the model composer. With an override, it is returned as-is and
-    // nothing is read: ModelCallBudget.PerCallBudget returns the override before enumerating its
-    // cases, so a firstPass reader built here would never be read from. Without one it is the
-    // strictest budget any parsed record states, found by a first pass that keeps only the
-    // running minimum and logs nothing, since the run's own pass reports every line. The pass
-    // reads through its own reader, so the run's reader, which has read nothing yet, still
-    // detects a byte order mark once the file is back at its first byte.
-    // O(n) time in the input lines and O(1) space; O(1) with an override.
-    private static TimeSpan? ModelCallBudgetFromInput(StreamReader inputReader, TimeSpan? evaluationOverride)
-    {
-        if (evaluationOverride is not null)
-        {
-            return evaluationOverride;
-        }
-
-        TimeSpan? budget;
-        using (AgentLog.Configure(NullLoggerFactory.Instance))
-        using (var firstPass = new StreamReader(inputReader.BaseStream, leaveOpen: true))
-        {
-            // No override to pass here: the guard above already returned when there was one.
-            budget = ModelCallBudget.PerCallBudget(
-                new JsonlRecordReader().ReadEach(firstPass).Where(read => read.IsSuccess).Select(read => read.Value));
-        }
-
-        inputReader.BaseStream.Position = 0;
-        return budget;
-    }
-
     // One record's run, from its log scope to its result, returned rather than written anywhere
-    // shared, because up to MaxConcurrentRecords of these run at once. The TaskId scope is opened
+    // shared, because every record in the batch runs at once. The TaskId scope is opened
     // here and nowhere else, since a second scope in the library rendered every line as
     // "TaskId=x TaskId=x". It opens inside this record's own async flow, which the scope stack
     // LoggerFactory hands its provider follows, so a line one record logs never carries
@@ -557,7 +518,7 @@ public sealed class CliRunner(
             // bug reaches here. The log entry is written here, inside the record's scope; the
             // stderr line and the scorecard row are the fold's, in input order. Cancellation is
             // excluded, as in LeasingMessageAgent.RunAsync's own catch, so it is neither logged as
-            // an error nor a RecordRun.Failed: it is not a bug, and with up to MaxConcurrentRecords
+            // an error nor a RecordRun.Failed: it is not a bug, and with every record
             // in flight, logging it as one would make a clean shutdown look like several failures.
             // It propagates out of this call and the batch loop's own cancellation ends the batch.
             log.LogError(ex, "Record failed.");
@@ -926,13 +887,14 @@ public sealed class CliRunner(
     // The judge model is pinned separately from the composer's, so the two are not the same
     // model, though one vendor key makes them the same family, the setting in which a judge
     // favors its own family's text; grading against the label rather than for quality is the
-    // mitigation. Its calls are evaluation, not the product's per-record work, so they are not
-    // bounded by the latency budget the records state the way a compose call is.
+    // mitigation. Its calls get the client's default budget, stated in the log as the composer's is.
     private static SemanticJudge BuildJudge(IConfiguration configuration, ILoggerFactory loggerFactory)
     {
         string apiKey = configuration["OpenAI:ApiKey"]
             ?? throw new InvalidOperationException(
                 "--judge needs OpenAI:ApiKey. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
+        loggerFactory.CreateLogger<CliRunner>().LogInformation(
+            "Judge: model {Model}. Call budget: {CallBudget}ms.", JudgeModel, (long)OpenAiCompletionClient.DefaultCallBudget.TotalMilliseconds);
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, JudgeModel);
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
@@ -945,11 +907,11 @@ public sealed class CliRunner(
         string model = configuration["OpenAI:Model"] ?? "gpt-4o-mini";
 
         // Playbook step 78: the log states the inputs a decision used, and which model wrote a
-        // run's prose is one, as is the per-call budget a record's threshold or an override set;
+        // run's prose is one, as is the per-call budget the client's default or an override set;
         // the key is never logged, neither the model name nor the budget is secret.
-        string callBudgetDescription = callTimeout is { } budget ? $"{(long)budget.TotalMilliseconds}ms" : "none";
+        TimeSpan callBudget = callTimeout ?? OpenAiCompletionClient.DefaultCallBudget;
         loggerFactory.CreateLogger<CliRunner>().LogInformation(
-            "Composer: openai, model {Model}. Call budget: {CallBudget}.", model, callBudgetDescription);
+            "Composer: openai, model {Model}. Call budget: {CallBudget}ms.", model, (long)callBudget.TotalMilliseconds);
 
         var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>(), propertyData);

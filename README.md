@@ -10,7 +10,7 @@ default composer is a template: it makes no network call and needs no key.
 ## Pipeline
 
 Steps 1 to 6 are `LeasingMessageAgent.RunAsync` (`src/Agent/Orchestration/`), numbered in the
-order it executes them (D59). `CliRunner` reads the input, runs up to four records at once (D37)
+order it executes them (D59). `CliRunner` reads the input, runs every record at once (D123)
 and writes every output in input order.
 
 ```mermaid
