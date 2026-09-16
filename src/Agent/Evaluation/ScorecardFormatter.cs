@@ -42,6 +42,31 @@ public static class ScorecardFormatter
         }
 
         builder.AppendLine();
+        builder.Append(FormatTotals(scorecard));
+
+        // Every reason the judge gave, one line per record under its task id, so a failed grade
+        // says why. A reason's own line breaks fold to spaces, keeping one line to one record.
+        // O(n) in the records.
+        RecordScore[] reasoned = [.. scorecard.RecordScores.Where(score => score.JudgeReason is not null)];
+
+        if (reasoned.Length > 0)
+        {
+            builder.AppendLine("Judge reasons:");
+
+            foreach (RecordScore score in reasoned)
+            {
+                builder.AppendLine($"{score.TaskId}: {score.JudgeReason!.ReplaceLineEndings(" ")}");
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // The batch totals alone, from the per-check line through Overall: what a person reads on the
+    // console when the whole report went to a file. O(c) in the checks, independent of the records.
+    public static string FormatTotals(Scorecard scorecard)
+    {
+        var builder = new StringBuilder();
         builder.AppendLine("Checks: " + string.Join(", ", Columns.Select(column =>
             $"{column.Label} {scorecard.PassedCountOf(column.Check)}/{scorecard.MeasuredCountOf(column.Check)}")));
         builder.AppendLine($"Latency p95: {Milliseconds(scorecard.LatencyP95Ms)}, budget {Milliseconds(scorecard.LatencyBudgetMs)}: {Symbol(scorecard.LatencyP95)}");
@@ -61,22 +86,6 @@ public static class ScorecardFormatter
         }
 
         builder.AppendLine($"Overall: {scorecard.PassedCount}/{scorecard.TotalCount} passed");
-
-        // Every reason the judge gave, one line per record under its task id, so a failed grade
-        // says why. A reason's own line breaks fold to spaces, keeping one line to one record.
-        // O(n) in the records.
-        RecordScore[] reasoned = [.. scorecard.RecordScores.Where(score => score.JudgeReason is not null)];
-
-        if (reasoned.Length > 0)
-        {
-            builder.AppendLine("Judge reasons:");
-
-            foreach (RecordScore score in reasoned)
-            {
-                builder.AppendLine($"{score.TaskId}: {score.JudgeReason!.ReplaceLineEndings(" ")}");
-            }
-        }
-
         return builder.ToString();
     }
 

@@ -705,8 +705,8 @@ public sealed class CliRunner(
     }
 
     // A case missing its labeled expected outcome shows up as an unscoreable row rather
-    // than aborting the whole report. The report always goes to the console; the file is
-    // optional. O(n) in the batch size: one record's scoring error reported per iteration,
+    // than aborting the whole report. The report goes to the console, or only its totals when a
+    // file is named. O(n) in the batch size: one record's scoring error reported per iteration,
     // plus one file write.
     // Returns false only when --eval-report was passed and could not be written. The
     // console report is already out by then, so the caller turns that into exit code 1 and
@@ -722,7 +722,12 @@ public sealed class CliRunner(
         }
 
         string report = ScorecardFormatter.Format(scorecard);
-        output.Write(report);
+
+        // A run that names a report file reads the whole report there, so the console gets the
+        // totals and the path rather than a row and a judge paragraph per record.
+        output.Write(evalReportPath is null
+            ? report
+            : ScorecardFormatter.FormatTotals(scorecard) + $"Full report: {evalReportPath}{Environment.NewLine}");
 
         if (evalReportPath is not null)
         {
@@ -959,9 +964,14 @@ public sealed class CliRunner(
         LoggerFactory.Create(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);
-            builder.AddProvider(new ConsoleLoggerProvider(error));
 
-            if (fileLoggerProvider is not null)
+            // A run that names a log file reads its log there, and the console carries no log line.
+            // A failure still reaches the console once, through ReportFailure's own error line.
+            if (fileLoggerProvider is null)
+            {
+                builder.AddProvider(new ConsoleLoggerProvider(error));
+            }
+            else
             {
                 builder.AddProvider(fileLoggerProvider);
             }

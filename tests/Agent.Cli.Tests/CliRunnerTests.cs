@@ -1083,36 +1083,6 @@ public class CliRunnerTests
         }
     }
 
-    [Fact]
-    public async Task RunAsync_EvalReportPathProvided_WritesScorecardToConsoleAndFile()
-    {
-        string inputPath = TempFilePath();
-        string outputPath = TempFilePath();
-        string evalReportPath = TempFilePath(".txt");
-        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
-        var outputWriter = new StringWriter();
-        var errorWriter = new StringWriter();
-        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
-
-        try
-        {
-            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
-
-            Assert.Equal(CliExitCodes.Success, exitCode);
-            Assert.Contains("t1", outputWriter.ToString());
-            Assert.Contains("Overall:", outputWriter.ToString());
-            string fileContent = await File.ReadAllTextAsync(evalReportPath);
-            Assert.Contains("t1", fileContent);
-            Assert.Contains("Overall:", fileContent);
-        }
-        finally
-        {
-            File.Delete(inputPath);
-            File.Delete(outputPath);
-            File.Delete(evalReportPath);
-        }
-    }
-
     // A record missing its labeled expected outcome no longer aborts the whole eval report -
     // it shows up as an unscoreable row (logged to stderr for visibility), and the CLI's
     // exit code still reflects the main --output pass, not the optional eval rehearsal.
@@ -1211,6 +1181,80 @@ public class CliRunnerTests
             File.Delete(inputPath);
             File.Delete(outputPath);
             TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    // A run that names a log file has asked for its log there: the console carries no log line,
+    // so the screen is not buried under one line per record per step. A record that fails is
+    // still one line on the console, once, because an operator must see a failure without
+    // opening a file.
+    [Fact]
+    public async Task RunAsync_LogFilePathProvided_ConsoleCarriesNoLogLinesAndEachFailureOnce()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string logFilePath = TempFilePath(".log");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z") + "\n{not json\n");
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
+            string console = outputWriter.ToString() + errorWriter.ToString();
+            Assert.DoesNotContain("[Information]", console);
+            Assert.DoesNotContain("[Error]", console);
+            Assert.Single(console.Split('\n'), line => line.Contains("Record failed to parse", StringComparison.Ordinal));
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("Batch complete", logContent);
+            Assert.Contains("Record failed to parse", logContent);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
+    // A run that names an evaluation report file has asked for the report there: the console
+    // gets the totals and where the full report is, not a row per record and a paragraph of judge
+    // reasoning per record. The file keeps the whole report.
+    [Fact]
+    public async Task RunAsync_EvalReportPathProvided_ConsoleGetsTotalsAndFileGetsTheWholeReport()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var outputWriter = new StringWriter();
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), outputWriter, errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            string console = outputWriter.ToString();
+            Assert.Contains("Checks: ", console);
+            Assert.Contains("Overall: 1/1 passed", console);
+            Assert.Contains($"Full report: {evalReportPath}", console);
+            Assert.DoesNotContain("Task ID", console);
+            string report = await File.ReadAllTextAsync(evalReportPath);
+            Assert.Contains("Task ID", report);
+            Assert.Contains("t1", report);
+            Assert.Contains("Overall: 1/1 passed", report);
+            Assert.DoesNotContain("Full report:", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
         }
     }
 
