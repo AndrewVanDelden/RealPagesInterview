@@ -3874,3 +3874,27 @@ existing assertion (five replay-guard messages, the judge and diagnostics rows) 
 was replied to and its thread resolved on PR #36 with the rationale above; ReportFindings was re-called
 with outcomes. No model run was made; nothing here changes a composer's or the scorer's on-label
 behavior for a record that was never one of the four bugs' failure scenarios.
+
+**D120. How the honest-number run is made (taken 2026-09-16).** Question: D116 moved the honest
+number to the owner's larger dataset, unseen until the rules are done and then run once. Sprint 17
+closed with no decision open, so how is that run configured, and what reads the file before it?
+Options: (a) it is made at the run's own time with no `--now`, on the property feed that arrives with
+the dataset, with the real model, the judge, the evaluation report, the diagnostics and the output
+file all on, once, and nothing reads the dataset before it; (b) a reference time is chosen for the
+dataset the way `2025-12-09T00:00:00-06:00` was chosen for `holdout_12.jsonl` as the oracle's date,
+either stated by the owner or derived from the file's own dates; (c) it is made with no property feed,
+so no record earns a property fact and every tour invitation falls back to Monday through Saturday at
+10:00. Recommendation: (a), the owner's answer. The reference time is the run's own time, which is
+what D10 already makes the default and what the product does in service; the pinned times on the four
+committed sets are a property of frozen fixtures whose labels were written against a fixed day, not a
+rule about incoming data, and the earlier framing of this file as needing one of its own was wrong.
+One condition is recorded here so the scorecard is read with it in view rather than argued about
+afterwards: if the dataset's labels carry absolute send dates or day counts written against some other
+day, the Day and Hour checks measure the gap between that day and the run's rather than the rules, and
+that is read off the scorecard as a finding, never fitted. (b) spends the set to measure a flag when
+the labels are relative, and its derived form opens the evaluation set before the scored run. (c) is
+declined because the feed arrives with the dataset, so D101, D104, D111 and D112 do their work on it.
+Scopes: the one command of step 99, and `docs/OPERATIONS.md` if that command earns a documented form.
+Evidence: D10 and the `--now` and `--property-data` rows of `docs/OPERATIONS.md`; D116 for the frame.
+Assumptions: A19. Taken on the owner's answers of 2026-09-16, which also set the order: this sprint's
+close is written before the run, so the run is recorded under a phase block that is not already stale.
