@@ -158,4 +158,4 @@ a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and
 **D120 to D123, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120 sets the
 honest-number run: one JSONL file, the run's own time, model, judge and outputs on, once, unread
 before. A missing folder failed the first attempt, unspent; D121 creates folders. The run scored
-1 of 50 and flooded the console; D122 quiets it. D123: 60-second calls, every record at once.
+1 of 50 and flooded the console; D122 quiets it. D123: 60-second calls, all at once; D124 keeps them under vendor limits.

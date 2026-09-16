@@ -896,7 +896,7 @@ public sealed class CliRunner(
                 "--judge needs OpenAI:ApiKey. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         loggerFactory.CreateLogger<CliRunner>().LogInformation(
             "Judge: model {Model}. Call budget: {CallBudget}ms.", JudgeModel, (long)OpenAiCompletionClient.DefaultCallBudget.TotalMilliseconds);
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, JudgeModel);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, new VendorRateLimitGate(TimeProvider.System), JudgeModel);
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
 
@@ -914,7 +914,7 @@ public sealed class CliRunner(
         loggerFactory.CreateLogger<CliRunner>().LogInformation(
             "Composer: openai, model {Model}. Call budget: {CallBudget}ms.", model, (long)callBudget.TotalMilliseconds);
 
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, new VendorRateLimitGate(TimeProvider.System), model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>(), propertyData);
     }
 

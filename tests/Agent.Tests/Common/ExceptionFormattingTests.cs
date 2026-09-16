@@ -30,7 +30,7 @@ public class ExceptionFormattingTests
         var handler = new FakeHttpMessageHandler(
             (HttpStatusCode.Unauthorized, """{"error":{"message":"VENDOR-BODY-MARKER for key sk-live-abc"}}"""));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ClientResultException vendorFailure =
             await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));

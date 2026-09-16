@@ -4024,3 +4024,34 @@ with it removed (`Found: "TaskId=t1"`), both runs made. Second, running every re
 bound and no rate-limit benchmark (BC); that is the owner's instruction, recorded as a scope-out in
 `docs/CODE_REVIEW.md` with what happens past the limit. Third, a comment claimed every stderr line
 keeps input order, which holds for the fold's failure lines and not for log lines; corrected.
+
+**D124. Stay under the vendor's rate limits (taken 2026-09-16).** Question: D123 puts every record's
+calls in flight at once, and the vendor enforces per-minute limits the project never measured. How does
+a run stay under them rather than retry after hitting them? The limits, from OpenAI's rate-limit guide
+(developers.openai.com/api/docs/guides/rate-limits) and model pages, read 2026-09-16: requests per minute
+and tokens per minute, per organization and project and per model; they rise with a usage tier set by
+cumulative spend, so the limit for this key is not knowable from the documentation alone. Tier 1 is 500
+requests and 200,000 tokens a minute on `gpt-4o-mini`, and 500 requests and 30,000 tokens a minute on
+`gpt-4o`. A request counts against tokens per minute at the larger of its `max_tokens` and an estimate
+from its character count. Every response carries `x-ratelimit-limit-requests`,
+`x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests`, `x-ratelimit-limit-tokens`,
+`x-ratelimit-remaining-tokens` and `x-ratelimit-reset-tokens`. Options: (a) a gate per model client that
+learns the key's own limits from the first response's `x-ratelimit-limit-*` headers, lets one call
+through until it has them, and then admits a call only while the calls sent in the last sixty seconds,
+counted in requests and in tokens, stay within ninety percent of those limits, holding the rest until
+capacity frees; (b) hard-code the Tier 1 table, which throttles a higher tier for nothing and is wrong
+the day the table changes; (c) restore a fixed concurrency limit, which bounds calls in flight but not
+tokens per minute, so a long batch at four at a time still passes `gpt-4o`'s Tier 1 30,000. Recommendation:
+(a), on the owner's instruction not to hit the limit. A sixty-second window of what was sent is stricter
+than the vendor's continuously refilled allowance, and the ten percent headroom covers the difference
+between this estimate and the vendor's. A call's tokens are reserved before it is sent as its prompt's
+characters divided by three, more than the usual four characters a token, plus a 1,000-token allowance
+for the reply, and corrected to the reported input and output once it returns, never below the prompt
+estimate, since that is what the vendor counted. A call larger than the whole allowance is let through
+when nothing else is in the window, because waiting would never admit it. The gate reads elapsed time
+from an injected `TimeProvider`, which `CliRunner` supplies: pacing needs a clock, and the reference-time
+rule, that no decision in the library reads one, is untouched. Scopes: a new `VendorRateLimitGate` and
+`VendorRateLimits` in `src/Agent/Composition`; `OpenAiCompletionClient` takes a gate and passes every call
+through it; `CliRunner` builds one gate per model; `docs/OPERATIONS.md`. Assumptions: this run is the only
+user of the key's limits while it runs (A23, restated); a 429 caused by another user of the key is still
+retried once, and the SDK's retry policy carries the `Retry-After` header name.

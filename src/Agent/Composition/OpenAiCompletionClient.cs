@@ -31,9 +31,15 @@ public sealed class OpenAiCompletionClient : ICompletionClient
 
     private const string StructuredOutputSchemaName = "composed_message";
 
+    // What a call reserves for its reply before it is sent. Replies here run to about a hundred
+    // tokens; the allowance is generous because a call that reserved too little could pass the
+    // vendor's limit, and a completed call gives back what it did not use.
+    private const int ReplyTokenAllowance = 1_000;
+
     private readonly ChatClient chatClient;
     private readonly CountingRetryPolicy retryPolicy;
     private readonly TimeSpan callBudget;
+    private readonly VendorRateLimitGate rateLimitGate;
 
     // callBudget is the timeout of each attempt, whole, not a share of it. A timeout is never
     // retried, so the attempt that times out is the only one its call makes, and dividing the
@@ -43,8 +49,11 @@ public sealed class OpenAiCompletionClient : ICompletionClient
     // Nor does this bound the compose-validate loop above: after a safety rejection it composes
     // once more before falling back, so a record can spend twice that again before the template
     // composer answers, which the p95 check measures and reports.
-    public OpenAiCompletionClient(HttpClient httpClient, string apiKey, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
+    // rateLimitGate is this model's gate: every call on this client waits in it, so one gate per
+    // model keeps that model's calls under its limits (VendorRateLimitGate).
+    public OpenAiCompletionClient(HttpClient httpClient, string apiKey, VendorRateLimitGate rateLimitGate, string model = "gpt-4o-mini", TimeSpan? callBudget = null)
     {
+        this.rateLimitGate = rateLimitGate;
         retryPolicy = new CountingRetryPolicy(MaxRetries);
         this.callBudget = callBudget ?? DefaultCallBudget;
 
@@ -58,7 +67,9 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         chatClient = new ChatClient(model, new ApiKeyCredential(apiKey), options);
     }
 
-    // O(1) network calls, at most two: the call and its one retry.
+    // O(1) network calls, at most two: the call and its one retry. Before the call it waits in the
+    // rate-limit gate for the tokens it estimates, and once it is over, whether it returned, failed or
+    // timed out, it tells the gate what it counted for and the limits its response reported.
     public async Task<ModelCompletion> CompleteAsync(
         string systemPrompt,
         string userPrompt,
@@ -71,6 +82,43 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             ResponseFormat = BuildResponseFormat(responseJsonSchema),
         };
 
+        // The vendor counts a request against its tokens per minute before it runs, from the
+        // request's characters, so the estimate is taken from the same text: three characters a
+        // token, more tokens than the usual four, plus the reply allowance.
+        int promptTokenEstimate = (systemPrompt.Length + userPrompt.Length + (responseJsonSchema?.Length ?? 0) + 2) / 3;
+        VendorCallReservation reservation = await rateLimitGate.ReserveAsync(promptTokenEstimate + ReplyTokenAllowance, cancellationToken);
+        int countedTokens = promptTokenEstimate + ReplyTokenAllowance;
+        VendorRateLimits? reportedLimits = null;
+        try
+        {
+            ModelCompletion completion = await SendAsync(systemPrompt, userPrompt, options, cancellationToken, (limits, inputTokens, outputTokens) =>
+            {
+                reportedLimits = limits;
+                countedTokens = Math.Max(promptTokenEstimate, inputTokens) + outputTokens;
+            });
+            return completion;
+        }
+        catch (ClientResultException ex)
+        {
+            // A request that failed with no response at all carries none, and so reports no limits.
+            reportedLimits = ex.GetRawResponse() is { } response ? VendorRateLimits.FromHeaders(response.Headers) : null;
+            throw;
+        }
+        finally
+        {
+            rateLimitGate.Complete(reservation, countedTokens, reportedLimits);
+        }
+    }
+
+    // The call itself. onResponse receives the limits the response reported and the tokens it was
+    // billed for as soon as they are known, including on the path that throws for a missing choice.
+    private async Task<ModelCompletion> SendAsync(
+        string systemPrompt,
+        string userPrompt,
+        ChatCompletionOptions options,
+        CancellationToken cancellationToken,
+        Action<VendorRateLimits?, int, int> onResponse)
+    {
         // This call's own attempt count, which concurrent calls on this client cannot add to
         // (CountingRetryPolicy.BeginCall).
         StrongBox<int> callAttempts = retryPolicy.BeginCall();
@@ -115,6 +163,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
             // can bill a response with no choice: the tokens ride on the exception, because they
             // have nowhere else to travel once this throws.
             ChatTokenUsage? noChoiceUsage = result.Value.Usage;
+            onResponse(VendorRateLimits.FromHeaders(result.GetRawResponse().Headers), noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0);
             throw new NoCompletionChoiceException(noChoiceUsage?.InputTokenCount ?? 0, noChoiceUsage?.OutputTokenCount ?? 0, retries, ex);
         }
 
@@ -126,6 +175,7 @@ public sealed class OpenAiCompletionClient : ICompletionClient
         // a call that never got this far is an abandoned call the client cannot measure at all:
         // the TimeoutException above is thrown before result.Value is ever read.
         ChatTokenUsage? usage = result.Value.Usage;
+        onResponse(VendorRateLimits.FromHeaders(result.GetRawResponse().Headers), usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0);
 
         // An empty body is returned, not thrown. The call completed and its usage block is read
         // above, so it is a billed call, and the caller already has an exit for a completed call
