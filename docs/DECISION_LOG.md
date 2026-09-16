@@ -15,7 +15,7 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16. Sprints 16 and 17 were its steps 102 and 103, which sent the project back to Phase 4 (D106); that phase's check passed again on 2026-09-15, so later work resumes.
 Check: the retrospective names a playbook step or a new step for every failure.
-Next step: step 99, the owner's larger dataset run once, unseen, evaluation report and diagnostics on, at the run's own time and on the feed that arrives with it, no code touched during the run (D120).
+Next step: step 99, the owner's larger dataset run once, unseen, a JSONL file and nothing else, evaluation report and diagnostics on, at the run's own time, no code touched during the run (D120).
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -157,5 +157,5 @@ a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and
 
 **D120, Sprint 17 closed (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's check passed again at
 116 and 916 tests, all four sets offline at their pinned tallies. D120 sets the honest-number run:
-the run's own time, the dataset's own feed, model, judge and every output on, once, nothing reading
-the file first. The phase returns to 9, step 99.
+a JSONL file and nothing else, the run's own time, model, judge and every output on, once, and
+nothing read before it. The phase returns to 9, step 99.
