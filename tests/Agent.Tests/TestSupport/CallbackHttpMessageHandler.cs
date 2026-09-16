@@ -6,8 +6,11 @@ namespace Agent.Tests.TestSupport;
 // A transport whose answer the test computes per request, from the request body, so a test can
 // fail one request with an exception rather than a status, or answer two concurrent calls on one
 // client differently and in an order the test controls. FakeHttpMessageHandler scripts responses
-// by call index, which cannot tell two concurrent calls apart.
-internal sealed class CallbackHttpMessageHandler(Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> respond) : HttpMessageHandler
+// by call index, which cannot tell two concurrent calls apart. responseHeaders, when given, are set
+// on every response, as the vendor sets its rate-limit headers on every response.
+internal sealed class CallbackHttpMessageHandler(
+    Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> respond,
+    IReadOnlyDictionary<string, string>? responseHeaders = null) : HttpMessageHandler
 {
     private int callCount;
 
@@ -19,9 +22,16 @@ internal sealed class CallbackHttpMessageHandler(Func<string, CancellationToken,
         string requestBody = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
         (HttpStatusCode status, string body) = await respond(requestBody, cancellationToken);
 
-        return new HttpResponseMessage(status)
+        var response = new HttpResponseMessage(status)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
+
+        foreach ((string name, string value) in responseHeaders ?? new Dictionary<string, string>())
+        {
+            response.Headers.Add(name, value);
+        }
+
+        return response;
     }
 }

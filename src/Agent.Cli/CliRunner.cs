@@ -39,6 +39,10 @@ public sealed class CliRunner(
 {
     private static readonly HttpClient SharedHttpClient = new();
 
+    // One rate-limit gate per model for the whole process: the vendor's limits belong to the key and
+    // the model, not to one run, so the composer and the judge share a gate when they share a model.
+    private static readonly VendorRateLimitGates RateLimitGates = new(TimeProvider.System);
+
     // Records log to error from their own threads while the fold writes its failure lines to the
     // same writer, so every write goes through one lock. Each log entry and each failure line is
     // one call, so lines interleave whole and never split.
@@ -413,8 +417,8 @@ public sealed class CliRunner(
     // and its failure text is all that is kept of it, for the scorecard. On a cancel or a throw,
     // the records still running are cancelled and awaited before the exception leaves.
     // O(n) time in the input lines and O(n) space: every parsed record is held until it is folded,
-    // and n records make up to n model calls in flight at once, each bounded by its call budget.
-    // A vendor rate limit answers the excess with 429, which the completion client retries once.
+    // and n records make up to n model calls at once, each held in its model's rate-limit gate
+    // until it fits under the vendor's per-minute limits, then bounded by its call budget.
     private async Task<(int RecordsRead, List<string> ParseFailures)> RunAllAtOnceAsync(
         LeasingMessageAgent agent,
         ISemanticJudge? judge,
@@ -896,7 +900,7 @@ public sealed class CliRunner(
                 "--judge needs OpenAI:ApiKey. Set it with: dotnet user-secrets set \"OpenAI:ApiKey\" \"<key>\" --project src/Agent.Cli");
         loggerFactory.CreateLogger<CliRunner>().LogInformation(
             "Judge: model {Model}. Call budget: {CallBudget}ms.", JudgeModel, (long)OpenAiCompletionClient.DefaultCallBudget.TotalMilliseconds);
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, JudgeModel);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, RateLimitGates.For(JudgeModel), JudgeModel);
         return new SemanticJudge(completionClient, loggerFactory.CreateLogger<SemanticJudge>());
     }
 
@@ -914,7 +918,7 @@ public sealed class CliRunner(
         loggerFactory.CreateLogger<CliRunner>().LogInformation(
             "Composer: openai, model {Model}. Call budget: {CallBudget}ms.", model, (long)callBudget.TotalMilliseconds);
 
-        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, model, callTimeout);
+        var completionClient = new OpenAiCompletionClient(SharedHttpClient, apiKey, RateLimitGates.For(model), model, callTimeout);
         return new OpenAiMessageComposer(completionClient, loggerFactory.CreateLogger<OpenAiMessageComposer>(), propertyData);
     }
 

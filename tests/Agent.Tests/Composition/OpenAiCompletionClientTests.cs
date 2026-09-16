@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.Net;
 using Agent.Composition;
 using Agent.Tests.TestSupport;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Agent.Tests.Composition;
@@ -39,7 +40,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -55,7 +56,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.Unauthorized, """{"error":{"message":"Invalid key"}}"""));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ClientResultException exception = await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));
 
@@ -72,7 +73,7 @@ public class OpenAiCompletionClientTests
             (HttpStatusCode.TooManyRequests, """{"error":{"message":"slow down"}}"""),
             (HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -109,7 +110,7 @@ public class OpenAiCompletionClientTests
             return (HttpStatusCode.OK, CompletionJson);
         });
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         Task<ModelCompletion> retried = client.CompleteAsync("system", "retried call");
         Task<ModelCompletion> clean = client.CompleteAsync("system", "clean call");
@@ -127,7 +128,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.ServiceUnavailable, """{"error":{"message":"down"}}"""));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));
 
@@ -145,7 +146,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromSeconds(5) };
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(100));
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System), callBudget: TimeSpan.FromMilliseconds(100));
 
         await Assert.ThrowsAsync<TimeoutException>(() => client.CompleteAsync("system", "user"));
 
@@ -161,7 +162,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromMilliseconds(1200) };
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(2000));
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System), callBudget: TimeSpan.FromMilliseconds(2000));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -188,7 +189,7 @@ public class OpenAiCompletionClientTests
             return (HttpStatusCode.OK, CompletionJson);
         });
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", callBudget: TimeSpan.FromMilliseconds(2000));
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System), callBudget: TimeSpan.FromMilliseconds(2000));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -206,7 +207,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new CallbackHttpMessageHandler((_, _) => throw new HttpRequestException("connection reset"));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));
 
@@ -220,7 +221,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson)) { Delay = TimeSpan.FromSeconds(5) };
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -236,7 +237,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, EmptyContentUsageJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -251,7 +252,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         await client.CompleteAsync("system prompt", "user prompt");
 
@@ -270,7 +271,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
         const string schema = """{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}""";
 
         await client.CompleteAsync("system", "user", schema);
@@ -287,7 +288,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         await client.CompleteAsync("system", "user");
 
@@ -308,7 +309,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
     }
@@ -327,7 +328,7 @@ public class OpenAiCompletionClientTests
             """;
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
 
@@ -345,7 +346,7 @@ public class OpenAiCompletionClientTests
         const string responseJson = """{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""";
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, responseJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
 
@@ -361,7 +362,7 @@ public class OpenAiCompletionClientTests
         const string noChoiceJson = """{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}""";
         var handler = new FakeHttpMessageHandler((HttpStatusCode.ServiceUnavailable, "{}"), (HttpStatusCode.OK, noChoiceJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         NoCompletionChoiceException exception = await Assert.ThrowsAsync<NoCompletionChoiceException>(() => client.CompleteAsync("system", "user"));
 
@@ -379,7 +380,7 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, UsageCompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
@@ -396,11 +397,206 @@ public class OpenAiCompletionClientTests
     {
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, CompletionJson));
         using var httpClient = new HttpClient(handler);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ModelCompletion completion = await client.CompleteAsync("system", "user");
 
         Assert.Equal(0, completion.InputTokens);
         Assert.Equal(0, completion.OutputTokens);
+    }
+
+    // The limits a response reports reach the gate, so a call past them is not sent: with a limit
+    // of one request a minute, the second call waits for the first to leave the window.
+    [Fact]
+    public async Task CompleteAsync_ResponseReportsItsLimits_TheNextCallPastThemWaitsForTheWindow()
+    {
+        var time = new FakeTimeProvider();
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult((HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests: "1", tokens: "1000000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        await client.CompleteAsync("s", "u");
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.False(second.IsCompleted);
+        Assert.Equal(1, handler.CallCount);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    // A failed call's response carries the limits too, and they are read from it: a 401 reporting
+    // one request a minute holds the next call as a 200 would.
+    [Fact]
+    public async Task CompleteAsync_ErrorResponseReportsItsLimits_TheNextCallPastThemWaitsForTheWindow()
+    {
+        var time = new FakeTimeProvider();
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult((HttpStatusCode.Unauthorized, """{"error":{"message":"Invalid key"}}""")),
+            LimitHeaders(requests: "1", tokens: "1000000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("s", "u"));
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.False(second.IsCompleted);
+        Assert.Equal(1, handler.CallCount);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await Assert.ThrowsAsync<ClientResultException>(() => second.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    // A limit header that is not a positive whole number, or a response that states only one of
+    // the two limits, leaves the limits unknown: the next call goes out once the previous one is
+    // over, without waiting for a window a misread limit would have imposed.
+    [Theory]
+    [InlineData("0", "1000000")]
+    [InlineData("abc", "1000000")]
+    [InlineData("1", null)]
+    public async Task CompleteAsync_LimitHeadersNotUsable_TheNextCallGoesOutWhenThePreviousIsOver(string requests, string? tokens)
+    {
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult((HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests, tokens));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(new FakeTimeProvider()));
+
+        await client.CompleteAsync("s", "u");
+        await client.CompleteAsync("s", "u").WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    // A call reserves its prompt estimate plus a 1,000-token reply allowance, and once it returns
+    // counts what the vendor reported, never less than the prompt estimate. 2,070 of 2,300 tokens a
+    // minute are usable; the first call reserves 1,001 and reports 11 in and 7 out, so it counts 18,
+    // and two more calls of 1,001 then go out together. Counting the first at 1,001 would hold the
+    // third, and the second's response is held until the third arrives.
+    [Fact]
+    public async Task CompleteAsync_CallReportsFewerTokensThanItReserved_GivesTheRestBackToLaterCalls()
+    {
+        var thirdArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(
+            async (_, cancellationToken) =>
+            {
+                int request = Interlocked.Increment(ref requests);
+                if (request == 2)
+                {
+                    await thirdArrived.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                else if (request == 3)
+                {
+                    thirdArrived.TrySetResult();
+                }
+
+                return (HttpStatusCode.OK, UsageCompletionJson);
+            },
+            LimitHeaders(requests: "100", tokens: "2300"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(new FakeTimeProvider()));
+
+        await client.CompleteAsync("s", "u");
+        await Task.WhenAll(client.CompleteAsync("s", "u"), client.CompleteAsync("s", "u")).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(3, handler.CallCount);
+    }
+
+    // A request the SDK retried counts against the limit like any other: with 2 of 3 requests a
+    // minute usable, a call answered 503 then 200 has spent both, so the next call waits for the
+    // window. Counting the call once would let it through.
+    [Fact]
+    public async Task CompleteAsync_CallWasRetried_TheRetryCountsAgainstTheLimit()
+    {
+        var time = new FakeTimeProvider();
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult(Interlocked.Increment(ref requests) == 1
+                ? (HttpStatusCode.ServiceUnavailable, """{"error":{"message":"down"}}""")
+                : (HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests: "3", tokens: "1000000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        ModelCompletion first = await client.CompleteAsync("s", "u");
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.Equal(1, first.NetworkRetries);
+        Assert.False(second.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    // A retry is billed by the vendor like the attempt it repeats, at the larger of its max_tokens
+    // and a character estimate, before any response exists: its place in the window should cost the
+    // prompt estimate plus the reply allowance, not the prompt estimate alone. With 2,000 tokens a
+    // minute, 1,800 usable: the first call's corrected cost (18) plus a correctly sized retry (1,001)
+    // leaves room for none of a second 1,001-token call, which must wait for the window. Counting the
+    // retry at the prompt estimate alone (1) would leave room and let the second call through at once.
+    [Fact]
+    public async Task CompleteAsync_CallWasRetried_TheRetryReservesThePromptEstimatePlusTheReplyAllowance()
+    {
+        var time = new FakeTimeProvider();
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(
+            (_, _) => Task.FromResult(Interlocked.Increment(ref requests) == 1
+                ? (HttpStatusCode.ServiceUnavailable, """{"error":{"message":"down"}}""")
+                : (HttpStatusCode.OK, UsageCompletionJson)),
+            LimitHeaders(requests: "100", tokens: "2000"));
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(time));
+
+        await client.CompleteAsync("s", "u");
+        Task<ModelCompletion> second = client.CompleteAsync("s", "u");
+
+        // Long enough for a call the gate let through to reach the transport.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.False(second.IsCompleted);
+        time.Advance(TimeSpan.FromSeconds(60));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    // A call that times out is over as far as the gate is concerned, so the next call is not held
+    // behind it.
+    [Fact]
+    public async Task CompleteAsync_CallTimesOut_TheNextCallStillGoesOut()
+    {
+        int requests = 0;
+        var handler = new CallbackHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            if (Interlocked.Increment(ref requests) == 1)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+
+            return (HttpStatusCode.OK, UsageCompletionJson);
+        });
+        using var httpClient = new HttpClient(handler);
+        ICompletionClient client = new OpenAiCompletionClient(
+            httpClient, "fake-key", new VendorRateLimitGate(new FakeTimeProvider()), callBudget: TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAsync<TimeoutException>(() => client.CompleteAsync("s", "u"));
+        ModelCompletion second = await client.CompleteAsync("s", "u").WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(11, second.InputTokens);
+    }
+
+    private static Dictionary<string, string> LimitHeaders(string requests, string? tokens)
+    {
+        var headers = new Dictionary<string, string> { ["x-ratelimit-limit-requests"] = requests };
+        if (tokens is not null)
+        {
+            headers["x-ratelimit-limit-tokens"] = tokens;
+        }
+
+        return headers;
     }
 }

@@ -1330,7 +1330,7 @@ public class OpenAiMessageComposerTests
             """;
         var handler = new FakeHttpMessageHandler((HttpStatusCode.OK, emptyBodyJson));
         using var httpClient = new HttpClient(handler);
-        var composer = new OpenAiMessageComposer(new OpenAiCompletionClient(httpClient, "fake-key"));
+        var composer = new OpenAiMessageComposer(new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System)));
         ProspectCase prospectCase = SampleProspectCases.Minimal();
 
         ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);

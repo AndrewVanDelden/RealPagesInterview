@@ -200,14 +200,13 @@ or human) doesn't re-flag them as missing behavior.
   that uncovered case, are in `docs/FAULT_INJECTION.md`. Do not flag the absence of a real
   out-of-space test.
 
-- **Every record runs at once, with no concurrency limit and no rate-limit measurement (D123).**
-  The owner's instruction of 2026-09-16 removed D37's limit of four: every record starts as soon as
-  it is read, so a batch of n records holds n records in memory and puts up to n composer calls and
-  n judge calls in flight together. The vendor's per-minute limit has never been measured, and no
-  benchmark at n, 10n and 100n was run, because each point is a paid model run. What happens past
-  the limit, stated rather than implied: a 429 is retried once after the SDK's backoff; if the retry
-  also gets a 429, the composer's record falls back to the template composer and the judge's verdict
-  reads not measured, both logged per record and visible in `--diagnostics` (`composition.composer`,
-  `model_cost`), and the run still exits 0. Do not flag the missing bound or the missing benchmark;
-  flag a run whose diagnostics show fallbacks caused by 429s, which is the measurement that would
-  reopen D123.
+- **Every record runs at once; the rate-limit gate, not a concurrency limit, keeps calls under the vendor's limits (D123, D124).**
+  Every record starts as soon as it is read, so a batch of n records holds n records in memory. Every
+  client of one model, the composer's and the judge's, then passes one shared `VendorRateLimitGate`, which learns the key's per-minute request and
+  token limits from the first response's `x-ratelimit-limit-*` headers and holds calls past ninety
+  percent of them, counting each request the SDK retried. What it does not cover, stated rather than implied: another process using the same
+  key at the same time spends limits the gate cannot see, and a 429 from that is retried once and then
+  falls back to the template; and the gate's token estimate is three characters a token plus a
+  1,000-token reply allowance, not the vendor's own count. No live run past a limit was made, since
+  that is a paid run designed to fail. Do not flag the missing concurrency bound; flag a run whose
+  diagnostics show fallbacks caused by 429s, which is the measurement that would reopen D124.

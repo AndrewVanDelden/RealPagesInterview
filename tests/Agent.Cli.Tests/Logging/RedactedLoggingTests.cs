@@ -94,7 +94,7 @@ public class RedactedLoggingTests
         using var httpClient = new HttpClient(handler);
         using ILoggerFactory factory = RenderingFactory(writer);
         var composer = new OpenAiMessageComposer(
-            new OpenAiCompletionClient(httpClient, "fake-key"),
+            new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System)),
             factory.CreateLogger<OpenAiMessageComposer>());
 
         ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(
@@ -123,7 +123,7 @@ public class RedactedLoggingTests
         var handler = new FakeHttpMessageHandler((HttpStatusCode.Unauthorized, VendorErrorBody));
         using var httpClient = new HttpClient(handler);
         using ILoggerFactory factory = RenderingFactory(writer);
-        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key");
+        ICompletionClient client = new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System));
 
         ClientResultException vendorFailure =
             await Assert.ThrowsAsync<ClientResultException>(() => client.CompleteAsync("system", "user"));
@@ -142,7 +142,7 @@ public class RedactedLoggingTests
         using var httpClient = new HttpClient(handler);
         using ILoggerFactory factory = RenderingFactory(writer);
         var composer = new OpenAiMessageComposer(
-            new OpenAiCompletionClient(httpClient, "fake-key"),
+            new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System)),
             factory.CreateLogger<OpenAiMessageComposer>());
 
         ComposeOutcome.Failed result = Assert.IsType<ComposeOutcome.Failed>(
@@ -169,7 +169,7 @@ public class RedactedLoggingTests
             12.5);
         Scorecard scorecard = new Evaluator().Evaluate([run]);
         var judge = new SemanticJudge(
-            new OpenAiCompletionClient(httpClient, "fake-key"),
+            new OpenAiCompletionClient(httpClient, "fake-key", new VendorRateLimitGate(TimeProvider.System)),
             factory.CreateLogger<SemanticJudge>());
 
         await judge.JudgeAsync(scorecard, [run]);
