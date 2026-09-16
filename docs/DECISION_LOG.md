@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 4 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Fuzzy and external components, re-entered 2026-09-11 for Sprint 16 and held for Sprint 17 (D106), whose changes are to the composers, the tour options and the scorer.
-Check: with the network disabled, every example set completes on the offline path and the diagnostics say so on every record. Passed 2026-09-14: `.\test.ps1` passes 115 and 912 tests at 100 percent, running all four sets offline on the template composer at their pinned tallies.
-Next step: the owner's larger dataset is run once, unseen, as the honest number.
+Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16. Sprints 16 and 17 were its steps 102 and 103, which sent the project back to Phase 4 (D106); that phase's check passed again on 2026-09-15, so later work resumes.
+Check: the retrospective names a playbook step or a new step for every failure.
+Next step: step 99, the owner's larger dataset run once, unseen, a JSONL file and nothing else, evaluation report and diagnostics on, at the run's own time, no code touched during the run (D120).
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -100,12 +100,8 @@ duplicate of `docs/NARRATION.md` (D80). The same day, a run and debug fact: the 
 checked against a code trace and a re-run of all three sets at the tag; eight mismatches fixed.
 
 **D81 to D87, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
-fact, read 7 of 10 and traced the eight hold-out misses to their fields. The plan: the hold-out
-becomes training data and a new frozen set carries the honest number (D81); the rules it shows,
-compiled by default and loadable from a file (D82); a generic-row answer queued for review (D83);
-one validation per composed record (D84); a scorecard that cannot carry stale tallies (D85);
-bounded memory in the batch with a benchmark (D86); comments that state the rule and cite no
-number (D87). None taken.
+fact, read 7 of 10 and traced the eight hold-out misses to their fields. The seven decisions it
+proposed are the paragraph below, which took them all.
 
 **D81 to D87 and D89 taken, Sprint 15 (2026-09-10 to 2026-09-11).** The owner took every
 recommendation, and the project returned to Phase 0, its decisions merged in phase order from
@@ -158,3 +154,8 @@ missed, one an unearned catalog abstraction, one a saving too small to justify w
 seam. Four fixed test first: a judge-side cancellation that discarded an already-composed record, a
 case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
 a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
+
+**D120, Sprint 17 closed (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's check passed again at
+116 and 916 tests, all four sets offline at their pinned tallies. D120 sets the honest-number run:
+a JSONL file and nothing else, the run's own time, model, judge and every output on, once, and
+nothing read before it. The phase returns to 9, step 99.

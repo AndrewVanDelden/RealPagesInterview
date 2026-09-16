@@ -3874,3 +3874,50 @@ existing assertion (five replay-guard messages, the judge and diagnostics rows) 
 was replied to and its thread resolved on PR #36 with the rationale above; ReportFindings was re-called
 with outcomes. No model run was made; nothing here changes a composer's or the scorer's on-label
 behavior for a record that was never one of the four bugs' failure scenarios.
+
+**D120. How the honest-number run is made (taken 2026-09-16).** Question: D116 moved the honest
+number to the owner's larger dataset, unseen until the rules are done and then run once. Sprint 17
+closed with no decision open, so how is that run configured, and what reads the file before it?
+Options: (a) the dataset is a JSONL file and nothing else, as `sample.jsonl` was, run at the run's own
+time with no `--now` and no `--property-data`, with the real model, the judge, the evaluation report,
+the diagnostics and the output file all on, once, and nothing reads the dataset before it; (b) a
+reference time is chosen for the dataset the way `2025-12-09T00:00:00-06:00` was chosen for
+`holdout_12.jsonl` as the oracle's date, either stated by the owner or derived from the file's own
+dates; (c) a property feed is written for the dataset's properties first, as
+`holdout_12_property_data.json` was written from the hold-out's labels. Recommendation: (a), the
+owner's instruction. Two things this project got wrong are corrected here rather than left implied.
+The reference time is the run's own time, which is what D10 already makes the default and what the
+product does in service; the pinned times on the four committed sets are a property of frozen fixtures
+whose labels were written against a fixed day, not a rule about incoming data. And the input is one
+JSONL file, which is the shape the problem statement gave and the shape the honest number has to be
+taken on; a feed written here would be facts this project invented for records it had read, which is
+(c) and is why (c) is declined. (b) spends the set to measure a flag when the labels are relative, and
+its derived form opens the evaluation set before the scored run. Two conditions are recorded so the
+scorecard is read with them in view rather than argued about afterwards. First, if the dataset's
+labels carry absolute send dates or day counts written against some other day, the Day and Hour checks
+measure the gap between that day and the run's rather than the rules. Second, with no feed the model
+is given no property-facts block, so tour availability, extended tour hours, starting prices and the
+code-written renewal terms of D112 never reach a body, and a tour invitation offers the D108 default
+of Monday through Saturday at 10:00; a record whose offer is not found reads `renewal_offer_loaded`
+`not_earned`. Both are findings to report off the scorecard, never something to fit. Not stating a
+fact only a property system knows is the designed behavior of D101, not a defect: the alternative is
+a model inventing prices and availability. Scopes: the one command of step 99, and
+`docs/OPERATIONS.md` if that command earns a documented form. Evidence: D10 and the `--now` and
+`--property-data` rows of `docs/OPERATIONS.md`; D116 for the frame; the two hold-out runs of
+2026-09-16 recorded in the fact below. Assumptions: A19. Taken on the owner's instruction of
+2026-09-16, which also set the order: this sprint's close is written before the run, so the run is
+recorded under a phase block that is not already stale.
+
+**Run and debug fact, what running with no property feed costs (2026-09-16).** Before D120 was
+settled, `holdout_12.jsonl` was run twice at `--now 2025-12-09T00:00:00-06:00` on the template
+composer, once with `--property-data holdout_12_property_data.json` and once without. The two output
+files are byte-identical and both evaluation reports read `Overall: 12/12 passed` with every per-check
+tally the same: Channel 12/12, Day 11/11, Hour 11/11, Action 12/12, OptOut 11/11, CTA 11/11, Payload
+11/11, Lang 11/11, Safety 12/12, Personalization 8/8, ActionSem 0/0, BodySem 0/0. The diagnostics
+differ in exactly two ways: per-record `latency_ms`, and three records whose `renewal_offer_loaded`
+reads `earned` with the feed and `not_earned` without it. So the feed moves no scored check on this
+path and no template body, because the facts it carries are read by `OpenAiMessageComposer` alone:
+the price-hold and text-reminder sentences of D112 are written in that file and nowhere else. This
+bounds the measurement rather than settling the question: it says nothing about the model path's
+bodies, which are where D104 and D111 spend the feed and where the judge's BodySem check would feel
+its absence. No model run was made.
