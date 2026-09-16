@@ -4119,3 +4119,39 @@ opt in to every channel, the agent test and the CLI test both fail (run made 202
 is restored. `.\test.ps1`: 123 and 933 tests, 100 percent line, branch and method. Assumptions: A17.
 
 **Review fact, D125 (2026-09-16).** The cold review traced every read of consent in `src`: the agent reads `ConsentOrEmpty` once, the channel selector opts a channel in only on an explicit true, and nothing else reads consent. It ran the CLI on thirteen consent shapes: absent, null, `{}`, `{"sms_opt_in":null}`, unknown members only, and wrongly cased keys all gave channel `none` and `no_contact_consent`; `"yes"`, `true`, `[]`, `{"sms_opt_in":"true"}` and `{"sms_opt_in":1}` were refused as lines, never read as consent. Its one finding, five comments in `src` and `tests` still calling consent required, was fixed.
+
+**D126. A visual report at the end of a run (taken 2026-09-16).** Question: the owner asked for quality
+output after a run, graphs and visuals drawn with Python in a file presented when the run finishes. What
+does the report read, what does it show, and how is it presented? Options: (a) the agent writes the
+scorecard as JSON with a new `--eval-json`, a Python tool reads that file with `diag.json` and
+`review_queue.json` and writes one self-contained HTML page with inline SVG charts, and a `run-report.ps1`
+wrapper runs the agent with every output on, builds the page and opens it; (b) the Python tool parses
+`eval.txt`, the aligned text report, which has no schema and changes whenever its layout does; (c) the
+agent draws the charts itself in C#, which has no charting library in this solution and would put a
+presentation concern in the thin command-line shell. Recommendation: (a), the owner's instruction for
+Python. Scopes: `ScorecardDocument` in `src/Agent/Evaluation`, the same numbers as the text report,
+every check named by its snake_case wire name and labelled with the text report's own label
+(`ScorecardFormatter.Columns`, now internal); `--eval-json` in `CliRunner`, refused without
+`--eval-report` and guarded like it; `tools/run_report`, Python 3.13 with matplotlib 3.11.2 pinned, and
+pytest 9.1.1 and mypy 2.3.1 in strict mode for its checks, in `model.py` (reads and joins the files,
+reporting any malformed row by position and leaving it out), `charts.py` (a stacked bar per check, a grid
+of every record against every check with a glyph in each cell, latency per record against the budget and
+the p95), `page.py` (totals first, the charts, a table view of the checks, the failed records with the
+judge's reason; every value from the run's files HTML-escaped) and `__main__.py`; `run-report.ps1`; CI
+runs the tool's mypy and pytest; `docs/OPERATIONS.md`; `.gitignore` for `.venv` and the Python caches.
+The charts follow the data-viz reference palette: status colors only for passed and failed, always with a
+glyph, count or legend beside them, one hue for latency, recessive grid, and labels in the margin clear
+of the bars. They are drawn on the light chart surface in both themes, a deliberate departure from a
+selected dark chart palette, and they are static SVG without hover, with the table views standing in for
+exact values. A scorecard rebuilt with `--replay` measures no latency, safety or cost, so for such a
+scorecard the page takes latency, the judge's grades and reasons and both costs from the live run's
+diagnostics rows, the p95 as the program's own nearest-rank p95, and says the scorecard was rebuilt;
+Safety reads not measured. Evidence: the step 99 run of 2026-09-16 (`runs\step99b`, 2 of 50, all 48
+composer and 50 judge calls completed, no timeout) predates `--eval-json`, so its `eval.json` was rebuilt
+with `--replay` at no model cost, and the page's p95 of 5,874 ms and its token totals (48 calls, 24,819 in
+and 3,570 out; judge 50 calls, 24,016 in and 5,020 out) match the live `eval.txt` exactly. `.\test.ps1`:
+126 and 935 tests at 100 percent line, branch and method, with `--eval-json` tests written first; the
+Python tool 19 tests and mypy strict clean, tests written first; the three charts rendered to PNG and
+inspected, which moved the latency labels off the bars; `run-report.ps1 -Composer template` on
+`holdout_12.jsonl` wrote all seven files, exit code 0, and opened the page. Two fixture mistakes in the
+first Python tests were found by running them and fixed in the fixtures, not the code. Assumptions: none.

@@ -50,6 +50,23 @@ jobs:
         shell: powershell
         run: .\test.ps1
 
+      # The run report tool is Python, so its tests and its strict type check run here too; a page
+      # built from a run is only as trustworthy as the code that reads the run's files.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Run report tool, strict types and tests
+        shell: powershell
+        working-directory: tools/run_report
+        run: |
+          python -m pip install --quiet -r requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m mypy run_report tests
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m pytest -q
+          exit $LASTEXITCODE
+
       - name: Keep the test output
         if: always()
         uses: actions/upload-artifact@v4

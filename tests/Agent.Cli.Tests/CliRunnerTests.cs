@@ -1292,6 +1292,97 @@ public class CliRunnerTests
         }
     }
 
+    // --eval-json writes the same scorecard as JSON beside the text report, for a program to read:
+    // the overall count, the per-check tallies and every row's results by check.
+    [Fact]
+    public async Task RunAsync_EvalJsonPathProvided_WritesTheScorecardAsJson()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        string evalJsonPath = Path.Combine(Path.GetTempPath(), $"cli-runner-tests-missing-dir-{Guid.NewGuid():N}", "eval.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath, "--eval-json", evalJsonPath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            using JsonDocument scorecard = JsonDocument.Parse(await File.ReadAllTextAsync(evalJsonPath));
+            Assert.Equal(1, scorecard.RootElement.GetProperty("total").GetInt32());
+            Assert.Equal(1, scorecard.RootElement.GetProperty("passed").GetInt32());
+            Assert.Equal("t1", scorecard.RootElement.GetProperty("records")[0].GetProperty("task_id").GetString());
+            Assert.Equal("passed", scorecard.RootElement.GetProperty("records")[0].GetProperty("results").GetProperty("channel").GetString());
+            Assert.Contains(scorecard.RootElement.GetProperty("checks").EnumerateArray(), check => check.GetProperty("label").GetString() == "Channel");
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+            Directory.Delete(Path.GetDirectoryName(evalJsonPath)!, recursive: true);
+        }
+    }
+
+    // The JSON scorecard is the text report's twin, so it needs the run to score: without
+    // --eval-report there is no scorecard to write, and a flag that silently wrote nothing would be
+    // trusted.
+    [Fact]
+    public async Task RunAsync_EvalJsonWithoutEvalReport_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-json", TempFilePath(".json")]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains("--eval-json needs --eval-report", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // An --eval-json path that cannot be written fails the way --eval-report does: one line naming
+    // the flag, exit code 1, with --output and the text report already on disk.
+    [Fact]
+    public async Task RunAsync_EvalJsonPathParentIsAFile_WritesCleanErrorAndReturnsUsageError()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath();
+        string evalReportPath = TempFilePath(".txt");
+        string blockingFilePath = TempFilePath(".blocker");
+        string evalJsonPath = Path.Combine(blockingFilePath, "eval.json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        await File.WriteAllTextAsync(blockingFilePath, string.Empty);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--eval-report", evalReportPath, "--eval-json", evalJsonPath]);
+
+            Assert.Equal(CliExitCodes.UsageError, exitCode);
+            Assert.Contains($"Could not open --eval-json '{evalJsonPath}'", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.Contains("Overall:", await File.ReadAllTextAsync(evalReportPath));
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(evalReportPath);
+            File.Delete(blockingFilePath);
+        }
+    }
+
     // A run that names an evaluation report file has asked for the report there: the console
     // gets the totals and where the full report is, not a row per record and a paragraph of judge
     // reasoning per record. The file keeps the whole report.

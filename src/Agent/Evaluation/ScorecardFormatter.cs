@@ -9,7 +9,7 @@ namespace Agent.Evaluation;
 // where the README numbers come from, so nobody counts cells by hand.
 public static class ScorecardFormatter
 {
-    private static readonly (EvaluationCheck Check, string Label)[] Columns =
+    internal static readonly (EvaluationCheck Check, string Label)[] Columns =
     [
         (EvaluationCheck.Channel, "Channel"),
         (EvaluationCheck.SendAtDay, "Day"),

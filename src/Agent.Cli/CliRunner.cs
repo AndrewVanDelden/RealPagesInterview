@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using Agent.Cli.Logging;
 using Agent.Common;
 using Agent.Composition;
@@ -39,6 +40,9 @@ public sealed class CliRunner(
 {
     private static readonly HttpClient SharedHttpClient = new();
 
+    // The JSON scorecard is read by people as well as programs, so it is indented like --output.
+    private static readonly JsonSerializerOptions ScorecardJsonOptions = new(AgentJsonOptions.Default) { WriteIndented = true };
+
     // One rate-limit gate per model for the whole process: the vendor's limits belong to the key and
     // the model, not to one run, so the composer and the judge share a gate when they share a model.
     private static readonly VendorRateLimitGates RateLimitGates = new(TimeProvider.System);
@@ -61,6 +65,7 @@ public sealed class CliRunner(
         string composerName = GetOption(args, "--composer") ?? ComposerNames.Template;
         string? diagnosticsPath = GetOption(args, "--diagnostics");
         string? evalReportPath = GetOption(args, "--eval-report");
+        string? evalJsonPath = GetOption(args, "--eval-json");
         string? logFilePath = GetOption(args, "--log-file");
         string? nowOption = GetOption(args, "--now");
         string? replayPath = GetOption(args, "--replay");
@@ -97,7 +102,7 @@ public sealed class CliRunner(
 
         if (inputPath is null || (outputPath is null && replayPath is null))
         {
-            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--property-data <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--log-file <file.log>]");
+            error.WriteLine("Usage: --input <file.jsonl> (--output <file.json> | --replay <file.json>) [--now <ISO-8601 date-time>] [--composer template|openai] [--model-call-budget-ms <n>] [--judge] [--rules <file.json>] [--property-data <file.json>] [--diagnostics <file.json>] [--review-queue <file.json>] [--eval-report <file.txt>] [--eval-json <file.json>] [--log-file <file.log>]");
             return CliExitCodes.UsageError;
         }
 
@@ -143,6 +148,14 @@ public sealed class CliRunner(
         // judge is built, so no call is ever made. A replay is exempt: WriteScorecardAsync always
         // prints its report to the console, --eval-report or not, so its judge calls are read
         // regardless.
+        // The JSON scorecard is written beside the text report from the same scorecard, so it needs
+        // the run to score; without --eval-report it would write nothing and be trusted anyway.
+        if (evalJsonPath is not null && evalReportPath is null)
+        {
+            error.WriteLine("--eval-json needs --eval-report: the JSON scorecard is written beside the text report.");
+            return CliExitCodes.UsageError;
+        }
+
         if (judgeRequested && replayPath is null && evalReportPath is null && diagnosticsPath is null)
         {
             error.WriteLine("--judge needs --eval-report or --diagnostics: without either, its verdicts are never written anywhere.");
@@ -225,7 +238,7 @@ public sealed class CliRunner(
 
         if (replayPath is not null)
         {
-            return await ReplayAsync(inputPath, replayPath, evalReportPath, judge, loggerFactory, log, cancellationToken);
+            return await ReplayAsync(inputPath, replayPath, evalReportPath, evalJsonPath, judge, loggerFactory, log, cancellationToken);
         }
 
         // The input is opened before the composer is built, so a path that will not open costs
@@ -396,7 +409,7 @@ public sealed class CliRunner(
             // that threw, each in input order.
             Scorecard scorecard = fold.ScoreBatch(batchLatencyMs)
                 .AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse), .. fold.FailedRecordRows]);
-            if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
+            if (!await WriteScorecardAsync(scorecard, evalReportPath, evalJsonPath, log, cancellationToken))
             {
                 return CliExitCodes.UsageError;
             }
@@ -588,6 +601,7 @@ public sealed class CliRunner(
         string inputPath,
         string replayPath,
         string? evalReportPath,
+        string? evalJsonPath,
         ISemanticJudge? judge,
         ILoggerFactory loggerFactory,
         ILogger<CliRunner> log,
@@ -639,7 +653,7 @@ public sealed class CliRunner(
         // pairing each with its run by position, before the unparsed lines are appended past them.
         Scorecard judged = judge is null ? scored : await judge.JudgeAsync(scored, aligned.Value, cancellationToken);
         Scorecard scorecard = judged.AppendUnprocessed([.. parseFailures.Select(RecordScore.DidNotParse)]);
-        if (!await WriteScorecardAsync(scorecard, evalReportPath, log, cancellationToken))
+        if (!await WriteScorecardAsync(scorecard, evalReportPath, evalJsonPath, log, cancellationToken))
         {
             return CliExitCodes.UsageError;
         }
@@ -682,7 +696,7 @@ public sealed class CliRunner(
     // --eval-report was passed and could not be written; the console then gets the whole report,
     // since it is on no file, and the caller turns that into exit code 1 and nothing else: the
     // batch's own files are written and correct.
-    private async Task<bool> WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
+    private async Task<bool> WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, string? evalJsonPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
     {
         foreach (RecordScore score in scorecard.RecordScores)
         {
@@ -712,6 +726,20 @@ public sealed class CliRunner(
         }
 
         output.Write(ScorecardFormatter.FormatTotals(scorecard) + $"Full report: {evalReportPath}{Environment.NewLine}");
+
+        // The same scorecard as data, for a program that draws or compares runs. The usage check
+        // allows it only beside a report file, so it is reached only here.
+        if (evalJsonPath is not null)
+        {
+            string json = JsonSerializer.Serialize(ScorecardDocument.From(scorecard), ScorecardJsonOptions);
+            Result<bool> jsonWritten = await TryPerformAsync("--eval-json", evalJsonPath, () => File.WriteAllTextAsync(WithParentDirectories(evalJsonPath), json, cancellationToken));
+            if (!jsonWritten.IsSuccess)
+            {
+                ReportFailure(log, LogLevel.Error, jsonWritten.Error);
+                return false;
+            }
+        }
+
         return true;
     }
 
