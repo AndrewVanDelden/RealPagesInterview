@@ -990,6 +990,57 @@ public class CliRunnerTests
         }
     }
 
+    // End to end, a line with no consent object is read, answered do not contact, and nothing is sent:
+    // the composer throws for the record if it is ever asked to write to it, the output carries
+    // channel none with no send time, subject, body or call to action, the run exits 0 because the
+    // record is a decision and not a failure, and the diagnostics name the missing object.
+    [Fact]
+    public async Task RunAsync_LineWithNoConsentObject_WritesDoNotContactAndSendsNothing()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string reviewQueuePath = TempFilePath(".json");
+        string line = RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")
+            .Replace("\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false},", string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotContain("consent", line, StringComparison.Ordinal);
+        await File.WriteAllTextAsync(inputPath, line);
+        var errorWriter = new StringWriter();
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, new ThrowingComposer("t1"));
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--review-queue", reviewQueuePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.DoesNotContain("Injected fault", errorWriter.ToString(), StringComparison.Ordinal);
+            using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
+            JsonElement message = output.RootElement[0].GetProperty("next_message");
+            Assert.Equal("none", message.GetProperty("channel").GetString());
+            Assert.Equal(JsonValueKind.Null, message.GetProperty("send_at").ValueKind);
+            Assert.Equal(JsonValueKind.Null, message.GetProperty("subject").ValueKind);
+            Assert.Equal(JsonValueKind.Null, message.GetProperty("body").ValueKind);
+            Assert.Equal(JsonValueKind.Null, message.GetProperty("cta").ValueKind);
+            JsonElement action = output.RootElement[0].GetProperty("next_action");
+            Assert.Equal("no_op", action.GetProperty("type").GetString());
+            Assert.Equal("no_contact_consent", action.GetProperty("reason").GetString());
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            JsonElement row = diagnostics.RootElement[0];
+            Assert.Equal(JsonValueKind.Null, row.GetProperty("diagnostics").GetProperty("composition").ValueKind);
+            Assert.Equal(JsonValueKind.Null, row.GetProperty("diagnostics").GetProperty("model_cost").ValueKind);
+            Assert.Contains(row.GetProperty("ingest_notes").GetProperty("defaulted_fields").EnumerateArray(), field => field.GetString() == "consent");
+            using JsonDocument reviewQueue = JsonDocument.Parse(await File.ReadAllTextAsync(reviewQueuePath));
+            Assert.Equal(0, reviewQueue.RootElement.GetArrayLength());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            File.Delete(reviewQueuePath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_OneLineFailsToParse_OtherRecordStillWrittenAndReturnsPartialFailure()
     {

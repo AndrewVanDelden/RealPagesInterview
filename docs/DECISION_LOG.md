@@ -155,7 +155,7 @@ seam. Four fixed test first: a judge-side cancellation that discarded an already
 case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
 a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
 
-**D120 to D123, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120 sets the
+**D120 to D125, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120 sets the
 honest-number run: one JSONL file, the run's own time, model, judge and outputs on, once, unread
 before. A missing folder failed the first attempt, unspent; D121 creates folders. The run scored
-1 of 50 and flooded the console; D122 quiets it. D123: 60-second calls, all at once; D124 keeps them under vendor limits.
+1 of 50 and flooded the console; D122 quiets it. D123 to D125: 60-second calls, vendor limits, absent consent is no contact.

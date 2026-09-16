@@ -1,6 +1,6 @@
 namespace Agent.Domain;
 
-// Every constraint is optional, as is every record member except task_id, consent and
+// Every constraint is optional, as is every record member except task_id and
 // channel_preferences; an absent one is not required, so a consumer tests for "== true",
 // never for the bare value.
 public sealed record CaseConstraints(

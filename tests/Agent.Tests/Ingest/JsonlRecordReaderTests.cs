@@ -38,7 +38,7 @@ public class JsonlRecordReaderTests
 
         Assert.Equal("prospect_welcome_day0", shortHorizonCase.TaskId);
         Assert.Equal("prospect", shortHorizonCase.Persona);
-        Assert.True(shortHorizonCase.Consent.SmsOptIn);
+        Assert.True(shortHorizonCase.Consent!.SmsOptIn);
         Assert.False(shortHorizonCase.Consent.VoiceOptIn);
         Assert.Equal([CommunicationChannel.Sms, CommunicationChannel.Email], shortHorizonCase.ChannelPreferences);
         Assert.Equal("Oak Ridge Apartments", shortHorizonCase.Input!.PropertyName);
@@ -66,7 +66,7 @@ public class JsonlRecordReaderTests
         ProspectCase longHorizonCase = SampleCases[1];
 
         Assert.Equal("prospect_long_horizon_day3", longHorizonCase.TaskId);
-        Assert.False(longHorizonCase.Consent.SmsOptIn);
+        Assert.False(longHorizonCase.Consent!.SmsOptIn);
         Assert.True(longHorizonCase.Consent.EmailOptIn);
         Assert.Equal([CommunicationChannel.Email, CommunicationChannel.Sms], longHorizonCase.ChannelPreferences);
         Assert.Equal(["pool", "fitness"], longHorizonCase.Input!.Profile!.AmenityInterest);
@@ -141,7 +141,7 @@ public class JsonlRecordReaderTests
         Assert.DoesNotContain("Missing required member", result.Error);
     }
 
-    // Every member is optional except task_id, consent, and
+    // Every member is optional except task_id and
     // channel_preferences. An absent optional value type is null, never a silent default
     // (the year-0001 dates of retrospective finding 4), and never an error row.
     [Fact]
@@ -172,7 +172,7 @@ public class JsonlRecordReaderTests
         Assert.Null(parsedCase.Assertions);
         Assert.Null(parsedCase.Thresholds);
         Assert.Null(parsedCase.Expected);
-        Assert.True(parsedCase.Consent.SmsOptIn);
+        Assert.True(parsedCase.Consent!.SmsOptIn);
         Assert.Null(parsedCase.Consent.EmailOptIn);
     }
 
@@ -277,19 +277,38 @@ public class JsonlRecordReaderTests
         Assert.Contains("Line 11", failure.Error);
     }
 
-    [Fact]
-    public void ReadAll_ReturnsFailureWithLineNumber_WhenRequiredObjectPropertyIsAbsent()
+    // A record that states no consent, by leaving the object out or writing null, is read rather
+    // than refused: refusing it wrote no decision at all for that person, where reading it lets the
+    // agent answer do not contact. The absence is kept as null, not filled in, so the ingest notes
+    // can name it and nothing downstream mistakes it for a consent object the record sent.
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"consent\":null,")]
+    public void ReadAll_ConsentAbsentOrNull_ReadsTheRecordWithNoConsent(string consentMember)
     {
-        string lineWithoutConsent = MinimalValidLine.Replace(
+        string line = MinimalValidLine.Replace(
             "\"consent\":{\"email_opt_in\":true,\"sms_opt_in\":true,\"voice_opt_in\":false},",
-            string.Empty);
-        using TextReader reader = new StringReader(lineWithoutConsent + Environment.NewLine);
+            consentMember);
+        using TextReader reader = new StringReader(line + Environment.NewLine);
+
+        Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value.Consent);
+    }
+
+    // The members still required are named when a line leaves one out.
+    [Fact]
+    public void ReadAll_ReturnsFailureWithLineNumber_WhenARequiredMemberIsAbsent()
+    {
+        string lineWithoutPreferences = MinimalValidLine.Replace("\"channel_preferences\":[\"sms\"],", string.Empty);
+        using TextReader reader = new StringReader(lineWithoutPreferences + Environment.NewLine);
 
         Result<ProspectCase> result = Assert.Single(Reader.ReadAll(reader));
 
         Assert.False(result.IsSuccess);
         Assert.Contains("Line 1", result.Error);
-        Assert.Contains("consent", result.Error);
+        Assert.Contains("Missing required member(s): channel_preferences.", result.Error);
     }
 
     // Blank lines are skipped but still counted, or the reported line number stops
