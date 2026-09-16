@@ -2556,6 +2556,36 @@ public class CliRunnerTests
         }
     }
 
+    // A replay reads the input records itself, so it cleans them as a live run does: the judge, and every
+    // line it logs about a record, sees the cleaned task id, so a line break in the id cannot forge a log line.
+    [Fact]
+    public async Task RunAsync_ReplayTaskIdWithALineBreak_JudgeSeesTheCleanedId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1\\nINFO forged", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var writingRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var judge = new TaskIdRecordingJudge();
+        var replayRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: judge);
+
+        try
+        {
+            Assert.Equal(CliExitCodes.Success, await writingRunner.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            int exitCode = await replayRunner.RunAsync(["--input", inputPath, "--replay", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(["t1 INFO forged"], judge.JudgedTaskIds);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
     // A record whose own city_interest is "families only" has that text written into its
     // body by the template composer ("We heard you're looking in families only."), so every
     // compose attempt and the fallback are refused by the safety gate. The refusal must carry

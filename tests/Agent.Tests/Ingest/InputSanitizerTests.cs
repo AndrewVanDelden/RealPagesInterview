@@ -75,8 +75,8 @@ public class InputSanitizerTests
 
     // Identifiers and vocabulary fields keep their own characters but lose control, format and
     // bidirectional characters, so a line break cannot forge a log line and a hidden override cannot
-    // make a value read as another. One longer than its cap is absent; the task id, which is required,
-    // is cut to its cap instead.
+    // make a value read as another. One longer than its cap is cut to it, so its opening words still
+    // answer the rules that read them.
     [Fact]
     public void Sanitize_IdentifiersAndVocabulary_LoseControlCharactersAndRespectTheirCaps()
     {
@@ -93,8 +93,76 @@ public class InputSanitizerTests
         Assert.StartsWith("t1 INFO forged line", sanitized.Case.TaskId);
         Assert.Equal(200, sanitized.Case.TaskId.Length);
         Assert.Equal("prospect", sanitized.Case.Persona);
-        Assert.Null(sanitized.Case.ContextOrEmpty.Language);
+        Assert.Equal("en-" + new string('x', 32), sanitized.Case.ContextOrEmpty.Language);
         Assert.Equal("A-204", sanitized.Case.ContextOrEmpty.Unit);
+    }
+
+    // A property name is the key the property system's facts are looked up by, so it keeps every
+    // character its owner gave it: only markup and the unsafe characters go, and it is not folded to
+    // compatibility forms, which would turn a trademark sign into two letters.
+    [Theory]
+    [InlineData("Lakeview\u00AE Apartments")]
+    [InlineData("The Mark @ Midtown")]
+    [InlineData("Parc + Stone")]
+    [InlineData("Oak Ridge \u2013 North")]
+    [InlineData("Lakeview\u2122")]
+    public void Sanitize_PropertyName_KeepsTheCharactersTheLookupMatchesOn(string propertyName)
+    {
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase raw = minimal with { Input = minimal.ContextOrEmpty with { PropertyName = propertyName } };
+
+        SanitizedInput sanitized = InputSanitizer.Sanitize(raw);
+
+        Assert.Equal(propertyName, sanitized.Case.ContextOrEmpty.PropertyName);
+        Assert.Empty(sanitized.ChangedFields);
+    }
+
+    // A cancellation reason longer than its cap still opens with the words a rule reads, so it is cut
+    // to the cap rather than made absent and let past the screening review.
+    [Fact]
+    public void Sanitize_OverlongCancellationReason_IsCutAndKeepsItsOpeningWords()
+    {
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        string reason = "screening_failed: applicant did not meet the income requirement " + new string('x', 120);
+        ProspectCase raw = minimal with { Input = minimal.ContextOrEmpty with { CancellationReason = reason } };
+
+        string? cleaned = InputSanitizer.Sanitize(raw).Case.ContextOrEmpty.CancellationReason;
+
+        Assert.NotNull(cleaned);
+        Assert.StartsWith("screening_failed", cleaned, StringComparison.Ordinal);
+        Assert.Equal(100, cleaned.Length);
+    }
+
+    // A cut never splits a character: a character outside the basic plane at the cap is left out whole,
+    // so the cut leaves no lone surrogate and cleaning the result again changes nothing.
+    [Fact]
+    public void Sanitize_TaskIdCutAtASurrogatePair_DropsThePairWhole()
+    {
+        ProspectCase raw = SampleProspectCases.Minimal() with { TaskId = new string('a', 199) + "\U0001F600" };
+
+        SanitizedInput once = InputSanitizer.Sanitize(raw);
+        SanitizedInput twice = InputSanitizer.Sanitize(once.Case);
+
+        Assert.Equal(new string('a', 199), once.Case.TaskId);
+        Assert.Empty(twice.ChangedFields);
+    }
+
+    // Markup removal scans a field, so a field far longer than any cap is not scanned at all: a text
+    // field over the raw bound is absent. Two hundred thousand characters of unclosed script tags took
+    // 48 seconds when every field was scanned whole.
+    [Fact]
+    public void Sanitize_TextFieldFarOverItsCap_IsAbsentWithoutBeingScanned()
+    {
+        string hostile = string.Concat(Enumerable.Repeat("<script>", 25_000));
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase raw = minimal with { Input = minimal.ContextOrEmpty with { PropertyName = hostile } };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        SanitizedInput sanitized = InputSanitizer.Sanitize(raw);
+
+        stopwatch.Stop();
+        Assert.Null(sanitized.Case.ContextOrEmpty.PropertyName);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"took {stopwatch.Elapsed}");
     }
 
     // A lone surrogate is removed rather than making normalization throw.

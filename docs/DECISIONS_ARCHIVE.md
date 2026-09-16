@@ -4315,3 +4315,16 @@ tell an instruction written in ordinary words from a name, so record 24's templa
 year is free" is unchanged and is stopped by the `UnstatedOffer` gate instead. Closing those needs a
 decision on where those facts come from, such as property names from the property system rather than the
 lead record and amenities from a known list. Assumptions: none new.
+
+**D131 and D132 review fixes, run and debug fact (2026-09-16).** A cold review of the D131 and D132 diff
+found five problems, each fixed test first. (1) The allowlist rewrote property names the property system
+knows them by ("The Mark @ Midtown" became "The Mark Midtown"), so the renewal offer, tour calendar and
+facts were no longer found; the property name now loses only markup and unsafe characters and is NFC, not
+NFKC, normalized, so a trademark sign stays one character. (2) A cancellation reason over its cap became
+absent and skipped the screening escalation; identifier and vocabulary fields are now cut to their cap,
+keeping the words a rule reads. (3) Markup removal took 48 seconds on 200,000 characters of unclosed
+script tags; a text field over 1,024 raw characters is now absent before any scan, and a probe with every
+field at 1,000, 10,000 and 100,000 characters took 5.3, 3.9 and 16.1 ms. (4) Cutting a task id could split
+a surrogate pair; cuts now fall on grapheme boundaries. (5) `--replay` handed raw records to the scorer and
+judge; it now cleans them first. The reviewer also ran all four committed datasets at the base and at
+the head: output and review queue byte-identical. `.\test.ps1` exits 0 at 100 percent, 1,067 library tests.

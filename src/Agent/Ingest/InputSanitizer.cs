@@ -18,13 +18,18 @@ public sealed record SanitizedInput(ProspectCase Case, IReadOnlyList<string> Cha
 //   cancellation reason, loyalty status, features, required states, primary call to action): invalid
 //   code units, control, format, bidirectional-control and private or unassigned characters removed,
 //   NFKC normalized, whitespace collapsed, and held to a length;
-//   text a person or the model reads (first name, property name, city and amenity interest): the same,
-//   then markup removed with the contents of script and style elements, and only the characters that
-//   field can hold kept: letters, marks, spaces and a name's punctuation for a first name, and digits
-//   and a place's punctuation as well for the others.
-// A field left empty, or longer than its cap, is absent, as an absent field is, except the required
-// task id, which is cut to its cap. The expected outcome is the label and is not input to a decision,
-// so it is left as it is. A clean record is returned as the same instance.
+//   text a person or the model reads (first name, city and amenity interest): the same, then markup
+//   removed with the contents of script and style elements, and only the characters that field can
+//   hold kept: letters, marks, spaces and a name's punctuation for a first name, and digits and a
+//   place's punctuation as well for the others;
+//   the property name, which is also the key the property system's facts are found by: markup and the
+//   unsafe characters removed, canonically (NFC) normalized so a trademark sign stays one, and every
+//   other character its owner gave it kept.
+// An identifier or vocabulary field longer than its cap is cut to it at a character boundary, so the
+// words a rule reads at its start still answer it. A text field longer than its cap is absent, and one
+// longer than the raw bound is absent before markup removal scans it. A field left empty is absent, as
+// an absent field is. The expected outcome is the label and is not input to a decision, so it is left
+// as it is. A clean record is returned as the same instance.
 public static partial class InputSanitizer
 {
     private const int TaskIdCap = 200;
@@ -35,6 +40,10 @@ public static partial class InputSanitizer
     private const int FirstNameCap = 50;
     private const int PlaceCap = 120;
     private const int AmenityCap = 60;
+
+    // Markup removal can rescan the rest of a field from each unclosed tag, so no text field longer than
+    // this is scanned: it is several times the longest cap, and a field that long is not a name or place.
+    private const int RawTextBound = 1024;
 
     // Characters removed outright: they are invisible or undefined, and the bidirectional controls among
     // the format characters can make text read in an order other than the one it is stored in.
@@ -60,8 +69,8 @@ public static partial class InputSanitizer
 
     private static readonly FrozenSet<int> PlacePunctuation = NamePunctuation.Concat([0x2C, 0x26, 0x28, 0x29, 0x2F, 0x23]).ToFrozenSet();
 
-    // O(n) in the total length of the record's text fields: each field is cleaned in a bounded number of
-    // passes over its own characters.
+    // O(n) in the total length of the record's identifier and vocabulary fields, each cleaned in a bounded
+    // number of passes; each text field costs at most O(b squared) for the raw bound b, a constant.
     public static SanitizedInput Sanitize(ProspectCase raw)
     {
         var changed = new List<string>();
@@ -95,7 +104,7 @@ public static partial class InputSanitizer
 
     private static ProspectContext CleanContext(ProspectContext input, List<string> changed)
     {
-        string? propertyName = Field(changed, "input.property_name", input.PropertyName, Text(input.PropertyName, PlaceCap, PlaceCategories, PlacePunctuation));
+        string? propertyName = Field(changed, "input.property_name", input.PropertyName, PropertyName(input.PropertyName));
         string? timeZoneId = Field(changed, "input.timezone", input.TimeZoneId, Vocabulary(input.TimeZoneId, TimeZoneCap));
         string? language = Field(changed, "input.language", input.Language, Vocabulary(input.Language, LanguageCap));
         string? unit = Field(changed, "input.unit", input.Unit, Vocabulary(input.Unit, UnitCap));
@@ -172,28 +181,52 @@ public static partial class InputSanitizer
     private static IReadOnlyList<string>? ListField(List<string> changed, string path, IReadOnlyList<string>? raw, Func<string, string?> clean) =>
         raw is null ? null : Field(changed, path, raw, [.. raw.Select(clean).OfType<string>()]);
 
-    private static string CleanTaskId(string taskId)
-    {
-        string cleaned = Collapse(Normalized(WithoutUnsafeCharacters(taskId)));
-        return cleaned.Length > TaskIdCap ? cleaned[..TaskIdCap] : cleaned;
-    }
+    private static string CleanTaskId(string taskId) => CutTo(Collapse(Normalized(WithoutUnsafeCharacters(taskId))), TaskIdCap);
 
-    private static string? Vocabulary(string? value, int cap) =>
-        value is null ? null : Bounded(Collapse(Normalized(WithoutUnsafeCharacters(value))), cap);
-
-    private static string? Text(string? value, int cap, FrozenSet<UnicodeCategory> categories, FrozenSet<int> punctuation)
+    private static string? Vocabulary(string? value, int cap)
     {
         if (value is null)
         {
             return null;
         }
 
-        string normalized = Normalized(WithoutUnsafeCharacters(value));
-        string withoutMarkup = MarkupTag().Replace(ScriptOrStyleElement().Replace(normalized, " "), " ");
-        return Bounded(Collapse(OnlyAllowed(withoutMarkup, categories, punctuation)), cap);
+        string cut = CutTo(Collapse(Normalized(WithoutUnsafeCharacters(value))), cap);
+        return cut.Length == 0 ? null : cut;
     }
 
+    private static string? PropertyName(string? value) =>
+        value is null || value.Length > RawTextBound
+            ? null
+            : Bounded(Collapse(WithoutMarkup(WithoutUnsafeCharacters(value).Normalize(NormalizationForm.FormC))), PlaceCap);
+
+    private static string? Text(string? value, int cap, FrozenSet<UnicodeCategory> categories, FrozenSet<int> punctuation) =>
+        value is null || value.Length > RawTextBound
+            ? null
+            : Bounded(Collapse(OnlyAllowed(WithoutMarkup(Normalized(WithoutUnsafeCharacters(value))), categories, punctuation)), cap);
+
+    private static string WithoutMarkup(string value) => MarkupTag().Replace(ScriptOrStyleElement().Replace(value, " "), " ");
+
     private static string? Bounded(string value, int cap) => value.Length == 0 || value.Length > cap ? null : value;
+
+    // The longest run of whole characters (grapheme clusters) that fits the cap, so a cut never leaves a
+    // lone surrogate or a mark without its base, and a space left at the cut is trimmed.
+    private static string CutTo(string value, int cap)
+    {
+        if (value.Length <= cap)
+        {
+            return value;
+        }
+
+        int length = 0;
+        int next = StringInfo.GetNextTextElementLength(value, length);
+        while (length + next <= cap)
+        {
+            length += next;
+            next = StringInfo.GetNextTextElementLength(value, length);
+        }
+
+        return value[..length].TrimEnd();
+    }
 
     // Invalid code units, such as a lone surrogate, are dropped, which also keeps normalization from
     // throwing; a control character becomes a space, so a line break cannot forge a new log line.

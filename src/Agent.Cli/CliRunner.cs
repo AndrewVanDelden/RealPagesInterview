@@ -626,6 +626,8 @@ public sealed class CliRunner(
             (cases, parseFailures) = ReadInput(inputReader, log);
         }
 
+        // The records are cleaned as a live run cleans them, before the scorer or the judge names them.
+        cases = [.. cases.Select(prospectCase => InputSanitizer.Sanitize(prospectCase).Case)];
         int failureCount = parseFailures.Count;
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
