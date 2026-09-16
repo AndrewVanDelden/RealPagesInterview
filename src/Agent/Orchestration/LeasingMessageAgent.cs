@@ -66,7 +66,7 @@ public sealed class LeasingMessageAgent(
         // Step 1: select the contactable channel, consent first. No option value means
         // no preferred channel is consented, which is a no_op with its reason and nothing
         // else runs.
-        Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.Consent);
+        Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.ConsentOrEmpty);
 
         if (!contactableChannel.HasValue)
         {

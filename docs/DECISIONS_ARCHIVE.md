@@ -4089,3 +4089,31 @@ follows (`PropertyData.FactsFor`, `PropertyFacts.RenewalOfferFor`); `VendorRateL
 `VendorRateLimitGate` and `OpenAiCompletionClient` now carry `Option<VendorRateLimits>` throughout, a
 non-behavioral rename with no failing test of its own. `.\test.ps1`: 122 and 929 tests, 100 percent
 line, branch and method.
+
+**D125. A record with no consent object is answered do not contact (taken 2026-09-16).** Question: D1
+made `consent` a required member, so a line without it was refused as a parse failure. The owner's
+dataset carries such a line, `prospect_consent_object_absent`, and the step 99 run refused it: no output
+row, no decision for that person, an `ERROR` row and exit code 2. What should a record with no consent
+object, or `"consent": null`, get? Options: (a) keep D1: the line is refused, and whatever consumes the
+output receives nothing for that person, neither a message nor an explicit do not contact; (b) read the
+record and treat the missing object as consent to nothing, so the agent answers `next_message` with
+channel `none` and every other member null, `next_action` `no_op` with reason `no_contact_consent`, and
+the ingest notes name `consent` as defaulted; (c) read the record and treat the missing object as
+consent to the preferred channels, which would contact a person who never consented and is refused
+outright. Recommendation: (b), taken on the owner's instruction, which asked for proof that nothing is
+sent. It is stricter than (a) where it matters: the absence becomes an explicit refusal to contact
+rather than a missing row, and the existing rule that only an explicit true opts a channel in now also
+covers an absent object. The label for that record states the same outcome; the change was proposed from
+the consent rule and taken by the owner, with the risk of fitting to a label named in chat before it was
+taken. Scopes: `ProspectCase`, whose `[JsonConstructor]` now takes `task_id` and `channel_preferences`
+only, whose `Consent` is nullable, and whose `ConsentOrEmpty` is what the agent reads; `IngestNotes`,
+which names `consent` when it is absent; `ConsentPreferences`' comment; AGENTS.md; DESIGN.md A17. Tests:
+the reader reads a line with the object absent and with it null, and still names a missing
+`channel_preferences`; the ingest notes name `consent`; the agent, given a composer that throws if it is
+called at all, returns channel `none`, null send time, subject, body and call to action, `no_op` with
+`no_contact_consent`, and no composition; the CLI, end to end on a line with no consent member and a
+composer that throws for that record, exits 0 with no fault on stderr, writes the same output, a
+diagnostics row with no composition and no model cost that names `consent` as defaulted, and an empty
+review queue. Proof that the tests guard the rule rather than the label: with `ConsentOrEmpty` changed to
+opt in to every channel, the agent test and the CLI test both fail (run made 2026-09-16), and pass once it
+is restored. `.\test.ps1`: 123 and 933 tests, 100 percent line, branch and method. Assumptions: A17.

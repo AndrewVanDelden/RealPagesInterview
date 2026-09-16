@@ -319,10 +319,7 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_OnlyRequiredMembers_ComposesInUtcWithTheLongHorizonAction()
     {
         LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
-        var bareCase = new ProspectCase(
-            "bare",
-            new ConsentPreferences(SmsOptIn: true),
-            [CommunicationChannel.Sms]);
+        var bareCase = new ProspectCase("bare", [CommunicationChannel.Sms]) { Consent = new ConsentPreferences(SmsOptIn: true) };
 
         AgentRunResult result = await agent.RunAsync(bareCase, ReferenceTime);
 
@@ -512,12 +509,39 @@ public class LeasingMessageAgentTests
     public async Task RunAsync_OnlyRequiredMembersAndNoConsent_SuppressesAndAssertsNoState()
     {
         LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
-        var bareCase = new ProspectCase("bare", new ConsentPreferences(), []);
+        var bareCase = new ProspectCase("bare", []) { Consent = new ConsentPreferences() };
 
         AgentRunResult result = await agent.RunAsync(bareCase, ReferenceTime);
 
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
         Assert.Empty(result.Diagnostics.RequiredStates);
+    }
+
+    // A record with no consent object is not contactable: the agent answers do not contact, and no
+    // message is ever composed for it. The composer here throws if it is called at all, so a record
+    // that reached composition would fail the run instead of returning.
+    [Fact]
+    public async Task RunAsync_ConsentAbsent_SuppressesWithNoContactConsentAndNeverComposes()
+    {
+        var agent = new LeasingMessageAgent(
+            new ChannelSelector(),
+            new ThrowsComposer(),
+            new SafetyValidator(),
+            new SendScheduler(),
+            new NextActionPlanner());
+        ProspectCase noConsentCase = SampleProspectCases.Minimal() with { Consent = null };
+
+        AgentRunResult result = await agent.RunAsync(noConsentCase, ReferenceTime);
+
+        Assert.Equal(CommunicationChannel.None, result.Output.NextMessage!.Channel);
+        Assert.Null(result.Output.NextMessage.SendAt);
+        Assert.Null(result.Output.NextMessage.Subject);
+        Assert.Null(result.Output.NextMessage.Body);
+        Assert.Null(result.Output.NextMessage.Cta);
+        Assert.Equal("no_op", result.Output.NextAction.Type);
+        Assert.Equal("no_contact_consent", result.Output.NextAction.Reason);
+        Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
+        Assert.Null(result.Diagnostics.Composition);
     }
 
     // The hold-out record that asserts renewal_offer_loaded, run with no property data: the

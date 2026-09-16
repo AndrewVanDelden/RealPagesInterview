@@ -18,6 +18,7 @@ public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnl
         CaseThresholds thresholds = prospectCase.ThresholdsOrEmpty;
         var defaulted = new List<string>();
 
+        NoteAbsent(defaulted, prospectCase.Consent is null, "consent");
         NoteAbsent(defaulted, prospectCase.Persona is null, "persona");
         NoteAbsent(defaulted, prospectCase.LifecycleStage is null, "lifecycle_stage");
         NoteAbsent(defaulted, Presence.IsAbsent(context.PropertyName), "input.property_name");

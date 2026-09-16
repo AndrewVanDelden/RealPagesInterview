@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Agent.Tests.Ingest;
 
-// Only task_id, consent and channel_preferences are required: every optional member a
+// Only task_id and channel_preferences are required: every optional member a
 // decision reads gets a default, and the record's diagnostics name the field. Every member
 // the record types do not declare is listed by its path.
 public class IngestNotesTests
@@ -32,6 +32,16 @@ public class IngestNotesTests
 
         Assert.Empty(notes.DefaultedFields);
         Assert.Empty(notes.UnknownMembers);
+    }
+
+    // A record with no consent object is named in the defaulted fields, so a suppression it
+    // causes is traceable to the missing object rather than to a consent the record sent.
+    [Fact]
+    public void Describe_ConsentAbsent_NamesConsent()
+    {
+        IngestNotes notes = IngestNotes.Describe(Parse("{\"task_id\":\"bare\",\"channel_preferences\":[\"sms\"]}"));
+
+        Assert.Contains("consent", notes.DefaultedFields);
     }
 
     [Fact]

@@ -84,7 +84,8 @@ sets it. Never read, print, or write the value.
 
 ## Gotchas
 
-- Only `task_id`, `consent` and `channel_preferences` are required (D1); every other member
+- Only `task_id` and `channel_preferences` are required (D1, D125). An absent `consent` is consent
+  to nothing (`ConsentOrEmpty`), answered do not contact, never an error. Every other member
   is nullable with a `= null` default, and a decision needing one applies the assumption that
   names the default (DESIGN.md section 7). Undeclared members at any depth are kept and listed
   by path. A non-nullable value-type member on an input record defaults silently: refuse it.
