@@ -501,30 +501,28 @@ public class CliRunnerTests
         }
     }
 
-    // Memory stays bounded because a finished record is folded, its rows written and its stderr
-    // line printed, as soon as every earlier record has finished, and at most four records run
-    // ahead of the fold. t1 fails at once, so the fifth record, t5, can start only after t1 has
-    // left the window, and by then t1's stderr line is already out. A loop that held every
-    // record until the batch ended would print that line only after t5 had composed.
+    // Every record starts as soon as it is read, with no limit on how many run at once: a paid
+    // model call waiting behind a slow earlier record costs the run time and gains nothing. t1
+    // does not finish composing until t6, the sixth record, has started, which a batch that held
+    // later records back behind earlier ones would never allow.
     [Fact]
-    public async Task RunAsync_RecordPastTheWindow_StartsOnlyAfterTheFirstRecordIsFolded()
+    public async Task RunAsync_ManyRecords_EveryRecordRunsAtOnce()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath(".json");
         string[] records = Enumerable.Range(1, 6).Select(number => RecordJson($"t{number}", "2026-01-10", "2025-12-08T15:04:00Z")).ToArray();
         await File.WriteAllTextAsync(inputPath, string.Join(Environment.NewLine, records));
-        var errorWriter = new LineSignalingWriter("Record 't1' failed");
-        var composer = new FoldObservingComposer("t1", "t5", errorWriter.Seen);
-        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter, composer);
+        var composer = new WaitsForLaterRecordComposer("t1", "t6");
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), composer);
 
         try
         {
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath]);
 
-            Assert.Equal(CliExitCodes.PartialFailure, exitCode);
-            Assert.True(composer.EarlierRecordFoldedWhenObserverComposed);
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.True(composer.LaterRecordStartedWhileWaiting, "t6 did not start while t1 was still composing.");
             using JsonDocument output = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath));
-            Assert.Equal(5, output.RootElement.GetArrayLength());
+            Assert.Equal(6, output.RootElement.GetArrayLength());
         }
         finally
         {
@@ -642,12 +640,12 @@ public class CliRunnerTests
         }
     }
 
-    // With the model composer and no evaluation budget, the strictest stated budget is read in a
-    // first pass over the file before the run. That pass is silent and the run starts again from
-    // the first byte, byte order mark included, so every record runs once and every warning and
-    // failure line appears once. No record has a consented channel, so no model call is made.
+    // With the model composer and no override, each model call gets 60 seconds whatever
+    // p95_latency_ms the records state: a paid call cut short is money spent for no message. Every
+    // record runs once and every warning and failure line appears once, byte order mark included.
+    // No record has a consented channel, so no model call is made.
     [Fact]
-    public async Task RunAsync_OpenAiComposerReadsTheBudgetFirst_EveryRecordRunsAndIsReportedOnce()
+    public async Task RunAsync_OpenAiComposerWithoutOverride_EveryCallGetsSixtySecondsAndEveryRecordIsReportedOnce()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath(".json");
@@ -678,10 +676,9 @@ public class CliRunnerTests
             Assert.Single(lines, line => line.StartsWith("Record failed to parse: Line 2", StringComparison.Ordinal));
             Assert.Single(lines, line => line.Contains("Could not parse the 'expected' field", StringComparison.Ordinal));
 
-            // Both records state p95_latency_ms 2000 (RecordJson's default) and neither overrode
-            // it, so the first pass must have actually read them: proves ModelCallBudgetFromInput
-            // computed the budget rather than skipping straight to null.
-            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: 2000ms.", errorWriter.ToString(), StringComparison.Ordinal);
+            // Both records state p95_latency_ms 2000 (RecordJson's default), and the call budget is
+            // still 60 seconds: the records' latency threshold is scored, never used to cut a call.
+            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: 60000ms.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -753,13 +750,12 @@ public class CliRunnerTests
         }
     }
 
-    // Cancellation still stops the batch once records run concurrently. The first record
-    // cancels the run; the loop starts no record after that, so fewer records compose than the
-    // batch holds and the run throws. Rows are written as records finish, so --output may hold
+    // Cancellation still stops the batch while every record runs at once. The first record
+    // cancels the run, and the run throws. Rows are written as records are folded, so --output may hold
     // the rows folded before the cancel, but never a closed array: a cancelled run must not
     // leave a file that reads as a finished one.
     [Fact]
-    public async Task RunAsync_CancelledWhileRecordsAreInFlight_StartsNoFurtherRecordAndThrows()
+    public async Task RunAsync_CancelledWhileRecordsAreInFlight_ThrowsAndLeavesNoFinishedFile()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath(".json");
@@ -773,7 +769,6 @@ public class CliRunnerTests
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
 
-            Assert.InRange(composer.Calls, 1, records.Length - 1);
             string written = await File.ReadAllTextAsync(outputPath);
             Assert.ThrowsAny<JsonException>(() => JsonDocument.Parse(written));
         }
@@ -784,11 +779,39 @@ public class CliRunnerTests
         }
     }
 
-    // With no record left in flight, nothing but the check before each start observes the
-    // token: t1 cancels the run and then fails, the malformed line folds t1, and the loop reaches
-    // t2 with an empty window. t2 never starts, so no line carries its TaskId.
+    // A record read after the run is cancelled never starts. t1's unparseable expected field is
+    // logged while its line is parsed, and that log line cancels the run, so the batch sees the
+    // cancel before deciding to start t1: nothing carries t1's TaskId and the run throws.
     [Fact]
-    public async Task RunAsync_CancelledWithNoRecordInFlight_StartsNoFurtherRecordAndThrows()
+    public async Task RunAsync_CancelledWhileALineIsRead_StartsNoRecordForItAndThrows()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1", "2026-01-10", "2025-12-08T15:04:00Z")[..^1] + ",\"expected\":\"not an object\"}");
+        using var cancellation = new CancellationTokenSource();
+        var errorWriter = new CancellingOnLineWriter("Could not parse the 'expected' field", cancellation);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), errorWriter);
+
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
+
+            Assert.Contains("Could not parse the 'expected' field", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("TaskId=t1", errorWriter.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+        }
+    }
+
+    // Nothing in a record observes the token here: t1 cancels the run and then fails with a fault
+    // that is not a cancellation. The fold's own check before each line is what stops the batch,
+    // so once t1 has finished, the malformed line after it is never folded or reported and the
+    // run throws.
+    [Fact]
+    public async Task RunAsync_CancelledByAnEarlierRecord_FoldsNoLaterLineAndThrows()
     {
         string inputPath = TempFilePath();
         string outputPath = TempFilePath(".json");
@@ -806,8 +829,7 @@ public class CliRunnerTests
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunAsync(["--input", inputPath, "--output", outputPath], cancellation.Token));
 
-            Assert.Contains("Record 't1' failed", errorWriter.ToString(), StringComparison.Ordinal);
-            Assert.DoesNotContain("TaskId=t2", errorWriter.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("Record failed to parse", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -1045,9 +1067,8 @@ public class CliRunnerTests
             int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--composer", "openai"]);
 
             Assert.Equal(CliExitCodes.Success, exitCode);
-            // No record states a budget and there is no override, so the strictest-budget pass
-            // over an empty file finds nothing to bound the call.
-            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: none.", errorWriter.ToString(), StringComparison.Ordinal);
+            // With no override, a call gets the client's default of 60 seconds.
+            Assert.Contains("Composer: openai, model gpt-4o-mini. Call budget: 60000ms.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -2042,6 +2063,9 @@ public class CliRunnerTests
 
             Assert.Equal(CliExitCodes.Success, exitCode);
             Assert.Contains("ActionSem", await File.ReadAllTextAsync(reportPath));
+
+            // The judge's calls get the same 60 seconds the composer's do, and the log says so.
+            Assert.Contains("Judge: model gpt-4o. Call budget: 60000ms.", errorWriter.ToString(), StringComparison.Ordinal);
         }
         finally
         {

@@ -3987,3 +3987,40 @@ Payload 24/47, Lang 45/45, Safety 49/49, Personalization 33/35, ActionSem 32/49,
 calls timed out at the 2000 ms budget and fell back to the template. `prospect_new_short_horizon_denver`
 appears twice in the file. The files are in `runs\step99\`, which git ignores. Not yet read record by
 record; that reading is the retrospective's input.
+
+**D123. Every model call gets 60 seconds and every record runs at once (taken 2026-09-16).**
+Question: the step 99 run cut 14 of its 48 composer calls at a 2000 ms budget taken from the records'
+`p95_latency_ms` (D28), and ran four records at a time (D37). The owner pays for every call, and a call
+cut short spends the money and returns no message. What bounds one call, and how many records run at
+once? Options: (a) every model call, the composer's and the judge's, gets 60 seconds unless
+`--model-call-budget-ms` states otherwise, and every record starts as soon as it is read; (b) keep the
+record-derived budget and pass the flag on every real run, as D70 allowed, which leaves the default
+one that fails most calls; (c) raise the limit of four to a larger fixed number. Recommendation: (a),
+the owner's instruction. The records' latency threshold stays what it is, a scored requirement: the
+p95 check still reads it and reports the miss, so the cost of a live model is shown rather than
+avoided by cutting calls. Records already share no state while they run: each has its own log scope
+and result, and the fold writes every file and stderr line in input order whatever order they finish
+in. The cost, stated: memory holds every parsed record until it is folded, O(n) where the window held
+four, and n records put up to n calls in flight at once against a vendor per-minute limit this project
+has never measured; a 429 past it is retried once, then that record falls back to the template (A23).
+Scopes: `OpenAiCompletionClient.DefaultCallBudget`, now 60 seconds and public so both log lines state
+it; `CliRunner`, where `RunAllAtOnceAsync` replaces the four-record window, the composer gets the
+override or the default, and the judge's budget is logged; `ModelCallBudget` and its six tests deleted,
+since nothing derives a budget from the records any more; D28's derivation and D37's limit are
+superseded; `docs/OPERATIONS.md`, `docs/DESIGN.md` A22 and A23 and section 7 item 7, and `README.md`.
+Tests: a new test fails unless t6 starts while t1 is still composing (it failed at the ten-second wait
+before the change); the budget log tests read 60000ms for the composer and the judge (both failed
+first); the test that proved a record past the window waits for the fold is replaced by that one; two
+cancellation tests lose the assertion that later records never start, which no longer holds, and keep
+that the run throws, leaves no finished output file, and folds no line after the cancel.
+Evidence: D122's run fact; `.\test.ps1` at 121 and 910 tests, 100 percent line, branch and method, and
+the CLI tests run five more times with no failure. No model run was made. Assumptions: A22, A23.
+
+**Review fact, D123 (2026-09-16).** The cold review of D123's commit found three things. First, no
+test covered the check that stops a record read after the run is cancelled from starting: the reviewer
+deleted that line and all 121 CLI tests passed. A new test cancels the run from the warning logged
+while line 1 is parsed and asserts no line carries t1's TaskId; it passes with the check and fails
+with it removed (`Found: "TaskId=t1"`), both runs made. Second, running every record at once has no
+bound and no rate-limit benchmark (BC); that is the owner's instruction, recorded as a scope-out in
+`docs/CODE_REVIEW.md` with what happens past the limit. Third, a comment claimed every stderr line
+keeps input order, which holds for the fold's failure lines and not for log lines; corrected.
