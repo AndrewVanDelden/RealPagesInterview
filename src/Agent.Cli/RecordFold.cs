@@ -80,6 +80,11 @@ internal sealed class RecordFold(
         }
 
         RecordRun.Completed completed = (RecordRun.Completed)run;
+        if (completed.JudgeFailure is not null)
+        {
+            error.WriteLine($"Record '{completed.Case.TaskId}' judge call failed: {completed.JudgeFailure.ToDiagnosticString()}");
+        }
+
         AgentRunResult result = completed.Result;
         await outputRows.WriteRowAsync(result.Output, cancellationToken);
 

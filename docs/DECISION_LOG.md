@@ -15,7 +15,7 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16. Sprints 16 and 17 were its steps 102 and 103, which sent the project back to Phase 4 (D106); that phase's check passed again on 2026-09-15, so later work resumes.
 Check: the retrospective names a playbook step or a new step for every failure.
-Next step: step 99, the owner's larger dataset run once, unseen, a JSONL file and nothing else, evaluation report and diagnostics on, at the run's own time, no code touched during the run (D120).
+Next step: read the step 99 run in `runs\step99\` record by record, 1 of 50 passed, and name a playbook step for each failure (D122's run fact).
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -155,7 +155,8 @@ seam. Four fixed test first: a judge-side cancellation that discarded an already
 case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
 a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
 
-**D120 and D121, Sprint 17 closed (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's check
-passed again. D120 sets the honest-number run: one JSONL file, the run's own time, model, judge and
-every output on, once, unread before. The first attempt exited 1 on a missing output folder before
-reading input, unspent; D121 makes written paths create their folders. Phase 9, step 99.
+**D120 to D122, Sprint 17 closed, step 99 run (2026-09-16).** PR #37 merged as `7cee351`; Phase 4's
+check passed again. D120 sets the honest-number run: one JSONL file, the run's own time, model, judge
+and every output on, once, unread before. The first attempt failed on a missing folder, unspent;
+D121 creates folders. The run scored 1 of 50 and flooded the console; D122 sends it to the named
+files.

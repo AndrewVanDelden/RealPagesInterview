@@ -3945,3 +3945,45 @@ template composer into `runs/smoke/`, absent before the run, which exited 0, wro
 read `Overall: 12/12 passed`, the pinned tally. Assumptions: none. Retrospective: a playbook step that
 gives a run command must be run exactly as written, from a clean checkout, before it is handed over;
 this one was given without being run. Review fact: the cold review of the first version found that naming the parent by appending ".." and taking the full path breaks an extended-length path (\?\), which Path.GetFullPath does not normalize: the run created a folder named after the output file and exited 1, where dev wrote the file. The parent is now Path.GetDirectoryName of the full path, skipped when null at a drive root, with a test for each, the extended-length one failing first.
+
+**D122. What a run prints to the console (taken 2026-09-16).** Question: the step 99 run named a log
+file and an evaluation report file, and still printed about 200 log lines, a 50-row scorecard and
+50 paragraphs of judge reasoning to the console, with each failure twice, so the owner could not tell
+from the screen what the run did. What does the console carry when a run names its files? Options:
+(a) a run that names `--log-file` reads its log there and the console gets no log line, and a run
+that names `--eval-report` reads the whole report there and the console gets the totals, from the
+`Checks:` line through `Overall:`, and a `Full report:` line with the path; a failure is still one
+plain line on stderr; (b) raise the console log level to warnings, which still printed 49 warning
+lines on this run, 42 of them 14 timeouts at three lines each; (c) keep everything on the console and add a
+summary at the end, which leaves the summary under the same flood. Recommendation: (a), the owner's
+instruction that output belongs in the files and not on screen. A run that names no files keeps
+today's console, since the console is then the only place the log and the report go. Scopes:
+`CliRunner`, whose logger factory adds the console sink only when no log file is named and whose
+scorecard write prints the totals when a report file is named; `ScorecardFormatter.FormatTotals`,
+the totals block `Format` already wrote, now its own method so both the file and the console use one
+wording; `docs/OPERATIONS.md` sections 1, 2, 3 and 4. The test that asserted the whole scorecard on
+the console beside a file is replaced by one asserting the totals on the console and the whole report
+in the file, and one new test asserts a named log file leaves no log line on the console and each
+parse failure on it once. Evidence: the step 99 console transcript the owner pasted; the two new
+tests failing first; `.\test.ps1` at 121 and 916 tests, 100 percent line, branch and method; and a
+`holdout_12.jsonl` template run with every output named, whose console was the six totals lines and
+the report path, with 38 log lines and the 19-line report in their files. Assumptions: none.
+Review fact: the cold review found two failures the first version hid. A report file that could not
+be written left the per-record rows and judge reasons nowhere, since the console had only the totals;
+the console now gets the whole report when the write fails. And with a log file named, a judge call
+that threw was only a log line; the exception now rides the record's result to `RecordFold`, which
+writes `Record '<TaskId>' judge call failed:` to stderr in input order. Each has a test that failed
+first. Three comments the change made false were corrected.
+Retrospective: a run's console output is part of what is handed over, and is read as the operator will
+read it before the run is called ready.
+
+**Run and debug fact, the step 99 run (2026-09-16).** The owner ran D120's command once on
+`TrueTest.jsonl`, 50 lines, at 2026-09-16T16:50:46Z, with `--composer openai --judge` and every output
+under `runs\step99\`. Line 26 was refused for a missing `consent`, so the exit code was 2 and 49
+records ran. `Checks: Channel 42/49, Day 0/41, Hour 0/41, Action 32/49, OptOut 42/42, CTA 41/41,
+Payload 24/47, Lang 45/45, Safety 49/49, Personalization 33/35, ActionSem 32/49, BodySem 5/41`;
+`Overall: 1/50 passed`; latency p95 2079 ms against a 2000 ms budget, FAIL; batch 57805 ms; product
+48 calls, 34 completed, 17637 input and 2497 output tokens; judge 49 calls, 49 completed. 14 product
+calls timed out at the 2000 ms budget and fell back to the template. `prospect_new_short_horizon_denver`
+appears twice in the file. The files are in `runs\step99\`, which git ignores. Not yet read record by
+record; that reading is the retrospective's input.

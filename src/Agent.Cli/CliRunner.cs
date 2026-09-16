@@ -519,7 +519,7 @@ public sealed class CliRunner(
     // shared, because up to MaxConcurrentRecords of these run at once. The TaskId scope is opened
     // here and nowhere else, since a second scope in the library rendered every line as
     // "TaskId=x TaskId=x". It opens inside this record's own async flow, which the scope stack
-    // LoggerFactory hands both providers follows, so a line one record logs never carries
+    // LoggerFactory hands its provider follows, so a line one record logs never carries
     // another's TaskId while both run, which
     // RunAsync_RecordsFailWhileOthersAreInFlight_EachFailureCarriesItsOwnTaskId proves.
     private static async Task<RecordRun> RunRecordAsync(
@@ -594,7 +594,10 @@ public sealed class CliRunner(
         // judge ever ran, so a cancellation the judge call ends in (a completion client's own
         // timeout, or the batch shutting down while this call is in flight) is still just a judge
         // fault from this output's point of view, not evidence the output itself was never made.
+        // The exception rides the result to RecordFold, which writes the console line, because
+        // records run concurrently here and the fold writes them one at a time in input order.
         JudgeVerdict? judgement = null;
+        Exception? judgeFailure = null;
         if (judge is not null)
         {
             try
@@ -604,10 +607,11 @@ public sealed class CliRunner(
             catch (Exception ex)
             {
                 log.LogError(ex, "Judge call failed; the record's own output is unaffected.");
+                judgeFailure = ex;
             }
         }
 
-        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, scoredRun, judgement);
+        return new RecordRun.Completed(prospectCase, ingestNotes, result, latencyMs, scoredRun, judgement, judgeFailure);
     }
 
     // Re-scores an existing output file against --input without running the agent. The output
@@ -705,12 +709,13 @@ public sealed class CliRunner(
     }
 
     // A case missing its labeled expected outcome shows up as an unscoreable row rather
-    // than aborting the whole report. The report always goes to the console; the file is
-    // optional. O(n) in the batch size: one record's scoring error reported per iteration,
-    // plus one file write.
-    // Returns false only when --eval-report was passed and could not be written. The
-    // console report is already out by then, so the caller turns that into exit code 1 and
-    // nothing else: the batch's own files are written and correct.
+    // than aborting the whole report. O(n) in the batch size: one record's scoring error reported
+    // per iteration, plus one file write.
+    // A run that names a report file reads the whole report there, so the console gets the totals
+    // and the path rather than a row and a judge paragraph per record. Returns false only when
+    // --eval-report was passed and could not be written; the console then gets the whole report,
+    // since it is on no file, and the caller turns that into exit code 1 and nothing else: the
+    // batch's own files are written and correct.
     private async Task<bool> WriteScorecardAsync(Scorecard scorecard, string? evalReportPath, ILogger<CliRunner> log, CancellationToken cancellationToken)
     {
         foreach (RecordScore score in scorecard.RecordScores)
@@ -722,21 +727,25 @@ public sealed class CliRunner(
         }
 
         string report = ScorecardFormatter.Format(scorecard);
-        output.Write(report);
 
-        if (evalReportPath is not null)
+        if (evalReportPath is null)
         {
-            // The same guard mechanism the three batch output streams get, at the write
-            // instead of before the loop. The report is a report on the batch, so there is no
-            // earlier moment at which it could be written.
-            Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(WithParentDirectories(evalReportPath), report, cancellationToken));
-            if (!written.IsSuccess)
-            {
-                ReportFailure(log, LogLevel.Error, written.Error);
-                return false;
-            }
+            output.Write(report);
+            return true;
         }
 
+        // The same guard mechanism the three batch output streams get, at the write instead of
+        // before the loop. The report is a report on the batch, so there is no earlier moment at
+        // which it could be written.
+        Result<bool> written = await TryPerformAsync("--eval-report", evalReportPath, () => File.WriteAllTextAsync(WithParentDirectories(evalReportPath), report, cancellationToken));
+        if (!written.IsSuccess)
+        {
+            output.Write(report);
+            ReportFailure(log, LogLevel.Error, written.Error);
+            return false;
+        }
+
+        output.Write(ScorecardFormatter.FormatTotals(scorecard) + $"Full report: {evalReportPath}{Environment.NewLine}");
         return true;
     }
 
@@ -952,16 +961,21 @@ public sealed class CliRunner(
     // defeat every test's attempt to isolate itself via injected StringWriters (see
     // ConsoleLoggerProvider's own remarks). Scopes carry a record's TaskId (see
     // LeasingMessageAgent.RunAsync and Evaluator.Evaluate) onto every line emitted while
-    // processing it. --log-file additionally persists the same lines to a real file via
-    // FileLoggerProvider - the "a log file" gap the Sprint 8 audit flagged as missing from
+    // processing it. --log-file writes the same lines to a real file via FileLoggerProvider in
+    // place of the console - the "a log file" gap the Sprint 8 audit flagged as missing from
     // this codebase entirely (TalkingPoints.md history before 2026-09-06).
     private static ILoggerFactory BuildLoggerFactory(TextWriter error, ILoggerProvider? fileLoggerProvider) =>
         LoggerFactory.Create(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);
-            builder.AddProvider(new ConsoleLoggerProvider(error));
 
-            if (fileLoggerProvider is not null)
+            // A run that names a log file reads its log there, and the console carries no log line.
+            // A failure still reaches the console once, through ReportFailure's own error line.
+            if (fileLoggerProvider is null)
+            {
+                builder.AddProvider(new ConsoleLoggerProvider(error));
+            }
+            else
             {
                 builder.AddProvider(fileLoggerProvider);
             }
