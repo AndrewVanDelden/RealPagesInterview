@@ -3,12 +3,13 @@ using System.Globalization;
 
 namespace Agent.Composition;
 
-// One language's worth of the offline composer's prose (A13). Every string a human
+// One language's worth of the composers' prose (A13), under the BCP 47 primary subtag it is for. Every string a human
 // reads lives in a set like this one, so adding a language is one file plus one row in
 // MessageTemplateCatalog, and the sentence order stays in TemplateMessageComposer where
 // both languages share it. The call-to-action vocabulary itself stays language-neutral in
 // CallToActionCatalog: which call to action exists and where its link points is not prose.
 internal sealed record MessageTemplates(
+    string LanguageTag,
     string GreetingWithName,
     string GreetingWithoutName,
     string SmsWelcome,

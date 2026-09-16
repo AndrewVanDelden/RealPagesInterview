@@ -92,7 +92,7 @@ public sealed partial class OpenAiMessageComposer(
             prospectCase.LifecycleStage);
         string requiredCtaType = callToAction.Type;
         ProspectContext context = prospectCase.ContextOrEmpty;
-        MessageTemplates templates = MessageTemplateCatalog.Resolve(context.Language).Templates;
+        (MessageTemplates templates, bool localeApplied) = MessageTemplateCatalog.Resolve(context.Language);
 
         // A21: the link is a fact, and code owns facts while the model writes prose, so code
         // builds it from the property slug, the catalog's path for this call to action and, where
@@ -123,7 +123,8 @@ public sealed partial class OpenAiMessageComposer(
             DescribePropertyFacts(propertyData, context, callToAction, prospectCase.ConstraintsOrEmpty.PrimaryCta),
             renewalOffer.HasValue,
             referenceDate,
-            priorViolations);
+            priorViolations,
+            templates.LanguageTag);
         string responseJsonSchema = BuildResponseJsonSchema(requiredCtaType);
 
         ModelCompletion completion;
@@ -262,7 +263,7 @@ public sealed partial class OpenAiMessageComposer(
         var message = new NextMessage(channel, null, payload.Subject, body, cta);
         var composed = new ComposedMessage(
             message,
-            CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied: true));
+            CompositionNotes.ForComposer(ComposerNames.OpenAi, localeApplied));
 
         // What the call spent rides on the outcome rather than on the notes, so the
         // compose-validate loop reads one property whichever case an attempt returned.
@@ -290,7 +291,8 @@ public sealed partial class OpenAiMessageComposer(
         string propertyFacts,
         bool hasRenewalOffer,
         DateOnly? referenceDate,
-        IReadOnlyList<string>? priorViolations)
+        IReadOnlyList<string>? priorViolations,
+        string languageTag)
     {
         string requiredCtaType = callToAction.Type;
         ProspectContext context = prospectCase.ContextOrEmpty;
@@ -302,12 +304,11 @@ public sealed partial class OpenAiMessageComposer(
         string optOutDirective = constraints.RequiresOptOutInstructions() ? "the system appends them, so do not write any" : "not required";
         string channelName = channel.ToString().ToLowerInvariant();
 
-        // No language allowlist anywhere: the input's language is a free tag and the model is
-        // not English-only. The record's own tag is handed to the model as the
-        // language to write in, and A13's default, en, is what an absent tag means; the data
-        // block still reports the record's field as unknown, because that is what it says.
-        string languageInstruction =
-            $"Write the message in the language '{(Presence.IsAbsent(context.Language) ? "en" : context.Language)}'.";
+        // One language per message: the model is told the language the record resolved to
+        // among the sets, the same one the code-written options and opt-out are in, never the raw tag,
+        // so a language with no set is written wholly in English. The data block still reports the
+        // record's own field, because that is what it says.
+        string languageInstruction = $"Write the message in the language '{languageTag}'.";
 
         // A10: code owns the facts and the model writes prose. The link and the named options are
         // code's, so they are instructions, and the model's half is the words around them.

@@ -564,13 +564,13 @@ public class TemplateMessageComposerTests
         Assert.True(result.Notes.LocaleApplied);
     }
 
-    // No component gates on a language allowlist. A language this composer holds no
-    // template set for is served in English and says so, which is a limit of the template
-    // file, not a rule about which languages a prospect may use.
+    // A language with no full set is served wholly in English and says so: a message is written in one
+    // language, and the program holds the opt-out and option sentences only for the languages it has
+    // a set for.
     [Fact]
     public async Task ComposeAsync_LanguageWithNoTemplateSet_ComposesInEnglishAndReportsTheLocaleNotApplied()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr");
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "tlh");
 
         ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
 
@@ -578,6 +578,22 @@ public class TemplateMessageComposerTests
 
         Assert.StartsWith("Hi Taylor", result.Message.Body);
         Assert.False(result.Notes.LocaleApplied);
+    }
+
+    // French has a set, matched on the primary subtag, so a Canadian French record is written wholly in
+    // French, its opt-out included.
+    [Fact]
+    public async Task ComposeAsync_FrenchCanadianRecord_ComposesWhollyInFrench()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr-CA");
+
+        ComposeOutcome outcome = await Composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.StartsWith("Bonjour Taylor", result.Message.Body);
+        Assert.EndsWith("Répondez STOP pour vous désabonner.", result.Message.Body);
+        Assert.DoesNotContain("Reply", result.Message.Body);
+        Assert.True(result.Notes.LocaleApplied);
     }
 
     // A13: an absent language is the en default the record inherits, so nothing failed to

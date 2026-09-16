@@ -515,6 +515,44 @@ public class OpenAiMessageComposerTests
         Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the language instruction must appear before <prospect_data>, not inside it");
     }
 
+    // A message is written in one language: a language with no full set is served in English, so the
+    // model is told English, the code-written options and opt-out are English too, and the composition
+    // notes say the record's language was not applied.
+    [Fact]
+    public async Task ComposeAsync_LanguageWithNoSet_WritesWhollyInEnglishAndReportsTheLocaleNotApplied()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, come see Oak Ridge.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "tlh");
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("Write the message in the language 'en'.", fakeClient.LastUserPrompt);
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.EndsWith("Reply STOP to opt out.", result.Message.Body);
+        Assert.False(result.Notes.LocaleApplied);
+    }
+
+    // A French record's language is resolved to the French set, so the model is told French and the
+    // options and opt-out code appends are French too, never an English sentence after French prose.
+    [Fact]
+    public async Task ComposeAsync_FrenchRecord_TellsTheModelFrenchAndAppendsFrenchSentences()
+    {
+        const string json = """{"subject":null,"body":"Bonjour Taylor, venez visiter Oak Ridge.","cta_type":"schedule_tour","cta_options":["une visite"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr-CA");
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("Write the message in the language 'fr'.", fakeClient.LastUserPrompt);
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.Contains("Répondez 1 pour une visite.", result.Message.Body);
+        Assert.EndsWith("Répondez STOP pour vous désabonner.", result.Message.Body);
+        Assert.True(result.Notes.LocaleApplied);
+    }
+
     // A21: the link is a fact, not prose, and code owns every reproducible fact. Code builds it
     // from the property slug and the catalog's path, and the model is told not to write one, so
     // no email can carry a host the record never stated.
