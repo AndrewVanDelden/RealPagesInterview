@@ -157,12 +157,15 @@ public sealed partial class SafetyValidator : ISafetyValidator
     // concessions, and this gate cannot be switched off, so a bare word would suppress every message a
     // property like that sends. The text is normalized first, so hyphens are spaces ("rent-free" is
     // "rent free") and a zero-width character cannot split a word. English, Spanish and French, the
-    // languages a message can be written in.
+    // languages a message can be written in. The possessive marker ('s on a singular unit, a bare '
+    // on a plural one) can sit between the time unit and "rent", as in "month's rent is free", so it
+    // is optional there rather than assumed absent. "Waiver" is the noun form of the same concession
+    // "waived" states as a verb, so it is matched alongside the verb forms.
     [GeneratedRegex(
-        @"\b(?:first|second|one|two|three|\d+)\s+(?:months?|weeks?|years?)\s+(?:(?:is|are)\s+)?(?:free|rent free|on us)\b"
+        @"\b(?:first|second|one|two|three|\d+)\s+(?:months?|weeks?|years?)'?s?\s+(?:rent\s+)?(?:(?:is|are)\s+)?(?:free|rent free|on us)\b"
         + @"|\brent\s+free\b|\bfree\s+(?:rent|months?|weeks?|years?)\b"
         + @"|\$\s?\d[\d,]*(?:\.\d+)?\s+off\b|\b\d+\s*%\s*off\b|\bpercent\s+off\b|\bhalf\s+off\b"
-        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing)\b|\bno\s+deposit\b|\bmove\s+in\s+special\b|\blook\s+and\s+lease\b"
+        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing|ers?)\b|\bno\s+deposit\b|\bmove\s+in\s+special\b|\blook\s+and\s+lease\b"
         + @"|\b(?:mes|meses|año|semana)(?:\s+es)?\s+(?:gratis|sin\s+costo)\b|\brenta\s+gratis\b|\bdescuentos?\b"
         + @"|\bmois(?:\s+est)?\s+(?:gratuits?|offerts?)\b|\bloyer\s+gratuit\b|\bréductions?\b|\brabais\b",
         RegexOptions.IgnoreCase)]

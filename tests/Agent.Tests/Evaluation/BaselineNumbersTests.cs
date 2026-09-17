@@ -24,7 +24,11 @@ namespace Agent.Tests.Evaluation;
 // resident its label follows up in three days and its payload tally falls by the record whose label
 // sends nothing and whose unrecognized email now carries no link. synthetic_v2.jsonl is now training
 // data and its rules are fitted, so it reads 26 of 30, its three failures the labels the fit declined; synthetic_12.jsonl's action tally falls by the two records whose labels this project
-// wrote under the old past-date and horizon rules.
+// wrote under the old past-date and horizon rules. The payload check used to skip every voice
+// record as not measured, so synthetic_v2.jsonl's one voice record never had its key-press
+// options checked; now that voice is scored the same way an sms is, its payload tally rises by
+// that one measured and passing record, and the overall count does not move because the record
+// already passed on every other check.
 public class BaselineNumbersTests
 {
     [Theory]
@@ -46,7 +50,7 @@ public class BaselineNumbersTests
     [InlineData(
         "synthetic_v2.jsonl",
         "2026-10-24T22:00:00Z",
-        "Checks: Channel 29/29, Day 26/26, Hour 26/26, Action 28/29, OptOut 26/26, CTA 26/26, Payload 23/25, Lang 23/23, Safety 29/29, Personalization 26/26",
+        "Checks: Channel 29/29, Day 26/26, Hour 26/26, Action 28/29, OptOut 26/26, CTA 26/26, Payload 24/26, Lang 23/23, Safety 29/29, Personalization 26/26",
         "Overall: 26/30 passed")]
     public async Task TemplateAgent_OnEachLabeledSet_ScoresTheRecordedBaseline(string fileName, string referenceTime, string expectedChecksLine, string expectedOverallLine)
     {

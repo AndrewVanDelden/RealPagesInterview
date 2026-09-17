@@ -536,8 +536,10 @@ public sealed partial class OpenAiMessageComposer(
     [GeneratedRegex(@"^\s*\d{1,2}\s*[.)\-]\s+")]
     private static partial Regex LeadingNumber();
 
-    // A sentence ends at a period, exclamation mark or question mark followed by whitespace.
-    [GeneratedRegex(@"(?<=[.!?])\s")]
+    // A sentence ends at a period, exclamation mark or question mark followed by whitespace,
+    // except a period that closes a common title abbreviation: "Mr. Smith" is one sentence,
+    // not two, so a property name after the title is still read as part of the first sentence.
+    [GeneratedRegex(@"(?<=[.!?])(?<!\b(?:Mr|Mrs|Dr|Ms)\.)\s")]
     private static partial Regex SentenceEnd();
 
     // Keys 1 to 8 for options, since key 9 is the opt-out on a call.

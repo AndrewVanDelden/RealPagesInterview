@@ -158,6 +158,8 @@ def _read_json(path: Path, required: bool) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise ReportInputError(f"{path.name} is not valid JSON ({error.msg}, line {error.lineno}).") from error
+    except OSError as error:
+        raise ReportInputError(f"{path.name} could not be read ({error.strerror or error}).") from error
 
 
 def _read_row(index: int, row: Any, diagnostics_row: Any, problems: list[str]) -> RecordRow:
@@ -202,6 +204,8 @@ def _read_row(index: int, row: Any, diagnostics_row: Any, problems: list[str]) -
                 for check in JUDGE_CHECKS:
                     if results.get(check) is CheckResult.NOT_MEASURED and check in judge:
                         results[check] = _result(judge[check], f"Row {position} of diag.json")
+    elif diagnostics_row is not None:
+        problems.append(f"Row {position}: the diagnostics row is not an object; its latency, writer and judge are not shown.")
 
     return RecordRow(
         position=position,
