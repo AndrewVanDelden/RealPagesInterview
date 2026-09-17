@@ -146,6 +146,16 @@ def test_load_run_reports_a_diagnostics_row_for_another_task_as_a_problem_and_do
     assert run.problems == ["Row 1: the diagnostics row is for 'other', not 't1'; its latency, writer and judge are not shown."]
 
 
+def test_load_run_reports_a_diagnostics_row_that_is_not_an_object_as_a_problem_and_does_not_join_it(write_run: Any) -> None:
+    not_a_row: list[Any] = ["not a diagnostics row"]
+    run_dir: Path = write_run(scorecard([record("t1")]), not_a_row)
+
+    run = load_run(run_dir)
+
+    assert run.records[0].composer is None
+    assert run.problems == ["Row 1: the diagnostics row is not an object; its latency, writer and judge are not shown."]
+
+
 def test_load_run_reports_a_malformed_row_by_position_and_keeps_every_other_row(write_run: Any) -> None:
     broken: dict[str, Any] = record("t2")
     del broken["results"]
@@ -176,6 +186,14 @@ def test_load_run_with_a_scorecard_that_is_not_json_raises_naming_the_file(write
     (run_dir / "eval.json").write_text("{not json", encoding="utf-8")
 
     with pytest.raises(ReportInputError, match="eval.json is not valid JSON"):
+        load_run(run_dir)
+
+
+def test_load_run_with_a_scorecard_it_cannot_read_raises_naming_the_file(write_run: Any) -> None:
+    run_dir: Path = write_run(None)
+    (run_dir / "eval.json").mkdir()
+
+    with pytest.raises(ReportInputError, match="eval.json could not be read"):
         load_run(run_dir)
 
 

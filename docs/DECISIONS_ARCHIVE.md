@@ -4158,6 +4158,23 @@ first Python tests were found by running them and fixed in the fixtures, not the
 
 **Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.uns\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
 
+**D126 review fixes, run and debug fact (2026-09-16).** A second cold review of the D126 diff found five
+more problems, each fixed test first. `_read_json` caught only `json.JSONDecodeError`; a directory or an
+otherwise unreadable `eval.json` now raises `ReportInputError` too, proved by a test that makes the path a
+directory and observes the raw `PermissionError` before the fix, `ReportInputError` after. A diagnostics
+row at a matching index that was not an object silently dropped composer, safety and judge fields with no
+entry in `problems`, unlike its task-id-mismatch sibling a few lines below; it now appends the same kind
+of problem, proved test first. The "Records passed" KPI tile read `run.passed == run.total` with no
+`total > 0` guard, so an empty run rendered green; it now guards the same way the "Weakest check" tile
+does, proved by a zero-record run asserted not green. `ScorecardDocument.WireName` hand-rolled
+`JsonNamingPolicy.SnakeCaseLower.ConvertName` instead of the project's own `SnakeCaseLowerEnumConverter
+<TEnum>`, which now exposes the same conversion as a static `ToWireName` for `WireName` to call;
+behavior-preserving, proved by the existing `ScorecardDocumentTests` passing unchanged before and after.
+`ScorecardDocument.From`'s per-record `Select` rebuilt the fixed set of wire-name keys once per row via
+`Columns.ToDictionary`; the keys are now computed once outside the `Select` and reused per record, same
+tests unchanged. `.\test.ps1`: 126 and 935 tests at 100 percent line, branch and method. Python tool: 28
+tests, mypy strict clean.
+
 **Run and debug fact, the step 99 run scored against the owner's answer key (2026-09-16).** The owner
 supplied the dataset's answer key, `probe50answerkey.md`, after the run. Its frame is now = Monday
 2026-03-09; the run used its own time, 2026-09-16, as D120 set, so every `send_at` date and every

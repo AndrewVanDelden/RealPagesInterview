@@ -1,4 +1,4 @@
-using System.Text.Json;
+using Agent.Common;
 using Agent.Composition;
 
 namespace Agent.Evaluation;
@@ -19,8 +19,14 @@ public sealed record ScorecardDocument(
     IReadOnlyList<RecordScoreDocument> Records)
 {
     // O(n × c) in the rows and the twelve checks.
-    public static ScorecardDocument From(Scorecard scorecard) =>
-        new(
+    public static ScorecardDocument From(Scorecard scorecard)
+    {
+        // The wire name of each check is the same for every record, so it is computed once here
+        // rather than once per record inside the record Select below.
+        (EvaluationCheck Check, string WireName)[] checkWireNames =
+            [.. ScorecardFormatter.Columns.Select(column => (column.Check, WireName(column.Check)))];
+
+        return new(
             scorecard.PassedCount,
             scorecard.TotalCount,
             [.. ScorecardFormatter.Columns.Select(column => new CheckTally(
@@ -37,15 +43,16 @@ public sealed record ScorecardDocument(
             [.. scorecard.RecordScores.Select(score => new RecordScoreDocument(
                 score.TaskId,
                 score.Passed,
-                ScorecardFormatter.Columns.ToDictionary(column => WireName(column.Check), column => WireName(score.ResultOf(column.Check))),
+                checkWireNames.ToDictionary(entry => entry.WireName, entry => WireName(score.ResultOf(entry.Check))),
                 score.PersonalizationScore,
                 score.LatencyMs,
                 score.ScoringError,
                 score.JudgeReason))]);
+    }
 
     private static string WireName<TEnum>(TEnum value)
         where TEnum : struct, Enum =>
-        JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
+        SnakeCaseLowerEnumConverter<TEnum>.ToWireName(value);
 }
 
 // One check's passed-over-measured tally across the batch; a check that was not measured on a row
