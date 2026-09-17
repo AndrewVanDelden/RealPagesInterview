@@ -301,6 +301,10 @@ public class SafetyValidatorTests
     [InlineData("Premier mois offert.", "mois offert")]
     [InlineData("Obtenez une réduction.", "réduction")]
     [InlineData("Your first month is f​ree.", "first month is free")]
+    [InlineData("Your first month's rent is free at Maple Grove.", "first month's rent is free")]
+    [InlineData("Your first months' rent is free.", "first months' rent is free")]
+    [InlineData("Ask about our deposit waiver this month.", "waiver")]
+    [InlineData("Ask about our deposit waivers this month.", "waivers")]
     public void Validate_BodyStatesAPriceConcession_FailsUnstatedOffer(string body, string term)
     {
         SafetyValidationResult result = Validator.Validate(Message($"{body} Reply STOP to opt out."), Constraints());

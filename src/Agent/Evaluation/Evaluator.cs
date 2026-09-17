@@ -193,15 +193,17 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
         return (Verdict(sameDay), Verdict(sameDay && aligned.Hour == expectedSendAt.Hour));
     }
 
-    // A10: sms carries reply options, email carries a link; any other channel has no
-    // payload rule in the evidence. Each is compared with the label's when the label states it,
-    // since options or a link that differ from the label's are wrong facts however present they
-    // are; a label that states neither leaves presence as the one thing to measure. The whole
-    // absolute URI is compared, host included, after Uri has lowercased the scheme and the host;
-    // options are compared in order, by ReplyOptionSpelling's rule.
+    // A10: sms and voice both carry reply options, the same numbered list read as text on one
+    // channel and as key presses on the other (OpenAiMessageComposer.KeyPressOptionsSentence);
+    // email carries a link; any other channel has no payload rule in the evidence. Each is
+    // compared with the label's when the label states it, since options or a link that differ
+    // from the label's are wrong facts however present they are; a label that states neither
+    // leaves presence as the one thing to measure. The whole absolute URI is compared, host
+    // included, after Uri has lowercased the scheme and the host; options are compared in
+    // order, by ReplyOptionSpelling's rule.
     private static CheckResult ScoreCtaPayload(NextMessage message, Cta? expectedCta, DateOnly? labelSendDate) => message.Channel switch
     {
-        CommunicationChannel.Sms => Verdict(
+        CommunicationChannel.Sms or CommunicationChannel.Voice => Verdict(
             message.Cta?.Options is { Count: > 0 } options && (expectedCta?.Options is not { Count: > 0 } expectedOptions || OptionsMatch(options, expectedOptions, labelSendDate))),
         CommunicationChannel.Email => Verdict(
             message.Cta?.Link is { } link && (expectedCta?.Link is not { } expectedLink || string.Equals(link.AbsoluteUri, expectedLink.AbsoluteUri, StringComparison.Ordinal))),

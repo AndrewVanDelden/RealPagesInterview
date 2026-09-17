@@ -586,6 +586,19 @@ public class OpenAiMessageComposerTests
         Assert.StartsWith("Hi Taylor, this is Oak Ridge Apartments.", ComposedOf(outcome).Message.Body);
     }
 
+    // A title abbreviation's period ("Mr.", "Mrs.", "Dr.", "Ms.") is not a sentence end, so a
+    // property name that follows one in the first sentence is still read as naming the property.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingThePropertyAfterATitleAbbreviation_IsNotPrefixed()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, your agent Mr. Smith at Oak Ridge Apartments will call soon.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("Hi Taylor, your agent Mr. Smith at Oak Ridge Apartments will call soon.", ComposedOf(outcome).Message.Body);
+    }
+
     // A21: the link is a fact, not prose, and code owns every reproducible fact. Code builds it
     // from the property slug and the catalog's path, and the model is told not to write one, so
     // no email can carry a host the record never stated.
