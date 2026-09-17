@@ -4119,3 +4119,58 @@ opt in to every channel, the agent test and the CLI test both fail (run made 202
 is restored. `.\test.ps1`: 123 and 933 tests, 100 percent line, branch and method. Assumptions: A17.
 
 **Review fact, D125 (2026-09-16).** The cold review traced every read of consent in `src`: the agent reads `ConsentOrEmpty` once, the channel selector opts a channel in only on an explicit true, and nothing else reads consent. It ran the CLI on thirteen consent shapes: absent, null, `{}`, `{"sms_opt_in":null}`, unknown members only, and wrongly cased keys all gave channel `none` and `no_contact_consent`; `"yes"`, `true`, `[]`, `{"sms_opt_in":"true"}` and `{"sms_opt_in":1}` were refused as lines, never read as consent. Its one finding, five comments in `src` and `tests` still calling consent required, was fixed.
+
+**D126. A visual report at the end of a run (taken 2026-09-16).** Question: the owner asked for quality
+output after a run, graphs and visuals drawn with Python in a file presented when the run finishes. What
+does the report read, what does it show, and how is it presented? Options: (a) the agent writes the
+scorecard as JSON with a new `--eval-json`, a Python tool reads that file with `diag.json` and
+`review_queue.json` and writes one self-contained HTML page with inline SVG charts, and a `run-report.ps1`
+wrapper runs the agent with every output on, builds the page and opens it; (b) the Python tool parses
+`eval.txt`, the aligned text report, which has no schema and changes whenever its layout does; (c) the
+agent draws the charts itself in C#, which has no charting library in this solution and would put a
+presentation concern in the thin command-line shell. Recommendation: (a), the owner's instruction for
+Python. Scopes: `ScorecardDocument` in `src/Agent/Evaluation`, the same numbers as the text report,
+every check named by its snake_case wire name and labelled with the text report's own label
+(`ScorecardFormatter.Columns`, now internal); `--eval-json` in `CliRunner`, refused without
+`--eval-report` and guarded like it; `tools/run_report`, Python 3.13 with matplotlib 3.11.2 pinned, and
+pytest 9.1.1 and mypy 2.3.1 in strict mode for its checks, in `model.py` (reads and joins the files,
+reporting any malformed row by position and leaving it out), `charts.py` (a stacked bar per check, a grid
+of every record against every check with a glyph in each cell, latency per record against the budget and
+the p95), `page.py` (totals first, the charts, a table view of the checks, the failed records with the
+judge's reason; every value from the run's files HTML-escaped) and `__main__.py`; `run-report.ps1`; CI
+runs the tool's mypy and pytest; `docs/OPERATIONS.md`; `.gitignore` for `.venv` and the Python caches.
+The charts follow the data-viz reference palette: status colors only for passed and failed, always with a
+glyph, count or legend beside them, one hue for latency, recessive grid, and labels in the margin clear
+of the bars. They are drawn on the light chart surface in both themes, a deliberate departure from a
+selected dark chart palette, and they are static SVG without hover, with the table views standing in for
+exact values. A scorecard rebuilt with `--replay` measures no latency, safety or cost, so for such a
+scorecard the page takes latency, the judge's grades and reasons and both costs from the live run's
+diagnostics rows, the p95 as the program's own nearest-rank p95, and says the scorecard was rebuilt;
+Safety reads not measured. Evidence: the step 99 run of 2026-09-16 (`runs\step99b`, 2 of 50, all 48
+composer and 50 judge calls completed, no timeout) predates `--eval-json`, so its `eval.json` was rebuilt
+with `--replay` at no model cost, and the page's p95 of 5,874 ms and its token totals (48 calls, 24,819 in
+and 3,570 out; judge 50 calls, 24,016 in and 5,020 out) match the live `eval.txt` exactly. `.\test.ps1`:
+126 and 935 tests at 100 percent line, branch and method, with `--eval-json` tests written first; the
+Python tool 19 tests and mypy strict clean, tests written first; the three charts rendered to PNG and
+inspected, which moved the latency labels off the bars; `run-report.ps1 -Composer template` on
+`holdout_12.jsonl` wrote all seven files, exit code 0, and opened the page. Two fixture mistakes in the
+first Python tests were found by running them and fixed in the fixtures, not the code. Assumptions: none.
+
+**Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.uns\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
+
+**D126 review fixes, run and debug fact (2026-09-16).** A second cold review of the D126 diff found five
+more problems, each fixed test first. `_read_json` caught only `json.JSONDecodeError`; a directory or an
+otherwise unreadable `eval.json` now raises `ReportInputError` too, proved by a test that makes the path a
+directory and observes the raw `PermissionError` before the fix, `ReportInputError` after. A diagnostics
+row at a matching index that was not an object silently dropped composer, safety and judge fields with no
+entry in `problems`, unlike its task-id-mismatch sibling a few lines below; it now appends the same kind
+of problem, proved test first. The "Records passed" KPI tile read `run.passed == run.total` with no
+`total > 0` guard, so an empty run rendered green; it now guards the same way the "Weakest check" tile
+does, proved by a zero-record run asserted not green. `ScorecardDocument.WireName` hand-rolled
+`JsonNamingPolicy.SnakeCaseLower.ConvertName` instead of the project's own `SnakeCaseLowerEnumConverter
+<TEnum>`, which now exposes the same conversion as a static `ToWireName` for `WireName` to call;
+behavior-preserving, proved by the existing `ScorecardDocumentTests` passing unchanged before and after.
+`ScorecardDocument.From`'s per-record `Select` rebuilt the fixed set of wire-name keys once per row via
+`Columns.ToDictionary`; the keys are now computed once outside the `Select` and reused per record, same
+tests unchanged. `.\test.ps1`: 126 and 935 tests at 100 percent line, branch and method. Python tool: 28
+tests, mypy strict clean.
