@@ -535,6 +535,21 @@ public class LeasingMessageAgentTests
         Assert.DoesNotContain("<", result.Output.NextMessage.Body);
     }
 
+    // CliRunner sanitizes once, for its own log scope, and hands the SanitizedInput straight to this
+    // overload, so the record is not cleaned a second time: the case it carries is used as given,
+    // which a caller that already cleaned it will have cleaned itself.
+    [Fact]
+    public async Task RunAsync_GivenAnAlreadySanitizedInput_UsesItsCaseWithoutSanitizingAgain()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "<script>alert(1)</script>Dev");
+        var sanitizedInput = new SanitizedInput(prospectCase, []);
+
+        AgentRunResult result = await agent.RunAsync(sanitizedInput, ReferenceTime);
+
+        Assert.StartsWith("Hi <script>alert(1)</script>Dev!", result.Output.NextMessage!.Body);
+    }
+
     // A record a contact rule stops is answered before anything is planned or composed: a rule that
     // sends nothing is a no_op, a rule that needs a person is escalate_to_human, and neither composes.
     // The composer throws if it is called at all.
@@ -573,6 +588,25 @@ public class LeasingMessageAgentTests
         AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
 
         Assert.Equal(SuppressionReason.NoContactConsent, result.Diagnostics.SuppressionReason);
+    }
+
+    // A regulated communication still needs a person's judgment even when there is no consented
+    // channel to message it on: suppression-for-no-consent and escalation-for-regulated-content are
+    // different facts, and no-consent must not silently answer for the escalation the other way the
+    // no-op case above still does.
+    [Fact]
+    public async Task RunAsync_NoConsentAndARegulatedCommunicationContactRule_StillEscalates()
+    {
+        LeasingMessageAgent agent = RealAgentFactory.BuildRealAgent();
+        ProspectCase prospectCase = SampleProspectCases.Minimal(persona: "resident", lifecycleStage: "delinquent_collections") with
+        {
+            Consent = new ConsentPreferences(EmailOptIn: false, SmsOptIn: false, VoiceOptIn: false),
+        };
+
+        AgentRunResult result = await agent.RunAsync(prospectCase, ReferenceTime);
+
+        Assert.Equal(new NextAction(ActionTypes.EscalateToHuman, Reason: "regulated_communication"), result.Output.NextAction);
+        Assert.Equal(SuppressionReason.EscalatedToHuman, result.Diagnostics.SuppressionReason);
     }
 
     // A record with no consent object is not contactable: the agent answers do not contact, and no

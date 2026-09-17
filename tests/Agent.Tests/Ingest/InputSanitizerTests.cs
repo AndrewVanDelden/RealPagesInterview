@@ -117,6 +117,22 @@ public class InputSanitizerTests
         Assert.Empty(sanitized.ChangedFields);
     }
 
+    // A malformed tag with no closing '>' is not matched by the well-formed tag regex, so
+    // property_name needs its own backstop the way a text field's character allowlist already
+    // gives it: any '<' or '>' still in the value after markup removal is leftover markup syntax,
+    // not a character an owner gave a property, so it is dropped outright.
+    [Fact]
+    public void Sanitize_PropertyNameCarriesAnUnclosedTag_StripsTheStrayDelimiter()
+    {
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase raw = minimal with { Input = minimal.ContextOrEmpty with { PropertyName = "<script Oak Ridge Apartments" } };
+
+        string? cleaned = InputSanitizer.Sanitize(raw).Case.ContextOrEmpty.PropertyName;
+
+        Assert.DoesNotContain("<", cleaned);
+        Assert.Equal("script Oak Ridge Apartments", cleaned);
+    }
+
     // A cancellation reason longer than its cap still opens with the words a rule reads, so it is cut
     // to the cap rather than made absent and let past the screening review.
     [Fact]
@@ -199,6 +215,38 @@ public class InputSanitizerTests
 
         Assert.Empty(sanitized.ChangedFields);
         Assert.Same(raw, sanitized.Case);
+    }
+
+    // Vocabulary fields (persona, stage, unit, offer id, cancellation reason, loyalty status,
+    // features, required states, primary call to action) reach the model prompt verbatim
+    // (OpenAiMessageComposer.StatedLine), so markup is removed from them the same way it is
+    // removed from a text field, while a vocabulary field still keeps whatever characters
+    // vocabulary keeps: it is not run through a text field's character allowlist.
+    [Fact]
+    public void Sanitize_VocabularyFieldCarriesMarkup_RemovesItLikeATextField()
+    {
+        ProspectCase raw = WithProfile(new ProspectProfile("Taylor", LoyaltyStatus: "<script>alert(1)</script>gold_tier"));
+
+        SanitizedInput sanitized = InputSanitizer.Sanitize(raw);
+
+        Assert.Equal("gold_tier", sanitized.Case.ContextOrEmpty.ProfileOrEmpty.LoyaltyStatus);
+    }
+
+    // Markup removal scans a field, so a vocabulary field far longer than any cap is not scanned at
+    // all, the same guard the other fields that remove markup already use.
+    [Fact]
+    public void Sanitize_VocabularyFieldFarOverItsCap_IsAbsentWithoutBeingScanned()
+    {
+        string hostile = string.Concat(Enumerable.Repeat("<script>", 25_000));
+        ProspectCase minimal = SampleProspectCases.Minimal();
+        ProspectCase raw = minimal with { Input = minimal.ContextOrEmpty with { Unit = hostile } };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        SanitizedInput sanitized = InputSanitizer.Sanitize(raw);
+
+        stopwatch.Stop();
+        Assert.Null(sanitized.Case.ContextOrEmpty.Unit);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"took {stopwatch.Elapsed}");
     }
 
     // The required states and the primary call to action are vocabulary too.

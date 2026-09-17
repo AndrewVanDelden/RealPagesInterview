@@ -12,9 +12,13 @@ namespace Agent.Ingest;
 public sealed record IngestNotes(IReadOnlyList<string> DefaultedFields, IReadOnlyList<string> UnknownMembers, IReadOnlyList<string> SanitizedFields)
 {
     // O(m) in the number of members on the record; no member is visited twice.
-    public static IngestNotes Describe(ProspectCase rawCase)
+    public static IngestNotes Describe(ProspectCase rawCase) => Describe(InputSanitizer.Sanitize(rawCase));
+
+    // A caller that already holds this record's SanitizedInput (CliRunner, which sanitizes once for
+    // its own TaskId log scope) hands it straight to this overload, so the record is not sanitized a
+    // second time.
+    public static IngestNotes Describe(SanitizedInput sanitized)
     {
-        SanitizedInput sanitized = InputSanitizer.Sanitize(rawCase);
         ProspectCase prospectCase = sanitized.Case;
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;

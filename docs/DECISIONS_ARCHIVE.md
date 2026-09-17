@@ -4328,3 +4328,26 @@ field at 1,000, 10,000 and 100,000 characters took 5.3, 3.9 and 16.1 ms. (4) Cut
 a surrogate pair; cuts now fall on grapheme boundaries. (5) `--replay` handed raw records to the scorer and
 judge; it now cleans them first. The reviewer also ran all four committed datasets at the base and at
 the head: output and review queue byte-identical. `.\test.ps1` exits 0 at 100 percent, 1,067 library tests.
+
+**D131 and D132 review fixes, second round, run and debug fact (2026-09-16).** A second cold review of
+the D131 and D132 diff found four problems, each fixed test first. (1) `Vocabulary()` skipped markup
+removal even though persona, stage, unit, loyalty status and the other vocabulary fields reach the model
+prompt verbatim through `OpenAiMessageComposer.StatedLine`; it now removes markup the way `Text()` does,
+and, since a markup-removal scan can now run on a vocabulary field too, gained the same over-the-raw-bound
+absent guard `Text()` and the property name already use, proved by a script tag inside `loyalty_status`
+losing the markup and a 25,000-tag `unit` value returning absent in well under a second rather than
+scanning. (2) The markup-removal regexes only match a well-formed `<...>` tag, so an unclosed one such as
+`<script` reached `property_name` unchanged; `property_name` now strips any stray `<` or `>` left after
+markup removal as a backstop, since giving it a text field's character allowlist would also lose
+characters such as `+` and `@` the prior round's fix kept. (3) `ContactRules.Check` ran only after the
+consent gate, so a `delinquent_collections` record with no consented channel was suppressed as ordinary
+`no_contact_consent` and never reached `escalate_to_human`; the agent now checks contact rules before
+answering no-consent and escalates when one fires, proved by a no-consent `delinquent_collections` record
+landing in the review queue with `regulated_communication` instead of being silently suppressed. (4)
+`InputSanitizer.Sanitize` ran up to three times per record on the batch hot path (`CliRunner`,
+`IngestNotes.Describe`, `LeasingMessageAgent.RunAsync`); `CliRunner` now sanitizes once and hands the
+`SanitizedInput` to the other two, which each gained an overload that trusts the case it is given rather
+than cleaning it again, proved by tests asserting each overload's output still carries a value only an
+unsanitized case would have. Scopes: `InputSanitizer`; `LeasingMessageAgent.RunAsync` and its new
+`SanitizedInput` overload; `IngestNotes.Describe`; `CliRunner`'s record scope. Evidence: `.\test.ps1`
+exits 0 at 100 percent, 128 and 1,073 tests.

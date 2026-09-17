@@ -13,23 +13,28 @@ public sealed record SanitizedInput(ProspectCase Case, IReadOnlyList<string> Cha
 // Every text field of an input record is cleaned where it enters, before any decision or message reads
 // it (OWASP Input Validation Cheat Sheet: validate as early as possible, normalize first, allowlist
 // character categories, bound the length). Output checks still stand behind it: input cleaning is not
-// the defense against injection on its own. Two kinds of field:
-//   identifiers and vocabulary (task id, persona, stage, time zone, language, unit, offer id,
-//   cancellation reason, loyalty status, features, required states, primary call to action): invalid
-//   code units, control, format, bidirectional-control and private or unassigned characters removed,
-//   NFKC normalized, whitespace collapsed, and held to a length;
-//   text a person or the model reads (first name, city and amenity interest): the same, then markup
-//   removed with the contents of script and style elements, and only the characters that field can
-//   hold kept: letters, marks, spaces and a name's punctuation for a first name, and digits and a
-//   place's punctuation as well for the others;
-//   the property name, which is also the key the property system's facts are found by: markup and the
-//   unsafe characters removed, canonically (NFC) normalized so a trademark sign stays one, and every
-//   other character its owner gave it kept.
+// the defense against injection on its own. Three kinds of field:
+//   the task id, which is a log correlation value only and never reaches a decision rule or the
+//   model prompt: invalid code units, control, format, bidirectional-control and private or
+//   unassigned characters removed, NFKC normalized, whitespace collapsed, and held to a length;
+//   vocabulary (persona, stage, time zone, language, unit, offer id, cancellation reason, loyalty
+//   status, features, required states, primary call to action), each of which a decision rule reads
+//   and some of which OpenAiMessageComposer.StatedLine states to the model verbatim: the same as the
+//   task id, then markup removed with the contents of script and style elements, but not run through
+//   a text field's character allowlist, since a rule or the model reads a vocabulary field by its own
+//   vocabulary rather than by the characters it is spelled with;
+//   text a person or the model reads (first name, city and amenity interest): the same as vocabulary,
+//   then only the characters that field can hold kept: letters, marks, spaces and a name's
+//   punctuation for a first name, and digits and a place's punctuation as well for the others;
+//   the property name, which is also the key the property system's facts are found by: markup, the
+//   unsafe characters and, as a backstop for a malformed tag the markup removal above does not
+//   match, any stray '<' or '>' removed, canonically (NFC) normalized so a trademark sign stays
+//   one, and every other character its owner gave it kept.
 // An identifier or vocabulary field longer than its cap is cut to it at a character boundary, so the
-// words a rule reads at its start still answer it. A text field longer than its cap is absent, and one
-// longer than the raw bound is absent before markup removal scans it. A field left empty is absent, as
-// an absent field is. The expected outcome is the label and is not input to a decision, so it is left
-// as it is. A clean record is returned as the same instance.
+// words a rule reads at its start still answer it. A text or vocabulary field longer than the raw
+// bound is absent before markup removal scans it, and a text field longer than its cap is absent too.
+// A field left empty is absent, as an absent field is. The expected outcome is the label and is not
+// input to a decision, so it is left as it is. A clean record is returned as the same instance.
 public static partial class InputSanitizer
 {
     private const int TaskIdCap = 200;
@@ -185,19 +190,19 @@ public static partial class InputSanitizer
 
     private static string? Vocabulary(string? value, int cap)
     {
-        if (value is null)
+        if (value is null || value.Length > RawTextBound)
         {
             return null;
         }
 
-        string cut = CutTo(Collapse(Normalized(WithoutUnsafeCharacters(value))), cap);
+        string cut = CutTo(Collapse(WithoutMarkup(Normalized(WithoutUnsafeCharacters(value)))), cap);
         return cut.Length == 0 ? null : cut;
     }
 
     private static string? PropertyName(string? value) =>
         value is null || value.Length > RawTextBound
             ? null
-            : Bounded(Collapse(WithoutMarkup(WithoutUnsafeCharacters(value).Normalize(NormalizationForm.FormC))), PlaceCap);
+            : Bounded(Collapse(WithoutTagDelimiters(WithoutMarkup(WithoutUnsafeCharacters(value).Normalize(NormalizationForm.FormC)))), PlaceCap);
 
     private static string? Text(string? value, int cap, FrozenSet<UnicodeCategory> categories, FrozenSet<int> punctuation) =>
         value is null || value.Length > RawTextBound
@@ -205,6 +210,15 @@ public static partial class InputSanitizer
             : Bounded(Collapse(OnlyAllowed(WithoutMarkup(Normalized(WithoutUnsafeCharacters(value))), categories, punctuation)), cap);
 
     private static string WithoutMarkup(string value) => MarkupTag().Replace(ScriptOrStyleElement().Replace(value, " "), " ");
+
+    // A text field's character allowlist (OnlyAllowed) already drops a stray '<' or '>' left by a
+    // malformed tag the regexes above do not match, such as one with no closing '>'. The property
+    // name has no such allowlist, because '<' and '>' share their Unicode category with characters
+    // an owner's property name keeps, such as '+': a category-based allowlist broad enough to keep
+    // one keeps the other too. This backstop removes exactly the two delimiters a tag needs, whether
+    // or not the regexes above matched a well-formed one, and keeps every other character its owner
+    // gave the name.
+    private static string WithoutTagDelimiters(string value) => TagDelimiter().Replace(value, " ");
 
     private static string? Bounded(string value, int cap) => value.Length == 0 || value.Length > cap ? null : value;
 
@@ -274,4 +288,7 @@ public static partial class InputSanitizer
 
     [GeneratedRegex(@"<[^>]*>")]
     private static partial Regex MarkupTag();
+
+    [GeneratedRegex(@"[<>]")]
+    private static partial Regex TagDelimiter();
 }

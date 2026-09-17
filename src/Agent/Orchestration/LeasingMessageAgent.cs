@@ -39,7 +39,18 @@ public sealed class LeasingMessageAgent(
     // "TaskId=x TaskId=x". A library caller that wants correlation opens its own scope.
     //
     // referenceTime is the run's clock: a value the caller passes, never read here.
-    public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
+    // Every input field is cleaned before anything reads it, whoever called the agent: the same
+    // cleaning CliRunner applies, and cleaning an already cleaned record changes nothing.
+    public Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default) =>
+        GuardedRunAsync(InputSanitizer.Sanitize(prospectCase).Case, referenceTime, cancellationToken);
+
+    // A caller that already holds this record's SanitizedInput (CliRunner, which sanitizes once for
+    // its own TaskId log scope and its ingest-notes line) hands it straight to this overload, so the
+    // record is not cleaned a second time.
+    public Task<AgentRunResult> RunAsync(SanitizedInput sanitizedInput, DateTimeOffset referenceTime, CancellationToken cancellationToken = default) =>
+        GuardedRunAsync(sanitizedInput.Case, referenceTime, cancellationToken);
+
+    private async Task<AgentRunResult> GuardedRunAsync(ProspectCase sanitized, DateTimeOffset referenceTime, CancellationToken cancellationToken)
     {
         // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
         // (which happens to wrap agent.RunAsync in its own try/catch) ever sees an
@@ -49,9 +60,6 @@ public sealed class LeasingMessageAgent(
         // callers still see the exact same exception; they're no longer the only place
         // it's ever recorded. Cancellation is excluded: it isn't a bug, and logging it as
         // Error would make a clean shutdown indistinguishable from a real crash.
-        // Every input field is cleaned before anything reads it, whoever called the agent: the same
-        // cleaning CliRunner applies, and cleaning an already cleaned record changes nothing.
-        ProspectCase sanitized = InputSanitizer.Sanitize(prospectCase).Case;
         try
         {
             return await RunUnguardedAsync(sanitized, referenceTime, cancellationToken);
@@ -69,11 +77,32 @@ public sealed class LeasingMessageAgent(
 
         // Step 1: select the contactable channel, consent first. No option value means
         // no preferred channel is consented, which is a no_op with its reason and nothing
-        // else runs.
+        // else runs, unless a contact rule below says the record needs a person's judgment
+        // regardless: suppression-for-no-consent and escalation-for-regulated-content are
+        // different facts, and one must not silently answer for the other.
         Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.ConsentOrEmpty);
+
+        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
+        // know it, the zone of the state its city_interest names.
+        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
 
         if (!contactableChannel.HasValue)
         {
+            Option<NextAction> ruledWithNoConsent = ContactRules.Check(prospectCase, referenceTime, referenceDate);
+            if (ruledWithNoConsent.HasValue && ruledWithNoConsent.Value.Type == ActionTypes.EscalateToHuman)
+            {
+                log.LogInformation("Suppressing message: contact rule {Reason}.", ruledWithNoConsent.Value.Reason);
+                return Suppressed(
+                    prospectCase,
+                    SuppressionReason.EscalatedToHuman,
+                    ruledWithNoConsent.Value,
+                    actionPlan: null,
+                    modelCost: null,
+                    networkRetries: null,
+                    renewalOfferLoaded: RequiredStateVerdict.NotEvaluated);
+            }
+
             log.LogInformation("Suppressing message: prospect is not contactable.");
             return Suppressed(
                 prospectCase,
@@ -86,11 +115,6 @@ public sealed class LeasingMessageAgent(
         }
 
         CommunicationChannel channel = contactableChannel.Value;
-
-        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
-        // know it, the zone of the state its city_interest names.
-        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
-        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
 
         // Step 1b: a record some rule says must not be messaged is answered here, before anything is
         // planned or composed: sent nothing, or handed to a person.

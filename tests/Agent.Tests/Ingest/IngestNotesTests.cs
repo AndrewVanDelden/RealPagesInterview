@@ -69,6 +69,21 @@ public class IngestNotesTests
         Assert.DoesNotContain("input.property_name", notes.DefaultedFields);
     }
 
+    // A caller that already holds this record's SanitizedInput (CliRunner, which sanitizes once for
+    // its own log scope) hands it straight to this overload, so the record is not sanitized a second
+    // time: the notes carry the given ChangedFields rather than a freshly computed list, which a
+    // second sanitize pass of this already-clean case would report as empty.
+    [Fact]
+    public void Describe_GivenAnAlreadySanitizedInput_TrustsItsChangedFieldsWithoutSanitizingAgain()
+    {
+        ProspectCase alreadyClean = Parse(RequiredOnlyLine);
+        var sanitized = new SanitizedInput(alreadyClean, ["input.profile.first_name"]);
+
+        IngestNotes notes = IngestNotes.Describe(sanitized);
+
+        Assert.Equal(["input.profile.first_name"], notes.SanitizedFields);
+    }
+
     // A first name that is only an emoji names no one, so it is a defaulted input like an absent one.
     [Fact]
     public void Describe_FirstNameIsOnlyAnEmoji_NamesTheFirstName()
