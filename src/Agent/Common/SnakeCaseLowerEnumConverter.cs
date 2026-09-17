@@ -13,4 +13,9 @@ public sealed class SnakeCaseLowerEnumConverter<TEnum> : JsonStringEnumConverter
         : base(JsonNamingPolicy.SnakeCaseLower)
     {
     }
+
+    // The same spelling this converter writes to the wire, for code that needs the wire name as a
+    // string rather than through JSON serialization.
+    public static string ToWireName(TEnum value) =>
+        JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
 }

@@ -76,6 +76,15 @@ def test_render_page_leads_with_the_totals_and_escapes_every_value_from_the_run(
     assert page.count("<svg") == 3
 
 
+def test_render_page_for_an_empty_run_does_not_style_records_passed_as_good(write_run: Any) -> None:
+    run = load_run(write_run(scorecard([])))
+
+    page = render_page(run, "runs/empty")
+
+    assert '<div class="value good">0 of 0</div>' not in page
+    assert '<div class="value">0 of 0</div>' in page
+
+
 def test_render_page_for_a_rebuilt_scorecard_says_which_checks_it_could_not_measure(write_run: Any) -> None:
     run = load_run(write_run(scorecard([record("t1", safety="not_measured")], batch_latency_ms=None), [diagnostics_row("t1")]))
 

@@ -93,7 +93,12 @@ def _kpis(run: RunReport) -> str:
     violations = [row.safety_violations for row in run.records if row.safety_violations is not None]
 
     tiles = [
-        _tile("Records passed", f"{run.passed} of {run.total}", "every label check on the record passed", run.passed == run.total),
+        _tile(
+            "Records passed",
+            f"{run.passed} of {run.total}",
+            "every label check on the record passed",
+            run.passed == run.total if run.total > 0 else None,
+        ),
         _tile(
             "Weakest check",
             f"{escape(worst.label)} {worst.passed}/{worst.measured}" if worst else "none measured",
