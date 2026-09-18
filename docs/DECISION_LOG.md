@@ -155,7 +155,7 @@ seam. Four fixed test first: a judge-side cancellation that discarded an already
 case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
 a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
 
-**D120 to D126, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120 sets the
-honest-number run: one JSONL file, the run's own time, model, judge and outputs on, once, unread
-before. A missing folder failed the first attempt, unspent; D121 creates folders. The run scored
-1 of 50 and flooded the console; D122 quiets it. D123 to D126: 60-second calls, rate limits, no consent, visual report.
+**D120 to D130, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120: one
+unread JSONL run at its own time, everything on. D121 creates folders, D122 quiets the console,
+D123 to D126 set the call budget, rate limits, consent and report. Scored against the answer key,
+30 of 50; consent research recorded; D127 to D130 fix language, voice, names and offers.

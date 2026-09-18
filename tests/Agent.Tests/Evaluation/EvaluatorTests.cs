@@ -541,12 +541,42 @@ public class EvaluatorTests
         Assert.Equal(CheckResult.Failed, score.CtaPayload);
     }
 
+    // Voice is read aloud with key-press options, the same numbered list an sms carries as reply
+    // options, so it is measured the same way: presence, and a match against the label's options
+    // when the label states them.
     [Fact]
-    public void Evaluate_VoiceMessage_CtaPayloadNotMeasured()
+    public void Evaluate_VoiceWithOptions_CtaPayloadPassed()
     {
-        ProspectCase prospectCase = BaselineCase(BaselineExpected(Message(CommunicationChannel.Voice, "expected")));
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Voice, "spoken message", options: ["Thu", "Fri"])));
 
-        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Voice, EnglishSmsBody, ctaType: null)));
+        Assert.Equal(CheckResult.Passed, score.CtaPayload);
+    }
+
+    [Fact]
+    public void Evaluate_VoiceWithoutCta_CtaPayloadFailed()
+    {
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Voice, "spoken message", ctaType: null)));
+
+        Assert.Equal(CheckResult.Failed, score.CtaPayload);
+    }
+
+    [Fact]
+    public void Evaluate_VoiceOptionsDifferFromTheLabels_CtaPayloadFailed()
+    {
+        var label = new NextMessage(CommunicationChannel.Voice, BaselineSendAt, null, "expected", new Cta("schedule_tour", ["Thu", "Fri"]));
+        ProspectCase prospectCase = BaselineCase(BaselineExpected(label));
+
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Voice, "spoken message", options: ["Sat"])));
+
+        Assert.Equal(CheckResult.Failed, score.CtaPayload);
+    }
+
+    // A channel name the program does not know has no payload rule in the evidence, sms and
+    // email and voice being the only three the labels show.
+    [Fact]
+    public void Evaluate_UnrecognizedChannel_CtaPayloadNotMeasured()
+    {
+        RecordScore score = ScoreOf(Run(BaselineCase(), Message(CommunicationChannel.Unknown, EnglishSmsBody)));
 
         Assert.Equal(CheckResult.NotMeasured, score.CtaPayload);
     }
@@ -727,13 +757,13 @@ public class EvaluatorTests
     [Fact]
     public void Evaluate_FactWithNoWords_NeverCountsAsCovered()
     {
-        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "...") with
+        ProspectCase prospectCase = SampleProspectCases.Minimal(propertyName: "...") with
         {
             Expected = BaselineExpected(),
             Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
         };
 
-        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
+        RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Hi Taylor. Reply STOP to opt out.")));
 
         Assert.Equal(0.5, score.PersonalizationScore);
     }

@@ -27,7 +27,7 @@ public sealed class TemplateMessageComposer : IMessageComposer
     {
         ProspectContext context = prospectCase.ContextOrEmpty;
         ProspectProfile profile = context.ProfileOrEmpty;
-        string? firstName = Present(profile.FirstName);
+        string? firstName = profile.GreetingName();
         string? propertyName = Present(context.PropertyName);
         CallToAction callToAction = CallToActionCatalog.Resolve(
             prospectCase.ConstraintsOrEmpty.PrimaryCta,
@@ -47,9 +47,12 @@ public sealed class TemplateMessageComposer : IMessageComposer
         IReadOnlyList<string> optionTexts = TourSlotText.OptionsFor(callToAction.Type, tourSlots)
             ?? templates.SmsOptions(callToAction.Type, Personas.IsProspect(prospectCase.Persona));
 
-        string body = isEmail
-            ? EmailBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, link)
-            : SmsBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, optionTexts);
+        string body = channel switch
+        {
+            CommunicationChannel.Email => EmailBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, link),
+            CommunicationChannel.Voice => VoiceBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, optionTexts),
+            _ => SmsBody(templates, greeting, interestPhrase, ctaPhrase, propertyName, optionTexts),
+        };
 
         string? subject = isEmail
             ? propertyName is null ? templates.EmailSubjectGeneric : Fill(templates.EmailSubjectForProperty, propertyName)
@@ -73,6 +76,22 @@ public sealed class TemplateMessageComposer : IMessageComposer
         string options = templates.NumberedOptionsSentence(optionTexts);
 
         return $"{greeting}!{welcome} {interestPhrase}{Fill(templates.SmsCtaSentence, ctaPhrase)} {options} {templates.SmsOptOut}";
+    }
+
+    // Read aloud on a call: it says who is calling first, gives the options as key presses and ends
+    // with a key-press opt-out, the shape 47 CFR 64.1200(b) sets for a prerecorded telemarketing call.
+    private static string VoiceBody(
+        MessageTemplates templates,
+        string greeting,
+        string interestPhrase,
+        string ctaPhrase,
+        string? propertyName,
+        IReadOnlyList<string> optionTexts)
+    {
+        string callerOpening = propertyName is null ? string.Empty : $"{Fill(templates.VoiceCallerOpening, propertyName)} ";
+        string options = templates.KeyPressOptionsSentence(optionTexts);
+
+        return $"{callerOpening}{greeting}! {interestPhrase}{Fill(templates.VoiceCtaSentence, ctaPhrase)} {options} {templates.VoiceOptOut}";
     }
 
     private static string EmailBody(

@@ -3,7 +3,7 @@ using Agent.Common;
 
 namespace Agent.Safety;
 
-// The four safety checks, each answering for itself. Named as the checks themselves rather
+// The five safety checks, each answering for itself. Named as the checks themselves rather
 // than one PII check, because a record can never switch SocialSecurityNumber off but can
 // switch LongDigitRun off.
 //
@@ -17,4 +17,5 @@ public enum SafetyCheck
     SocialSecurityNumber,
     LongDigitRun,
     FairHousing,
+    UnstatedOffer,
 }

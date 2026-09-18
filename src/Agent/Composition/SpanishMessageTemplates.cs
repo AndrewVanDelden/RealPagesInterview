@@ -10,6 +10,7 @@ namespace Agent.Composition;
 internal static class SpanishMessageTemplates
 {
     public static readonly MessageTemplates Set = new(
+        LanguageTag: "es",
         GreetingWithName: "Hola {0}",
         GreetingWithoutName: "Hola",
         SmsWelcome: " Te damos la bienvenida a {0}.",
@@ -21,6 +22,10 @@ internal static class SpanishMessageTemplates
         SmsOptionsSentence: "Responde {0}.",
         SmsOption: "{0} para {1}",
         SmsOptOut: "Responde STOP para cancelar.",
+        VoiceCallerOpening: "Te llama {0}.",
+        VoiceCtaSentence: "Te llamamos para ayudarte a {0}.",
+        VoiceOptionsSentence: "Marca {0}.",
+        VoiceOptOut: "Para no recibir más llamadas, marca 9.",
         EmailCtaSentence: "Responde o haz clic para {0}",
         EmailAtProperty: " en {0}",
         EmailLinkLine: "Empieza aquí: {0}",

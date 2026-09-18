@@ -115,10 +115,9 @@ Start with the exit code (`CliExitCodes` in `src/Agent.Cli/CliRunner.cs`):
    that ran past the batch's stated budget shows up (D28); `attempts`, how
    many compose calls the compose-validate loop made to get that text; and
    `locale_applied`, whether the composer could serve the record's stated
-   language, which is a check that can fail on the template composer, since
-   it holds one template set per language it serves, English and Spanish
-   today, and is true on the model composer, which passes the tag through
-   with no allowlist anywhere (D26, A13). All three are properties of a
+   language: false on either composer when the record's tag has no full
+   language set, English, Spanish and French today, and the message is then
+   written wholly in English (D26, D127, A13). All three are properties of a
    returned message, so a whole `composition` of `null` means the record
    carries no message, which is no consented channel or a composition
    failure, and `suppression_reason` separates those two. The two spend

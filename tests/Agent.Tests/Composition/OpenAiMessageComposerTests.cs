@@ -116,6 +116,21 @@ public class OpenAiMessageComposerTests
         Assert.Contains("property: unknown", fakeClient.LastUserPrompt);
     }
 
+    // The model is given the greeting name, without the emoji and whitespace around the first name,
+    // so it cannot echo them into the greeting.
+    [Fact]
+    public async Task ComposeAsync_UserPrompt_FirstNamePaddedWithAnEmoji_GivesTheNameAlone()
+    {
+        const string json = """{"subject":null,"body":"hi","cta_type":"schedule_tour","cta_options":null,"cta_link":null}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "  \U0001F642 Sam \U0001F642 ");
+
+        await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("first_name: Sam\n", fakeClient.LastUserPrompt);
+    }
+
     // A blank (whitespace-only) value is absent too (Agent.Common.Presence), the same rule
     // TemplateMessageComposer applies - not a literal blank fact the model could read as a name.
     [Fact]
@@ -500,6 +515,90 @@ public class OpenAiMessageComposerTests
         Assert.True(instructionIndex >= 0 && instructionIndex < blockStartIndex, "the language instruction must appear before <prospect_data>, not inside it");
     }
 
+    // A message is written in one language: a language with no full set is served in English, so the
+    // model is told English, the code-written options and opt-out are English too, and the composition
+    // notes say the record's language was not applied.
+    [Fact]
+    public async Task ComposeAsync_LanguageWithNoSet_WritesWhollyInEnglishAndReportsTheLocaleNotApplied()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, come see Oak Ridge.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "tlh");
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("Write the message in the language 'en'.", fakeClient.LastUserPrompt);
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.EndsWith("Reply STOP to opt out.", result.Message.Body);
+        Assert.False(result.Notes.LocaleApplied);
+    }
+
+    // A French record's language is resolved to the French set, so the model is told French and the
+    // options and opt-out code appends are French too, never an English sentence after French prose.
+    [Fact]
+    public async Task ComposeAsync_FrenchRecord_TellsTheModelFrenchAndAppendsFrenchSentences()
+    {
+        const string json = """{"subject":null,"body":"Bonjour Taylor, venez visiter Oak Ridge.","cta_type":"schedule_tour","cta_options":["une visite"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal(language: "fr-CA");
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Sms);
+
+        Assert.Contains("Write the message in the language 'fr'.", fakeClient.LastUserPrompt);
+        ComposedMessage result = ComposedOf(outcome);
+        Assert.Contains("Répondez 1 pour une visite.", result.Message.Body);
+        Assert.EndsWith("Répondez STOP pour vous désabonner.", result.Message.Body);
+        Assert.True(result.Notes.LocaleApplied);
+    }
+
+    // On voice the model is told the message is read aloud, and code appends key-press options and the
+    // key-press opt-out rather than reply options and STOP. A draft that does not name the property is
+    // opened with it, because a prerecorded call must say who is calling at its start.
+    [Fact]
+    public async Task ComposeAsync_Voice_AppendsKeyPressOptionsAndOptOutAndNamesTheCaller()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, we would love to show you around.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var fakeClient = new FakeCompletionClient(json);
+        var composer = new OpenAiMessageComposer(fakeClient);
+        ProspectCase prospectCase = SampleProspectCases.Minimal();
+
+        ComposeOutcome outcome = await composer.ComposeAsync(prospectCase, CommunicationChannel.Voice);
+
+        Assert.Contains("read aloud", fakeClient.LastUserPrompt);
+        string body = ComposedOf(outcome).Message.Body!;
+        Assert.StartsWith("This is Oak Ridge Apartments. Hi Taylor", body);
+        Assert.Contains("Press 1 for a visit.", body);
+        Assert.EndsWith("To stop future calls, press 9.", body);
+        Assert.DoesNotContain("Reply", body);
+    }
+
+    // A voice draft that already names the property is not opened with it a second time.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingTheProperty_IsNotPrefixed()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, this is Oak Ridge Apartments.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("Hi Taylor, this is Oak Ridge Apartments.", ComposedOf(outcome).Message.Body);
+    }
+
+    // A title abbreviation's period ("Mr.", "Mrs.", "Dr.", "Ms.") is not a sentence end, so a
+    // property name that follows one in the first sentence is still read as naming the property.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingThePropertyAfterATitleAbbreviation_IsNotPrefixed()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, your agent Mr. Smith at Oak Ridge Apartments will call soon.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("Hi Taylor, your agent Mr. Smith at Oak Ridge Apartments will call soon.", ComposedOf(outcome).Message.Body);
+    }
+
     // A21: the link is a fact, not prose, and code owns every reproducible fact. Code builds it
     // from the property slug and the catalog's path, and the model is told not to write one, so
     // no email can carry a host the record never stated.
@@ -824,6 +923,64 @@ public class OpenAiMessageComposerTests
         Assert.Equal(
             "Hi Jordan, review your renewal offer. We've reserved current pricing for 10 days. If you prefer text, reply YES to get reminders by SMS. Reply 1 for yes; 2 for no. Reply STOP to opt out.",
             ComposedOf(outcome).Message.Body);
+    }
+
+    // A renewal read aloud keeps the price hold but never offers text reminders by reply, which a caller
+    // cannot give on a call.
+    [Fact]
+    public async Task ComposeAsync_RenewalReviewVoice_WritesThePriceHoldAndNoTextReplyOffer()
+    {
+        const string json = """{"subject":null,"body":"Hi Jordan, this is Oak Ridge Apartments.","cta_type":"review_renewal","cta_options":["yes","no"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json), propertyData: SamplePropertyData.OakRidge());
+
+        ComposeOutcome outcome = await composer.ComposeAsync(RenewalCase("A‑204"), CommunicationChannel.Voice);
+
+        Assert.Equal(
+            "Hi Jordan, this is Oak Ridge Apartments. We've reserved current pricing for 10 days. Press 1 for yes; 2 for no. To stop future calls, press 9.",
+            ComposedOf(outcome).Message.Body);
+    }
+
+    // A voice draft whose own words mention a key or a text opt-out still gets the key-press opt-out:
+    // on a call only the set's opt-out sentence counts, so "press 9 to speak with us" or "Reply STOP"
+    // never stands in for it.
+    [Theory]
+    [InlineData("Hi Taylor, this is Oak Ridge Apartments. Press 9 to speak with our office.")]
+    [InlineData("Hi Taylor, this is Oak Ridge Apartments. Reply STOP to opt out.")]
+    public async Task ComposeAsync_VoiceDraftWithAnotherOptOut_StillEndsWithTheKeyPressOptOut(string draft)
+    {
+        string json = $$"""{"subject":null,"body":"{{draft}}","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.EndsWith("To stop future calls, press 9.", ComposedOf(outcome).Message.Body);
+    }
+
+    // Key 9 is the opt-out on a call, so a spoken list stops at eight options and never numbers one 9.
+    [Fact]
+    public async Task ComposeAsync_VoiceWithTenModelOptions_ReadsEightSoKeyNineIsOnlyTheOptOut()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor, this is Oak Ridge Apartments.","cta_type":"reply","cta_options":["a","b","c","d","e","f","g","h","i","j"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(primaryCta: "reply"), CommunicationChannel.Voice);
+
+        NextMessage message = ComposedOf(outcome).Message;
+        Assert.Equal(8, message.Cta!.Options!.Count);
+        Assert.DoesNotContain("9 for", message.Body);
+    }
+
+    // The caller is named at the start: a draft that names the property only later is still opened
+    // with it.
+    [Fact]
+    public async Task ComposeAsync_VoiceDraftNamingThePropertyOnlyLater_IsOpenedWithTheCaller()
+    {
+        const string json = """{"subject":null,"body":"Hi Taylor! We'd love to show you Oak Ridge Apartments.","cta_type":"schedule_tour","cta_options":["a visit"]}""";
+        var composer = new OpenAiMessageComposer(new FakeCompletionClient(json));
+
+        ComposeOutcome outcome = await composer.ComposeAsync(SampleProspectCases.Minimal(), CommunicationChannel.Voice);
+
+        Assert.StartsWith("This is Oak Ridge Apartments. Hi Taylor!", ComposedOf(outcome).Message.Body);
     }
 
     // An offer found by its id on a record with no unit has no link to place the price hold before,

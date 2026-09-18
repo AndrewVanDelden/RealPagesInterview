@@ -3,12 +3,13 @@ using System.Globalization;
 
 namespace Agent.Composition;
 
-// One language's worth of the offline composer's prose (A13). Every string a human
+// One language's worth of the composers' prose (A13), under the BCP 47 primary subtag it is for. Every string a human
 // reads lives in a set like this one, so adding a language is one file plus one row in
 // MessageTemplateCatalog, and the sentence order stays in TemplateMessageComposer where
 // both languages share it. The call-to-action vocabulary itself stays language-neutral in
 // CallToActionCatalog: which call to action exists and where its link points is not prose.
 internal sealed record MessageTemplates(
+    string LanguageTag,
     string GreetingWithName,
     string GreetingWithoutName,
     string SmsWelcome,
@@ -20,6 +21,10 @@ internal sealed record MessageTemplates(
     string SmsOptionsSentence,
     string SmsOption,
     string SmsOptOut,
+    string VoiceCallerOpening,
+    string VoiceCtaSentence,
+    string VoiceOptionsSentence,
+    string VoiceOptOut,
     string EmailCtaSentence,
     string EmailAtProperty,
     string EmailLinkLine,
@@ -48,10 +53,16 @@ internal sealed record MessageTemplates(
     // body and cta.options always carry the same list. The numbered options are joined with a
     // semicolon because a dated tour option carries commas of its own. O(n) in the number of options,
     // a language set's row, the planned slots or the model's list, never input.
-    public string NumberedOptionsSentence(IReadOnlyList<string> options) =>
+    public string NumberedOptionsSentence(IReadOnlyList<string> options) => OptionsSentence(SmsOptionsSentence, options);
+
+    // The same numbered list read aloud: "Press 1 for ..., 2 for ...", since a caller answers with a
+    // key and cannot reply.
+    public string KeyPressOptionsSentence(IReadOnlyList<string> options) => OptionsSentence(VoiceOptionsSentence, options);
+
+    private string OptionsSentence(string sentence, IReadOnlyList<string> options) =>
         string.Format(
             CultureInfo.InvariantCulture,
-            SmsOptionsSentence,
+            sentence,
             string.Join("; ", options.Select((option, index) => string.Format(CultureInfo.InvariantCulture, SmsOption, index + 1, option))));
 
     public IReadOnlyList<string> SmsOptions(string ctaType, bool forProspect) =>

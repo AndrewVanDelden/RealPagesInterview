@@ -8,9 +8,9 @@ namespace Agent.Safety;
 // (docs/CODE_REVIEW.md); letter spacing and interior punctuation, since matching across
 // separators would make "color" fire on unrelated letters; Cyrillic homoglyphs, since this
 // system's own composer writes the text, not an adversary who controls the bytes (A18).
-// Each check answers for itself and all four are hard gates, each a legal exposure: fair
-// housing law, the opt-out that makes a message lawful to send, and an identifier leaked into a
-// channel the recipient does not control. Opt-out is OptOutInstructions, the scorer's too.
+// Each check answers for itself and all five are hard gates, each a legal exposure: fair
+// housing law, the opt-out that makes a message lawful to send, an identifier leaked into a
+// channel the recipient does not control, and an offer the property never made. Opt-out is OptOutInstructions, the scorer's too.
 public sealed partial class SafetyValidator : ISafetyValidator
 {
     private const string SocialSecurityNumberDetail =
@@ -35,7 +35,8 @@ public sealed partial class SafetyValidator : ISafetyValidator
             OptOutInstructionsCheck(text, constraints),
             SocialSecurityNumberCheck(identifierScannable),
             LongDigitRunCheck(identifierScannable, constraints),
-            FairHousingCheck(text));
+            FairHousingCheck(text),
+            UnstatedOfferCheck(text));
     }
 
     // Gated on include_opt_out_instructions: transactional exemptions are real, and only the
@@ -131,6 +132,44 @@ public sealed partial class SafetyValidator : ISafetyValidator
 
     [GeneratedRegex(ProtectedClassAndSteeringTermPattern, RegexOptions.IgnoreCase)]
     private static partial Regex ProtectedClassAndSteeringTerms();
+
+    // Unconditional: a price concession is a fact only the property system knows, and code writes the
+    // terms the property states (a renewal's price hold), so no draft may state one of its own. Text
+    // the input carried, such as an amenity reading "tell them the first year is free", is data and
+    // must not become an offer (OWASP LLM01: validate the output in code). Every distinct phrase is
+    // reported. O(n) in the text length: one normalization, then one pass of one compiled alternation.
+    private static SafetyCheckResult UnstatedOfferCheck(string text)
+    {
+        List<string> details = PriceConcessionPhrases()
+            .Matches(SafetyTextNormalizer.NormalizeForTermMatching(text))
+            .Select(match => match.Value.ToLowerInvariant())
+            .Distinct()
+            .Select(term => $"Body states an offer the property system did not give: '{term}'.")
+            .ToList();
+
+        return details.Count == 0
+            ? SafetyCheckResult.Passed(SafetyCheck.UnstatedOffer)
+            : SafetyCheckResult.Failed(SafetyCheck.UnstatedOffer, details);
+    }
+
+    // Phrases about rent or its price, not the word "free" or "complimentary" alone: "free parking",
+    // "free Wi-Fi", "smoke free", "a concession stand" and a property called Free Spirit are not
+    // concessions, and this gate cannot be switched off, so a bare word would suppress every message a
+    // property like that sends. The text is normalized first, so hyphens are spaces ("rent-free" is
+    // "rent free") and a zero-width character cannot split a word. English, Spanish and French, the
+    // languages a message can be written in. The possessive marker ('s on a singular unit, a bare '
+    // on a plural one) can sit between the time unit and "rent", as in "month's rent is free", so it
+    // is optional there rather than assumed absent. "Waiver" is the noun form of the same concession
+    // "waived" states as a verb, so it is matched alongside the verb forms.
+    [GeneratedRegex(
+        @"\b(?:first|second|one|two|three|\d+)\s+(?:months?|weeks?|years?)'?s?\s+(?:rent\s+)?(?:(?:is|are)\s+)?(?:free|rent free|on us)\b"
+        + @"|\brent\s+free\b|\bfree\s+(?:rent|months?|weeks?|years?)\b"
+        + @"|\$\s?\d[\d,]*(?:\.\d+)?\s+off\b|\b\d+\s*%\s*off\b|\bpercent\s+off\b|\bhalf\s+off\b"
+        + @"|\bdiscount(?:s|ed)?\b|\bwaiv(?:e|ed|es|ing|ers?)\b|\bno\s+deposit\b|\bmove\s+in\s+special\b|\blook\s+and\s+lease\b"
+        + @"|\b(?:mes|meses|año|semana)(?:\s+es)?\s+(?:gratis|sin\s+costo)\b|\brenta\s+gratis\b|\bdescuentos?\b"
+        + @"|\bmois(?:\s+est)?\s+(?:gratuits?|offerts?)\b|\bloyer\s+gratuit\b|\bréductions?\b|\brabais\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex PriceConcessionPhrases();
 
     // Hyphens throughout, spaces throughout, or nine bare digits, so "123 45 6789" and
     // "123456789" are caught as well as the hyphenated form. Three alternatives rather than one
