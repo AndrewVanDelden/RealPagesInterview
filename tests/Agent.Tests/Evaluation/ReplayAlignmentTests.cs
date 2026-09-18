@@ -1,6 +1,7 @@
 using Agent.Common;
 using Agent.Domain;
 using Agent.Evaluation;
+using Agent.Ingest;
 using Agent.Tests.TestSupport;
 using Xunit;
 
@@ -13,8 +14,8 @@ public class ReplayAlignmentTests
     [Fact]
     public void Align_EqualCounts_PairsByPositionWithNothingMeasuredButTheOutput()
     {
-        ProspectCase first = SampleProspectCases.Minimal() with { TaskId = "first" };
-        ProspectCase second = SampleProspectCases.Minimal() with { TaskId = "second" };
+        var first = new SanitizedInput(SampleProspectCases.Minimal() with { TaskId = "first" }, []);
+        var second = new SanitizedInput(SampleProspectCases.Minimal() with { TaskId = "second" }, []);
 
         Result<IReadOnlyList<ScoredRun>> result = ReplayAlignment.Align([first, second], [Output("a"), Output("b")]);
 
@@ -23,14 +24,14 @@ public class ReplayAlignmentTests
             result.Value,
             run =>
             {
-                Assert.Same(first, run.ProspectCase);
+                Assert.Same(first.Case, run.ProspectCase);
                 Assert.Equal("a", run.Output.NextAction.Type);
                 Assert.Null(run.SafetyViolationCount);
                 Assert.Null(run.LatencyMs);
             },
             run =>
             {
-                Assert.Same(second, run.ProspectCase);
+                Assert.Same(second.Case, run.ProspectCase);
                 Assert.Equal("b", run.Output.NextAction.Type);
             });
     }
@@ -47,7 +48,7 @@ public class ReplayAlignmentTests
     [Fact]
     public void Align_CountsDiffer_FailureNamingBothCounts()
     {
-        Result<IReadOnlyList<ScoredRun>> result = ReplayAlignment.Align([SampleProspectCases.Minimal()], [Output("a"), Output("b")]);
+        Result<IReadOnlyList<ScoredRun>> result = ReplayAlignment.Align([new SanitizedInput(SampleProspectCases.Minimal(), [])], [Output("a"), Output("b")]);
 
         Assert.False(result.IsSuccess);
         Assert.Contains("1 record", result.Error);

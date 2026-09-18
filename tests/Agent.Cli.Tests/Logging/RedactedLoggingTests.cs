@@ -163,7 +163,7 @@ public class RedactedLoggingTests
         using var httpClient = new HttpClient(handler);
         using ILoggerFactory factory = RenderingFactory(writer);
         var run = new ScoredRun(
-            ParseRecord(LabeledRecordLine),
+            InputSanitizer.Sanitize(ParseRecord(LabeledRecordLine)),
             new AgentOutput(new NextMessage(CommunicationChannel.Sms, null, null, "hi"), new NextAction("start_cadence")),
             0,
             12.5);

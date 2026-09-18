@@ -1,3 +1,4 @@
+using System.Reflection;
 using Agent.Domain;
 using Agent.Ingest;
 using Agent.Tests.TestSupport;
@@ -264,5 +265,19 @@ public class InputSanitizerTests
         Assert.Equal(["consent_verified"], sanitized.Case.Assertions!.RequiredStates);
         Assert.Equal("book_tour", sanitized.Case.ConstraintsOrEmpty.PrimaryCta);
         Assert.Equal(["assertions.required_states", "assertions.constraints.primary_cta"], sanitized.ChangedFields);
+    }
+
+    // A record marked sanitized is trusted without being re-cleaned wherever it is read
+    // (Evaluator.Score, SemanticJudge). That trust only holds if Sanitize is the only way to
+    // produce one, so the constructor is not public: a caller outside this assembly cannot wrap
+    // a raw case and hand it to a reader as though it had been cleaned.
+    [Fact]
+    public void Constructor_IsNotPublic_SanitizeIsTheOnlyProducerOutsideThisAssembly()
+    {
+        ConstructorInfo primary = Assert.Single(
+            typeof(SanitizedInput).GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+            constructor => constructor.GetParameters().Length == 2);
+
+        Assert.False(primary.IsPublic);
     }
 }

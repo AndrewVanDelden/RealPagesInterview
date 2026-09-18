@@ -563,7 +563,7 @@ public sealed class CliRunner(
         // Built once and carried on RecordRun.Completed: the judge call below and the fold's own
         // scoring pass both need the same case/output/violation-count/latency view of this record,
         // so there is one ScoredRun for it instead of an equal one built again at each use.
-        var scoredRun = new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs);
+        var scoredRun = new ScoredRun(sanitizedInput, result.Output, result.Diagnostics.SafetyViolationCount, latencyMs);
 
         // With --judge the record is graded here, inside its own run and log scope and after its
         // latency is measured, so the grade's call is in neither the latency nor another record's
@@ -628,8 +628,9 @@ public sealed class CliRunner(
             (cases, parseFailures) = ReadInput(inputReader, log);
         }
 
-        // The records are cleaned as a live run cleans them, before the scorer or the judge names them.
-        cases = [.. cases.Select(prospectCase => InputSanitizer.Sanitize(prospectCase).Case)];
+        // The records are cleaned as a live run cleans them, before the scorer or the judge names them,
+        // and each run carries the SanitizedInput itself so neither cleans it a second time.
+        List<SanitizedInput> sanitizedCases = [.. cases.Select(InputSanitizer.Sanitize)];
         int failureCount = parseFailures.Count;
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);
@@ -645,7 +646,7 @@ public sealed class CliRunner(
         }
 
         Result<IReadOnlyList<ScoredRun>> aligned = outputs.IsSuccess
-            ? ReplayAlignment.Align(cases, outputs.Value)
+            ? ReplayAlignment.Align(sanitizedCases, outputs.Value)
             : Result<IReadOnlyList<ScoredRun>>.Failure(outputs.Error);
 
         if (!aligned.IsSuccess)

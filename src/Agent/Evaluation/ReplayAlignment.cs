@@ -1,5 +1,6 @@
 using Agent.Common;
 using Agent.Domain;
+using Agent.Ingest;
 
 namespace Agent.Evaluation;
 
@@ -9,8 +10,9 @@ namespace Agent.Evaluation;
 // record failed at runtime and left no row; either way the pairing is unknown and refused.
 public static class ReplayAlignment
 {
-    // O(n) in the record count.
-    public static Result<IReadOnlyList<ScoredRun>> Align(IReadOnlyList<ProspectCase> cases, IReadOnlyList<AgentOutput> outputs)
+    // O(n) in the record count. The records arrive cleaned, as a live run's do, and are carried
+    // onto each run as they are given rather than cleaned a second time.
+    public static Result<IReadOnlyList<ScoredRun>> Align(IReadOnlyList<SanitizedInput> cases, IReadOnlyList<AgentOutput> outputs)
     {
         if (cases.Count != outputs.Count)
         {
@@ -19,6 +21,6 @@ public static class ReplayAlignment
         }
 
         return Result<IReadOnlyList<ScoredRun>>.Success(
-            cases.Select((prospectCase, index) => new ScoredRun(prospectCase, outputs[index], SafetyViolationCount: null, LatencyMs: null)).ToList());
+            cases.Select((sanitizedCase, index) => new ScoredRun(sanitizedCase, outputs[index], SafetyViolationCount: null, LatencyMs: null)).ToList());
     }
 }

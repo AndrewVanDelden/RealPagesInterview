@@ -1,5 +1,6 @@
 using Agent.Domain;
 using Agent.Evaluation;
+using Agent.Ingest;
 
 namespace Agent.Tests.TestSupport;
 
@@ -15,6 +16,6 @@ internal static class GoldenRuns
     {
         ExpectedOutcome expected = prospectCase.Expected ?? throw new InvalidOperationException($"'{prospectCase.TaskId}' carries no label.");
 
-        return new ScoredRun(prospectCase, new AgentOutput(expected.NextMessage, expected.NextAction), SafetyViolationCount: 0, LatencyMs: null);
+        return new ScoredRun(InputSanitizer.Sanitize(prospectCase), new AgentOutput(expected.NextMessage, expected.NextAction), SafetyViolationCount: 0, LatencyMs: null);
     }
 }

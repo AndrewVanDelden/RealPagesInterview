@@ -4389,3 +4389,53 @@ than cleaning it again, proved by tests asserting each overload's output still c
 unsanitized case would have. Scopes: `InputSanitizer`; `LeasingMessageAgent.RunAsync` and its new
 `SanitizedInput` overload; `IngestNotes.Describe`; `CliRunner`'s record scope. Evidence: `.\test.ps1`
 exits 0 at 100 percent, 128 and 1,073 tests.
+
+**D132 review fix, third round, run and debug fact (2026-09-17).** A follow-up review of the D132 diff
+found a fourth site of the pattern the second round fixed at three: `Evaluator.Score` opened by calling
+`InputSanitizer.Sanitize` on `run.ProspectCase`, cleaning a record both of its callers had already
+cleaned. The second round's remedy, an overload that trusts a `SanitizedInput` the caller hands over, did
+not transfer: the scorer is given a `ScoredRun`, not a case, and the batch path reaches it through
+`RecordFold` while `--replay` reaches it through `ReplayAlignment.Align` and a whole list, so no single
+parameter could carry the cleaned record to both. `SemanticJudge` already read `run.ProspectCase` without
+cleaning it, which made the scorer the one reader of a run that did not trust what it was given. Taken:
+`ScoredRun` now carries the `SanitizedInput` itself rather than a bare `ProspectCase` and exposes the
+cleaned record as `ProspectCase`, so the guarantee the deleted line held has a home in the type instead of
+being dropped, and a run cannot be built from a record nobody cleaned. `ReplayAlignment.Align` takes the
+sanitized records, and `CliRunner` hands its one `SanitizedInput` to the run it builds on both paths
+rather than unwrapping it. Cost, measured rather than read off the diff (Bounded Cost), over the twelve
+`holdout_12.jsonl` records: allocation is deterministic and fell from 12,722 to 5,664 bytes per scored
+record, the removed pass accounting for exactly the 7,058-byte difference; wall-clock on this machine is
+too noisy to quote tightly, the removed pass measuring about 6 to 8 microseconds per record across steady
+runs. The pass it removes was provably a no-op on an already-cleaned record: all twelve came back as the
+same instance with no field reported changed, and cleaning twice equalled cleaning once on all twelve, so
+no scored value moves. Proved test first by a pair of tests over one record whose first name carries a
+zero-width space, the scorer counting the name as covered when the caller cleaned the record and not
+counting it when the caller did not, the second failing before the change with the score the old
+re-cleaning gave it. Scopes: `ScoredRun`; `Evaluator.Score`; `ReplayAlignment.Align`; `CliRunner`'s live
+and `--replay` paths. Evidence: `.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and
+1,083 tests.
+
+**D132 review fix, fourth round, run and debug fact (2026-09-18).** A `/code-review` of PR #47 (eight
+finder angles, each candidate verified) found two survivors. First, `Evaluator.cs` kept its
+`using Agent.Ingest;` after the third round deleted the file's only use of that namespace, the
+`InputSanitizer.Sanitize` call `Evaluator.Score` no longer makes: dead weight, deleted. Second, and the
+substantive one: `SanitizedInput`'s constructor was fully public, so nothing stopped a caller from
+wrapping a raw, unsanitized `ProspectCase` and handing it to `ScoredRun` or `LeasingMessageAgent.RunAsync`
+as though it had been cleaned, the exact shape of mistake the last three rounds fixed, moved one type-hop
+away from the compiler's reach. Taken: the constructor is `internal`, proved by a reflection test
+(`Constructor_IsNotPublic_SanitizeIsTheOnlyProducerOutsideThisAssembly`) that fails against the public
+constructor and passes against the internal one; `Agent.csproj` grants `InternalsVisibleTo` to
+`Agent.Tests`, which several existing tests need to build fixtures that deliberately do not represent a
+cleaned record (D132's own third-round tests among them). The grant is assembly-wide, not per-member: it
+also exposed `SendSlotTable`'s existing `internal` `Create` overload to `Agent.Tests`, making
+`SendSlotTableTests.Create_NoRows_IsATableWhereEveryKeyFallsToTheChannelHour`'s `Create([])` call
+ambiguous between it and the public overload; fixed by typing the call's argument explicitly
+(`Array.Empty<SendSlotRow>()`), an unrelated collateral fix the `internal` change forced, not a
+scope expansion chosen on its own. Scope accepted, not closed: `internal` blocks a different assembly
+(`Agent.Cli`, or a future one) from constructing `SanitizedInput` directly, but nothing stops code inside
+`Agent.dll` itself (`Agent.Evaluation`, where the third round's bug lived) from doing so; closing that
+would mean nesting `SanitizedInput` inside `InputSanitizer` so its constructor is truly private, which
+touches the type's qualification at every one of its fourteen references across `src/` and `tests/` for a
+finding with no live exploit, so it is left for the next site rather than done here (Least Code, Scope
+Discipline). Scopes: `SanitizedInput`; `Agent.csproj`; `Evaluator.cs`; `SendSlotTableTests.cs`. Evidence:
+`.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and 1,084 tests.
