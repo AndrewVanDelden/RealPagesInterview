@@ -4156,7 +4156,8 @@ inspected, which moved the latency labels off the bars; `run-report.ps1 -Compose
 `holdout_12.jsonl` wrote all seven files, exit code 0, and opened the page. Two fixture mistakes in the
 first Python tests were found by running them and fixed in the fixtures, not the code. Assumptions: none.
 
-**Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.uns\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
+**Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.
+uns\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
 
 **D126 review fixes, run and debug fact (2026-09-16).** A second cold review of the D126 diff found five
 more problems, each fixed test first. `_read_json` caught only `json.JSONDecodeError`; a directory or an
@@ -4501,10 +4502,8 @@ allows the UTC fallback on. Nothing here is fitted. Evidence: `runs\step99c\out.
 instruction, after the scoring above showed four failures were the reference-time gap: re-run with
 `--now` pinned to the key's frame, Monday 2026-03-09. The key states the day and not the hour, and the
 hour decides four records, so it was read off the labels rather than guessed. Of the 41 dated labels
-38 expect Tuesday 2026-03-10, two (33, 39) expect Monday 09:00 and one expects Thursday; the key's
-tour options, Thursday 2026-03-12 and Friday 2026-03-13, are exactly two days after a 03-10 send,
-which is what D108 computes; and record 6's missed tour is 15:00 on the Monday, which the key calls
-yesterday relative to the send. So the oracle's now is Monday after 15:00 local, and no single instant
+38 expect Tuesday 2026-03-10, two (33, 39) expect Monday 09:00 and one expects Thursday; and record
+6's missed tour is 15:00 on the Monday, which the key calls yesterday relative to the send. So the oracle's now is Monday after 15:00 local, and no single instant
 can also satisfy 33 and 39, which need a now before 09:00 that Monday. Two runs were made rather than
 one: `runs\step99d` at 2026-03-09T12:00:00-06:00, where record 6's tour was still three hours in the
 future and no-opped, 21 of 50 on the program's own evaluator; then `runs\step99e` at
@@ -4520,13 +4519,19 @@ instant rather than set aside, 39 of 50 pass. The eleven failures are 8, 12, 17,
 condition is met but the strict rule is not: record 8 speaks its opt-out as "press 9" on voice, which
 is what D128 was for, but answers `start_cadence` where the label says `follow_up_in_days`; record 36
 states `input.timezone (unrecognized, UTC used)`, which the key allows, and the fallback then moves
-its local calendar day, so it sends 2026-03-11T09:30Z for a label of 2026-03-10T09:30-06:00. Seven are
+its local calendar day, so it sends 2026-03-11T09:30Z for a label of 2026-03-10T09:30-06:00. Eight are
 product findings that no frame explains: 12 sends 10:00 for 09:00, 17 and 18 send 09:20 for 09:00 and
 32 sends 09:00 for 09:05, four send-slot times the key does not use; 29 has a past `move_date_target`,
 is planned as branch `no_move_date` with `horizon_days` -128, answers `follow_up_in_days` where the
 label says `reset_cadence`, and its body says "before your move in November 2025", the upcoming-move
 language the key forbids; 30 answers a 22-month horizon with a 3-day follow-up where the key wants
-longer; and 31, masked at the September frame and visible here, takes `last_interaction` 2026-04-01,
+longer; the tour slots an invitation offers are Wednesday 2026-03-11 and Thursday 2026-03-12 where the
+key names Thursday 2026-03-12 and Friday 2026-03-13, because `TourSlots.For` counts its two-day lead
+from the run's local reference date, 2026-03-09, while the key counts from the message's send date,
+2026-03-10, and the two rules differ by a day whenever the send rolls past the run's own day; that
+one-day gap is what the Payload check reports, 25 of the 41 messaged records carrying a call-to-action
+payload the label does not match and the check reading 17 of 41, so it is one finding and not
+twenty-five. And 31, masked at the September frame and visible here, takes `last_interaction` 2026-04-01,
 three weeks after the reference time, as its schedule floor, so it sends 2026-04-01T09:00-06:00 for a
 label of 2026-03-10T09:00-06:00 and offers tours in April, which is the key's stated fail for that
 record, and no ingest note or diagnostic flags the inconsistency, which is the other half of its
@@ -4535,3 +4540,17 @@ renewal emails, and 6 and 38 are answered apart, the tour that has happened resc
 still to come left alone. Every grep the key asks for is clean across all six output files. Nothing is
 fitted here. Evidence: `runs\step99d\eval.txt`; `runs\step99e\out.json`, `diag.json`, `eval.txt` and
 `report.html` against `probe50answerkey.md`. Assumptions: A19.
+
+**Correction to the fact above, the tour-slot claim (2026-09-18).** The paragraph above justified the
+pinned frame partly on the claim that the key's Thursday and Friday tour options are two days after a
+2026-03-10 send, "which is what D108 computes". The second half is wrong and was written from D108's
+addendum rather than from the run. `TourSlots.For` counts its two-day lead from the run's local
+reference date and never offers a day on or before the send date, which its comment states and gives
+its reason for: the reference date is what both labeled sets fit. At this frame that yields Wednesday
+2026-03-11 and Thursday 2026-03-12, not the key's Thursday and Friday, and the run's own output says
+so on every tour invitation. The frame conclusion is unchanged, since it rests on the 38 Tuesday
+labels and on record 6's 15:00 tour, neither of which involves tour slots. The correction adds the
+eighth product finding to the list above and explains the Payload column: 25 of the 41 messaged
+records differ from their label's call-to-action payload, 24 of them by this one-day gap and record 12
+by a link the label does not carry. Evidence: `src/Agent/Decisions/TourSlots.cs` lines 36 to 38;
+`runs\step99e\out.json` against the labels, compared field by field. Assumptions: none.
