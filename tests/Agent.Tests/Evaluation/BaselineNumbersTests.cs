@@ -1,5 +1,6 @@
 using Agent.Domain;
 using Agent.Evaluation;
+using Agent.Ingest;
 using Agent.Orchestration;
 using Agent.Tests.TestSupport;
 using Xunit;
@@ -61,8 +62,9 @@ public class BaselineNumbersTests
 
         foreach (ProspectCase prospectCase in cases)
         {
-            AgentRunResult result = await agent.RunAsync(prospectCase, now);
-            runs.Add(new ScoredRun(prospectCase, result.Output, result.Diagnostics.SafetyViolationCount, LatencyMs: null));
+            SanitizedInput sanitized = InputSanitizer.Sanitize(prospectCase);
+            AgentRunResult result = await agent.RunAsync(sanitized, now);
+            runs.Add(new ScoredRun(sanitized, result.Output, result.Diagnostics.SafetyViolationCount, LatencyMs: null));
         }
 
         IReadOnlyList<RecordScore> unparsedRows = RealAgentFactory.ReadFailures(fileName).Select(RecordScore.DidNotParse).ToList();

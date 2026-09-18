@@ -2,6 +2,7 @@ using System.Text.Json;
 using Agent.Composition;
 using Agent.Domain;
 using Agent.Evaluation;
+using Agent.Ingest;
 using Agent.Tests.TestSupport;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -46,7 +47,7 @@ public class SemanticJudgeTests
                 new Cta("schedule_tour", ["Thu", "Fri"], null)),
             new NextAction("start_cadence", "prospect_welcome_short_horizon"));
 
-        return new ScoredRun(prospectCase, output, SafetyViolationCount: 0, LatencyMs: 5);
+        return new ScoredRun(new SanitizedInput(prospectCase, []), output, SafetyViolationCount: 0, LatencyMs: 5);
     }
 
     private static Scorecard ScorecardFor(ScoredRun run) => new Evaluator().Evaluate([run]);
@@ -68,7 +69,7 @@ public class SemanticJudgeTests
     [Fact]
     public async Task JudgeAsync_RecordHasNoExpectedOutcome_MeasuresNothingAndDoesNotCall()
     {
-        ScoredRun run = new(SampleProspectCases.Minimal(), Run().Output, 0, 5);
+        ScoredRun run = new(new SanitizedInput(SampleProspectCases.Minimal(), []), Run().Output, 0, 5);
         var fakeClient = new FakeCompletionClient(BothMatchJson);
         var judge = new SemanticJudge(fakeClient);
 
@@ -209,7 +210,7 @@ public class SemanticJudgeTests
         var noMessage = new FakeCompletionClient(BothMatchJson);
         ScoredRun suppressed = run with
         {
-            ProspectCase = run.ProspectCase with { Expected = new ExpectedOutcome(null, new NextAction("no_op", Reason: "no_contact_consent")) },
+            SanitizedCase = new SanitizedInput(run.ProspectCase with { Expected = new ExpectedOutcome(null, new NextAction("no_op", Reason: "no_contact_consent")) }, []),
             Output = new AgentOutput(new NextMessage(CommunicationChannel.None), new NextAction("no_op", Reason: "no_contact_consent")),
         };
 
@@ -291,10 +292,12 @@ public class SemanticJudgeTests
         ScoredRun run = Run();
         run = run with
         {
-            ProspectCase = run.ProspectCase with
-            {
-                Expected = new ExpectedOutcome(null, new NextAction("start_cadence", "prospect_welcome_short_horizon")),
-            },
+            SanitizedCase = new SanitizedInput(
+                run.ProspectCase with
+                {
+                    Expected = new ExpectedOutcome(null, new NextAction("start_cadence", "prospect_welcome_short_horizon")),
+                },
+                []),
             Output = new AgentOutput(null, run.Output.NextAction),
         };
         var fakeClient = new FakeCompletionClient(BothMatchJson);
@@ -392,7 +395,7 @@ public class SemanticJudgeTests
     [Fact]
     public async Task GradeAsync_RecordHasNoLabel_MakesNoCallAndCostsNothing()
     {
-        ScoredRun run = new(SampleProspectCases.Minimal(), Run().Output, 0, 5);
+        ScoredRun run = new(new SanitizedInput(SampleProspectCases.Minimal(), []), Run().Output, 0, 5);
         var fakeClient = new FakeCompletionClient(BothMatchJson);
 
         JudgeVerdict verdict = await new SemanticJudge(fakeClient).GradeAsync(run);

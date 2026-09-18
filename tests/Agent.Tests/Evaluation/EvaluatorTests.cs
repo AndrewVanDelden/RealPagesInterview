@@ -1,5 +1,6 @@
 using Agent.Domain;
 using Agent.Evaluation;
+using Agent.Ingest;
 using Agent.Tests.TestSupport;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -47,7 +48,7 @@ public class EvaluatorTests
         };
 
     private static ScoredRun Run(ProspectCase prospectCase, NextMessage? message, NextAction? action = null, int? safetyViolationCount = 0, double? latencyMs = 1) =>
-        new(prospectCase, new AgentOutput(message, action ?? BaselineAction), safetyViolationCount, latencyMs);
+        new(new SanitizedInput(prospectCase, []), new AgentOutput(message, action ?? BaselineAction), safetyViolationCount, latencyMs);
 
     private static RecordScore ScoreOf(ScoredRun run) => Evaluator.Evaluate([run]).RecordScores[0];
 
@@ -765,7 +766,40 @@ public class EvaluatorTests
             Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
         };
 
+        RecordScore score = ScoreOf(Run(InputSanitizer.Sanitize(prospectCase).Case, Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
+
+        Assert.Equal(1.0, score.PersonalizationScore);
+    }
+
+    // A run carries the record its caller already cleaned, so the scorer reads that case as it is
+    // given rather than cleaning it a second time. A zero-width space inside the first name is the
+    // difference: cleaning removes it and leaves one word the greeting covers, while the name as
+    // given tokenizes as two words the greeting covers neither of.
+    [Fact]
+    public void Evaluate_CaseTheCallerDidNotClean_IsScoredAsItWasGiven()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "Tay\u200Blor", propertyName: null) with
+        {
+            Expected = BaselineExpected(),
+            Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
+        };
+
         RecordScore score = ScoreOf(Run(prospectCase, Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
+
+        Assert.Equal(0.0, score.PersonalizationScore);
+    }
+
+    // The same record cleaned, as every caller that builds a run hands it over: one word, covered.
+    [Fact]
+    public void Evaluate_CaseTheCallerCleaned_ScoresTheCleanedName()
+    {
+        ProspectCase prospectCase = SampleProspectCases.Minimal(firstName: "Tay\u200Blor", propertyName: null) with
+        {
+            Expected = BaselineExpected(),
+            Thresholds = new CaseThresholds(2000, 1.0, 0.9, 0),
+        };
+
+        RecordScore score = ScoreOf(Run(InputSanitizer.Sanitize(prospectCase).Case, Message(CommunicationChannel.Sms, "Hi Taylor, welcome to Oak Ridge Apartments. Reply STOP to opt out.")));
 
         Assert.Equal(1.0, score.PersonalizationScore);
     }

@@ -85,9 +85,10 @@ public sealed class Evaluator(ILogger<Evaluator>? logger = null)
 
     private static RecordScore Score(ScoredRun run)
     {
-        // The facts are read from the record as the agent read it, cleaned; the label is not input and
-        // the cleaning leaves it as it is.
-        ProspectCase prospectCase = InputSanitizer.Sanitize(run.ProspectCase).Case;
+        // The facts are read from the record as the agent read it, cleaned by whoever built the run
+        // (ScoredRun carries the SanitizedInput, so there is no uncleaned record to read here); the
+        // label is not input and the cleaning left it as it is.
+        ProspectCase prospectCase = run.ProspectCase;
         ExpectedOutcome? expected = prospectCase.Expected;
 
         if (expected is null)
