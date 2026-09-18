@@ -1,7 +1,6 @@
 using Agent.Common;
 using Agent.Composition;
 using Agent.Domain;
-using Agent.Ingest;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
 

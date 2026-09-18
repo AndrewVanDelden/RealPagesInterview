@@ -8,7 +8,21 @@ using Agent.Domain;
 namespace Agent.Ingest;
 
 // A record with every text field cleaned, and the path of each field the cleaning changed.
-public sealed record SanitizedInput(ProspectCase Case, IReadOnlyList<string> ChangedFields);
+// The constructor is internal: Sanitize below is the only producer outside this assembly's
+// tests, so a reader that trusts a SanitizedInput without cleaning it again is trusting a
+// record that was actually cleaned, not one a caller merely claims was.
+public sealed record SanitizedInput
+{
+    public ProspectCase Case { get; }
+
+    public IReadOnlyList<string> ChangedFields { get; }
+
+    internal SanitizedInput(ProspectCase caseValue, IReadOnlyList<string> changedFields)
+    {
+        Case = caseValue;
+        ChangedFields = changedFields;
+    }
+}
 
 // Every text field of an input record is cleaned where it enters, before any decision or message reads
 // it (OWASP Input Validation Cheat Sheet: validate as early as possible, normalize first, allowlist

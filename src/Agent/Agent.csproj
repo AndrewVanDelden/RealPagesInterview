@@ -5,4 +5,11 @@
     <PackageReference Include="OpenAI" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Agent.Tests constructs SanitizedInput directly to set up fixtures (including ones that
+         deliberately do not represent a cleaned record), which its internal constructor would
+         otherwise block from outside this assembly. -->
+    <InternalsVisibleTo Include="Agent.Tests" />
+  </ItemGroup>
+
 </Project>

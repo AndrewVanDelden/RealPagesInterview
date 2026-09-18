@@ -108,7 +108,7 @@ public class SendSlotTableTests
     [Fact]
     public void Create_NoRows_IsATableWhereEveryKeyFallsToTheChannelHour()
     {
-        SendSlotTable table = SendSlotTable.Create([]).Value;
+        SendSlotTable table = SendSlotTable.Create(Array.Empty<SendSlotRow>()).Value;
 
         Assert.Empty(table.Rows);
         Assert.False(table.Find("prospect", "new", CommunicationChannel.Email).HasValue);

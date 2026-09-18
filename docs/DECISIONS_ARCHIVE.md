@@ -4412,5 +4412,30 @@ no scored value moves. Proved test first by a pair of tests over one record whos
 zero-width space, the scorer counting the name as covered when the caller cleaned the record and not
 counting it when the caller did not, the second failing before the change with the score the old
 re-cleaning gave it. Scopes: `ScoredRun`; `Evaluator.Score`; `ReplayAlignment.Align`; `CliRunner`'s live
-and `--replay` paths. Evidence: `.	est.ps1` exits 0 at 100 percent line, branch and method, 128 and
+and `--replay` paths. Evidence: `.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and
 1,083 tests.
+
+**D132 review fix, fourth round, run and debug fact (2026-09-18).** A `/code-review` of PR #47 (eight
+finder angles, each candidate verified) found two survivors. First, `Evaluator.cs` kept its
+`using Agent.Ingest;` after the third round deleted the file's only use of that namespace, the
+`InputSanitizer.Sanitize` call `Evaluator.Score` no longer makes: dead weight, deleted. Second, and the
+substantive one: `SanitizedInput`'s constructor was fully public, so nothing stopped a caller from
+wrapping a raw, unsanitized `ProspectCase` and handing it to `ScoredRun` or `LeasingMessageAgent.RunAsync`
+as though it had been cleaned, the exact shape of mistake the last three rounds fixed, moved one type-hop
+away from the compiler's reach. Taken: the constructor is `internal`, proved by a reflection test
+(`Constructor_IsNotPublic_SanitizeIsTheOnlyProducerOutsideThisAssembly`) that fails against the public
+constructor and passes against the internal one; `Agent.csproj` grants `InternalsVisibleTo` to
+`Agent.Tests`, which several existing tests need to build fixtures that deliberately do not represent a
+cleaned record (D132's own third-round tests among them). The grant is assembly-wide, not per-member: it
+also exposed `SendSlotTable`'s existing `internal` `Create` overload to `Agent.Tests`, making
+`SendSlotTableTests.Create_NoRows_IsATableWhereEveryKeyFallsToTheChannelHour`'s `Create([])` call
+ambiguous between it and the public overload; fixed by typing the call's argument explicitly
+(`Array.Empty<SendSlotRow>()`), an unrelated collateral fix the `internal` change forced, not a
+scope expansion chosen on its own. Scope accepted, not closed: `internal` blocks a different assembly
+(`Agent.Cli`, or a future one) from constructing `SanitizedInput` directly, but nothing stops code inside
+`Agent.dll` itself (`Agent.Evaluation`, where the third round's bug lived) from doing so; closing that
+would mean nesting `SanitizedInput` inside `InputSanitizer` so its constructor is truly private, which
+touches the type's qualification at every one of its fourteen references across `src/` and `tests/` for a
+finding with no live exploit, so it is left for the next site rather than done here (Least Code, Scope
+Discipline). Scopes: `SanitizedInput`; `Agent.csproj`; `Evaluator.cs`; `SendSlotTableTests.cs`. Evidence:
+`.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and 1,084 tests.
