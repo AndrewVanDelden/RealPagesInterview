@@ -4496,3 +4496,42 @@ record 36 states `input.timezone (unrecognized, UTC used)` in its ingest notes, 
 allows the UTC fallback on. Nothing here is fitted. Evidence: `runs\step99c\out.json`, `diag.json`,
 `eval.txt` and `run.log` against `probe50answerkey.md`; the four `lease_end_date_in_past` lines in
 `run.log`. Assumptions: A19.
+
+**Run and debug fact, the step 99 runs at the answer key's frame (2026-09-17).** The owner's
+instruction, after the scoring above showed four failures were the reference-time gap: re-run with
+`--now` pinned to the key's frame, Monday 2026-03-09. The key states the day and not the hour, and the
+hour decides four records, so it was read off the labels rather than guessed. Of the 41 dated labels
+38 expect Tuesday 2026-03-10, two (33, 39) expect Monday 09:00 and one expects Thursday; the key's
+tour options, Thursday 2026-03-12 and Friday 2026-03-13, are exactly two days after a 03-10 send,
+which is what D108 computes; and record 6's missed tour is 15:00 on the Monday, which the key calls
+yesterday relative to the send. So the oracle's now is Monday after 15:00 local, and no single instant
+can also satisfy 33 and 39, which need a now before 09:00 that Monday. Two runs were made rather than
+one: `runs\step99d` at 2026-03-09T12:00:00-06:00, where record 6's tour was still three hours in the
+future and no-opped, 21 of 50 on the program's own evaluator; then `runs\step99e` at
+2026-03-09T18:00:00-06:00, which is the frame the labels describe. `step99e`: exit 0, 50 records,
+`Checks: Channel 50/50, Day 37/41, Hour 36/41, Action 44/50, OptOut 41/41, CTA 41/41, Payload 17/41,
+Lang 38/38, Safety 50/50, Personalization 35/35, ActionSem 44/50, BodySem 25/41`; `Overall: 22/50
+passed` against `step99c`'s 8 of 50 at the run's own time; p95 4,327 ms against the 2,000 ms budget,
+FAIL; batch 67,940 ms; product 42 calls, 42 completed, 22,013 input and 3,222 output tokens; judge 50
+calls, 50 completed. Scored against the key by its own rule, now with `send_at` compared as an exact
+instant rather than set aside, 39 of 50 pass. The eleven failures are 8, 12, 17, 18, 29, 30, 31, 32,
+33, 36 and 39, in three groups. Two are not judgeable at any one frame: 33 and 39 want the Monday
+09:00 send that the other 38 labels rule out. Two are the key's own Discussion rows, where its stated
+condition is met but the strict rule is not: record 8 speaks its opt-out as "press 9" on voice, which
+is what D128 was for, but answers `start_cadence` where the label says `follow_up_in_days`; record 36
+states `input.timezone (unrecognized, UTC used)`, which the key allows, and the fallback then moves
+its local calendar day, so it sends 2026-03-11T09:30Z for a label of 2026-03-10T09:30-06:00. Seven are
+product findings that no frame explains: 12 sends 10:00 for 09:00, 17 and 18 send 09:20 for 09:00 and
+32 sends 09:00 for 09:05, four send-slot times the key does not use; 29 has a past `move_date_target`,
+is planned as branch `no_move_date` with `horizon_days` -128, answers `follow_up_in_days` where the
+label says `reset_cadence`, and its body says "before your move in November 2025", the upcoming-move
+language the key forbids; 30 answers a 22-month horizon with a 3-day follow-up where the key wants
+longer; and 31, masked at the September frame and visible here, takes `last_interaction` 2026-04-01,
+three weeks after the reference time, as its schedule floor, so it sends 2026-04-01T09:00-06:00 for a
+label of 2026-03-10T09:00-06:00 and offers tours in April, which is the key's stated fail for that
+record, and no ingest note or diagnostic flags the inconsistency, which is the other half of its
+condition. Four failures the September frame produced are gone, as predicted: 5, 21 and 49 send their
+renewal emails, and 6 and 38 are answered apart, the tour that has happened rescheduled and the tour
+still to come left alone. Every grep the key asks for is clean across all six output files. Nothing is
+fitted here. Evidence: `runs\step99d\eval.txt`; `runs\step99e\out.json`, `diag.json`, `eval.txt` and
+`report.html` against `probe50answerkey.md`. Assumptions: A19.
