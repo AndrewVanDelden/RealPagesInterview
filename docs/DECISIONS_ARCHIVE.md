@@ -4464,3 +4464,35 @@ been read record by record. `runs\step99c` is git ignored, so the files live onl
 Evidence: `.\test.ps1` before the run exits 0 at 100 percent line, branch and method, 128 and 1,084
 tests; `runs\step99c\eval.txt`, `diag.json`, `out.json`, `review_queue.json`, `run.log` and
 `report.html`. Assumptions: A19.
+
+**Run and debug fact, the step 99 rerun scored against the answer key (2026-09-17).** `runs\step99c`
+read record by record against `probe50answerkey.md` under the same rule the 2026-09-16 scoring used:
+channel, local time and offset, call-to-action type, next-action type, and the body constraint in the
+key's table, with dates set aside because the key's frame is Monday 2026-03-09 and the run used its
+own time. 39 of 50 pass, against 30 of 50 for `step99b`. The eleven failures are 5, 8, 12, 17, 18,
+21, 29, 30, 32, 38 and 49, and they fall in two groups. Four are artifacts of the reference-time gap,
+not rules: records 5, 21 and 49 are renewal-window residents whose `lease_end_date` is 2026-06-05,
+2026-05-31 and 2026-06-30, after the key's frame but before the run's own day, so the escalation that
+record 37 is meant to earn, `lease_end_date_in_past`, fires on all four renewal records and suppresses
+three messages the key expects; and record 38's missed tour, 2026-03-14, is next Saturday at the key's
+frame and six months past at the run's, so treating it as a real no-show is right for the day it ran.
+Seven are frame independent. Four are send-slot times that differ from the key with the date set
+aside: 12 sends 10:00 for 09:00, 17 and 18 send 09:20 for 09:00, 32 sends 09:00 for 09:05. Record 29
+has a `move_date_target` of 2025-11-01 and the planner answers with branch `no_move_date` and
+`horizon_days` -320, which gives `follow_up_in_days` where the key wants `reset_cadence`, and the
+composer, given the date, writes "a move-in date of November 1, 2025" into an sms; the branch name and
+the negative horizon disagree, and nothing stops a past date reaching a body. Record 30 answers a
+22-month horizon with a 3-day follow-up where the key wants longer. Record 8's body is now a spoken
+script that ends "press 9", which is what D128 was for, but its action is `start_cadence` where the
+key expects `follow_up_in_days`. Eleven of the eighteen failures the 2026-09-16 scoring found are
+gone: 14, 20, 22, 37, 46 and 47 are no longer messaged, 28 no longer carries the injected "first year
+is free", 41 is French throughout including its options and opt-out, 42 falls back to English with
+`locale_applied` false in diagnostics, 45 no longer echoes the emoji, and 8's body is fixed. Records
+33 and 39, unjudgeable at the previous run, now pass what can be judged: 33 sends at -05:00 and 39 the
+next morning. Every grep the key asks for is clean in all six output files: no `123-45-6789`, no
+`720-555-0142` or `diego.r@example.com`, no gate code `4471`, no `0001-01-01`, no angle bracket in any
+body; the Arabic name round-trips byte for byte; both rows of the duplicated task id are written; and
+record 36 states `input.timezone (unrecognized, UTC used)` in its ingest notes, which is what the key
+allows the UTC fallback on. Nothing here is fitted. Evidence: `runs\step99c\out.json`, `diag.json`,
+`eval.txt` and `run.log` against `probe50answerkey.md`; the four `lease_end_date_in_past` lines in
+`run.log`. Assumptions: A19.
