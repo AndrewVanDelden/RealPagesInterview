@@ -4439,3 +4439,28 @@ touches the type's qualification at every one of its fourteen references across 
 finding with no live exploit, so it is left for the next site rather than done here (Least Code, Scope
 Discipline). Scopes: `SanitizedInput`; `Agent.csproj`; `Evaluator.cs`; `SendSlotTableTests.cs`. Evidence:
 `.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and 1,084 tests.
+
+**Run and debug fact, the step 99 rerun after D127 to D132 (2026-09-17).** D127 to D132 were all
+fitted to the `runs\step99b` run and none had been measured, so D120's command ran once more on the
+same file, `TrueTest.jsonl`, 50 lines, md5 `cd7f7070e2850bf63f7c7f13160804a9`, unchanged since the
+previous run, through `run-report.ps1` into `runs\step99c` with `--composer openai` and `--judge`.
+Exit code 0, all 50 records answered, no line refused. `Checks: Channel 46/50, Day 0/41, Hour 0/41,
+Action 36/50, OptOut 39/39, CTA 38/38, Payload 15/39, Lang 36/36, Safety 50/50, Personalization
+32/32, ActionSem 35/50, BodySem 6/38`; `Overall: 8/50 passed`, against `step99b`'s 2 of 50. Latency
+p95 6,093 ms against the records' 2,000 ms budget, FAIL, as before; batch 68,583 ms; product 40
+calls, 40 completed, 20,930 input and 2,997 output tokens, no call cut short at the 60-second budget;
+judge 50 calls, 50 completed, 23,385 input and 4,692 output tokens. Eight fewer product calls than
+`step99b`'s 48, because records answered with no message went from 2 to 11 under D125 and D131, which
+is also why every message-side denominator fell: OptOut 42 to 39, CTA 41 to 38, Lang 45 to 36,
+Personalization 35 to 32, BodySem 41 to 38, Payload 47 to 39. Three checks moved up as counts and as
+rates: Channel 43 to 46, Action 33 to 36, ActionSem 33 to 35, and Personalization and Lang now pass
+every record they measure. One moved down as a rate and is the first thing the record-by-record read
+owes an answer: Payload was 24 of 47, 51 percent, and is 15 of 39, 38 percent, so the nine records
+that stopped being messaged do not account for it on their own. Day and Hour stay at 0 of 41 for the
+reason D120 recorded: the answer key's frame is Monday 2026-03-09 and the run used its own time,
+2026-09-17, so both checks measure that gap rather than the rules. This run has not yet been scored
+against `probe50answerkey.md`, which is the number that replaces `step99b`'s 30 of 50, and it has not
+been read record by record. `runs\step99c` is git ignored, so the files live only on this machine.
+Evidence: `.\test.ps1` before the run exits 0 at 100 percent line, branch and method, 128 and 1,084
+tests; `runs\step99c\eval.txt`, `diag.json`, `out.json`, `review_queue.json`, `run.log` and
+`report.html`. Assumptions: A19.
