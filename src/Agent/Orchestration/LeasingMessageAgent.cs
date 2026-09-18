@@ -2,6 +2,7 @@ using Agent.Common;
 using Agent.Composition;
 using Agent.Decisions;
 using Agent.Domain;
+using Agent.Ingest;
 using Agent.Safety;
 using Microsoft.Extensions.Logging;
 
@@ -38,7 +39,18 @@ public sealed class LeasingMessageAgent(
     // "TaskId=x TaskId=x". A library caller that wants correlation opens its own scope.
     //
     // referenceTime is the run's clock: a value the caller passes, never read here.
-    public async Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default)
+    // Every input field is cleaned before anything reads it, whoever called the agent: the same
+    // cleaning CliRunner applies, and cleaning an already cleaned record changes nothing.
+    public Task<AgentRunResult> RunAsync(ProspectCase prospectCase, DateTimeOffset referenceTime, CancellationToken cancellationToken = default) =>
+        GuardedRunAsync(InputSanitizer.Sanitize(prospectCase).Case, referenceTime, cancellationToken);
+
+    // A caller that already holds this record's SanitizedInput (CliRunner, which sanitizes once for
+    // its own TaskId log scope and its ingest-notes line) hands it straight to this overload, so the
+    // record is not cleaned a second time.
+    public Task<AgentRunResult> RunAsync(SanitizedInput sanitizedInput, DateTimeOffset referenceTime, CancellationToken cancellationToken = default) =>
+        GuardedRunAsync(sanitizedInput.Case, referenceTime, cancellationToken);
+
+    private async Task<AgentRunResult> GuardedRunAsync(ProspectCase sanitized, DateTimeOffset referenceTime, CancellationToken cancellationToken)
     {
         // Sprint 8's audit named this gap by name: without a catch here, only CliRunner
         // (which happens to wrap agent.RunAsync in its own try/catch) ever sees an
@@ -50,7 +62,7 @@ public sealed class LeasingMessageAgent(
         // Error would make a clean shutdown indistinguishable from a real crash.
         try
         {
-            return await RunUnguardedAsync(prospectCase, referenceTime, cancellationToken);
+            return await RunUnguardedAsync(sanitized, referenceTime, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -65,11 +77,32 @@ public sealed class LeasingMessageAgent(
 
         // Step 1: select the contactable channel, consent first. No option value means
         // no preferred channel is consented, which is a no_op with its reason and nothing
-        // else runs.
+        // else runs, unless a contact rule below says the record needs a person's judgment
+        // regardless: suppression-for-no-consent and escalation-for-regulated-content are
+        // different facts, and one must not silently answer for the other.
         Option<CommunicationChannel> contactableChannel = channelSelector.Select(prospectCase.ChannelPreferences, prospectCase.ConsentOrEmpty);
+
+        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
+        // know it, the zone of the state its city_interest names.
+        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
+        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
 
         if (!contactableChannel.HasValue)
         {
+            Option<NextAction> ruledWithNoConsent = ContactRules.Check(prospectCase, referenceTime, referenceDate);
+            if (ruledWithNoConsent.HasValue && ruledWithNoConsent.Value.Type == ActionTypes.EscalateToHuman)
+            {
+                log.LogInformation("Suppressing message: contact rule {Reason}.", ruledWithNoConsent.Value.Reason);
+                return Suppressed(
+                    prospectCase,
+                    SuppressionReason.EscalatedToHuman,
+                    ruledWithNoConsent.Value,
+                    actionPlan: null,
+                    modelCost: null,
+                    networkRetries: null,
+                    renewalOfferLoaded: RequiredStateVerdict.NotEvaluated);
+            }
+
             log.LogInformation("Suppressing message: prospect is not contactable.");
             return Suppressed(
                 prospectCase,
@@ -83,6 +116,23 @@ public sealed class LeasingMessageAgent(
 
         CommunicationChannel channel = contactableChannel.Value;
 
+        // Step 1b: a record some rule says must not be messaged is answered here, before anything is
+        // planned or composed: sent nothing, or handed to a person.
+        Option<NextAction> ruled = ContactRules.Check(prospectCase, referenceTime, referenceDate);
+        if (ruled.HasValue)
+        {
+            bool escalated = ruled.Value.Type == ActionTypes.EscalateToHuman;
+            log.LogInformation("Suppressing message: contact rule {Reason}.", ruled.Value.Reason);
+            return Suppressed(
+                prospectCase,
+                escalated ? SuppressionReason.EscalatedToHuman : SuppressionReason.DoNotContact,
+                ruled.Value,
+                actionPlan: null,
+                modelCost: null,
+                networkRetries: null,
+                renewalOfferLoaded: RequiredStateVerdict.NotEvaluated);
+        }
+
         // renewal_offer_loaded is earned by finding the record's renewal offer in the property
         // data, the stand-in for the property management system, and not earned when the run has
         // no property data or it holds no offer for this record.
@@ -92,10 +142,6 @@ public sealed class LeasingMessageAgent(
 
         // Step 2: plan the next action from the horizon (A7), counted in days from the run's
         // reference time as a date in the record's own zone.
-        // A6: the zone every date below is counted in, the record's own id or, when the runtime does not
-        // know it, the zone of the state its city_interest names.
-        string? timeZoneId = TimeZones.EffectiveZoneId(context.TimeZoneId, context.ProfileOrEmpty.City);
-        DateOnly referenceDate = TimeZones.ToLocalDate(referenceTime, timeZoneId);
         PlannedAction planned = planner.Plan(
             prospectCase.Persona,
             prospectCase.LifecycleStage,

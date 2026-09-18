@@ -13,4 +13,7 @@ public enum ReviewReason
     SafetyViolation,
     GenericRowNoMatch,
     GenericRowNoBranch,
+
+    // A contact rule handed the record to a person, so it is work for the queue.
+    EscalatedToHuman,
 }

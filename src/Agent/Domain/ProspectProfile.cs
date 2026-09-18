@@ -11,7 +11,9 @@ public sealed record ProspectProfile(
     decimal? BudgetMax = null,
     int? TenureMonths = null,
     string? LoyaltyStatus = null,
-    IReadOnlyList<string>? FeaturesEnablement = null) : HasUnknownMembers
+    IReadOnlyList<string>? FeaturesEnablement = null,
+    int? Age = null,
+    DateTimeOffset? OptOutRequestedAt = null) : HasUnknownMembers
 {
     // The categories trimmed from the ends of a greeting name: separators, control and format
     // characters, punctuation, currency, other and modifier symbols (where emoji are), marks with no

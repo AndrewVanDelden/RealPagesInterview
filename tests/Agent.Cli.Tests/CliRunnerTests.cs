@@ -1427,6 +1427,41 @@ public class CliRunnerTests
     // that logs route through the injected error TextWriter (ConsoleLoggerProvider), this
     // is directly observable: the rendered line carries TaskId via the scope-rendering
     // "Key=Value" suffix, not embedded in the message text.
+    // A task id is input like any other field: a line break in it is cleaned before the record's log
+    // scope opens, so it cannot forge a log line, and the diagnostics row carries the cleaned id.
+    [Fact]
+    public async Task RunAsync_TaskIdWithALineBreak_LogsAndWritesTheCleanedId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string diagnosticsPath = TempFilePath(".json");
+        string logFilePath = TempFilePath(".log");
+        string line = RecordJson("t1\\nINFO forged", "2026-01-10", "2025-12-08T15:04:00Z");
+        await File.WriteAllTextAsync(inputPath, line);
+        var runner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+
+        try
+        {
+            int exitCode = await runner.RunAsync(["--input", inputPath, "--output", outputPath, "--diagnostics", diagnosticsPath, "--log-file", logFilePath]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            string logContent = await File.ReadAllTextAsync(logFilePath);
+            Assert.Contains("TaskId=t1 INFO forged", logContent, StringComparison.Ordinal);
+            Assert.DoesNotContain(Environment.NewLine + "INFO forged", logContent, StringComparison.Ordinal);
+            Assert.Contains("sanitized=[task_id]", logContent, StringComparison.Ordinal);
+            using JsonDocument diagnostics = JsonDocument.Parse(await File.ReadAllTextAsync(diagnosticsPath));
+            Assert.Equal("t1 INFO forged", diagnostics.RootElement[0].GetProperty("task_id").GetString());
+            Assert.Equal("task_id", diagnostics.RootElement[0].GetProperty("ingest_notes").GetProperty("sanitized_fields")[0].GetString());
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(diagnosticsPath);
+            TestFiles.DeleteWithRetry(logFilePath);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_RecordProcessed_LogLineCarriesTaskIdViaScopeNotMessageText()
     {
@@ -1456,7 +1491,8 @@ public class CliRunnerTests
                 "Ingest: defaulted=[input.unit, input.move_in_date, input.lease_end_date, input.renewal_offer_id, " +
                 "input.missed_tour_time, input.cancellation_reason, input.profile.city_interest, " +
                 "input.profile.amenity_interest, input.profile.budget_max, input.profile.tenure_months, " +
-                "input.profile.loyalty_status, input.profile.features_enablement] unknown=0 member(s). TaskId=t1",
+                "input.profile.loyalty_status, input.profile.features_enablement, input.profile.age, " +
+                "input.profile.opt_out_requested_at] unknown=0 member(s) sanitized=[]. TaskId=t1",
                 logContent);
         }
         finally
@@ -2511,6 +2547,36 @@ public class CliRunnerTests
             Assert.Contains("BodySem 1/1", report);
             Assert.Contains("Judge model cost: 1 call(s), 1 completed, 5 input + 3 output token(s)", report);
             Assert.Contains("t1: same offer", report);
+        }
+        finally
+        {
+            File.Delete(inputPath);
+            File.Delete(outputPath);
+            File.Delete(reportPath);
+        }
+    }
+
+    // A replay reads the input records itself, so it cleans them as a live run does: the judge, and every
+    // line it logs about a record, sees the cleaned task id, so a line break in the id cannot forge a log line.
+    [Fact]
+    public async Task RunAsync_ReplayTaskIdWithALineBreak_JudgeSeesTheCleanedId()
+    {
+        string inputPath = TempFilePath();
+        string outputPath = TempFilePath(".json");
+        string reportPath = TempFilePath(".txt");
+        await File.WriteAllTextAsync(inputPath, RecordJson("t1\\nINFO forged", "2026-01-10", "2025-12-08T15:04:00Z", includeExpected: true));
+        var writingRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter());
+        var judge = new TaskIdRecordingJudge();
+        var replayRunner = new CliRunner(EmptyConfiguration(), new StringWriter(), new StringWriter(), judgeOverride: judge);
+
+        try
+        {
+            Assert.Equal(CliExitCodes.Success, await writingRunner.RunAsync(["--input", inputPath, "--output", outputPath]));
+
+            int exitCode = await replayRunner.RunAsync(["--input", inputPath, "--replay", outputPath, "--eval-report", reportPath, "--judge"]);
+
+            Assert.Equal(CliExitCodes.Success, exitCode);
+            Assert.Equal(["t1 INFO forged"], judge.JudgedTaskIds);
         }
         finally
         {

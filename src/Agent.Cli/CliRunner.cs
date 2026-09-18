@@ -509,6 +509,12 @@ public sealed class CliRunner(
         ILogger<CliRunner> log,
         CancellationToken cancellationToken)
     {
+        // The record is cleaned once, before its scope opens, so a line break in a task id cannot forge
+        // a log line; the same SanitizedInput is handed to the notes below and to the agent, so
+        // neither cleans the record a second time.
+        ProspectCase rawCase = prospectCase;
+        SanitizedInput sanitizedInput = InputSanitizer.Sanitize(rawCase);
+        prospectCase = sanitizedInput.Case;
         using IDisposable? scope = log.BeginScope(new Dictionary<string, object> { [LogKeys.TaskId] = prospectCase.TaskId });
 
         // One line per record naming every defaulted decision input and how many
@@ -517,17 +523,18 @@ public sealed class CliRunner(
         // an unknown member's name is not (step 68), because a record chose it. The
         // count is the fact an operator reads this line for, and --diagnostics, which
         // is a file a person opens rather than a log stream, still carries every name.
-        IngestNotes ingestNotes = IngestNotes.Describe(prospectCase);
+        IngestNotes ingestNotes = IngestNotes.Describe(sanitizedInput);
         log.LogInformation(
-            "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s).",
+            "Ingest: defaulted=[{DefaultedFields}] unknown={UnknownMemberCount} member(s) sanitized=[{SanitizedFields}].",
             string.Join(", ", ingestNotes.DefaultedFields),
-            ingestNotes.UnknownMembers.Count);
+            ingestNotes.UnknownMembers.Count,
+            string.Join(", ", ingestNotes.SanitizedFields));
 
         Stopwatch stopwatch = Stopwatch.StartNew();
         AgentRunResult result;
         try
         {
-            result = await agent.RunAsync(prospectCase, referenceTime, cancellationToken);
+            result = await agent.RunAsync(sanitizedInput, referenceTime, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -621,6 +628,8 @@ public sealed class CliRunner(
             (cases, parseFailures) = ReadInput(inputReader, log);
         }
 
+        // The records are cleaned as a live run cleans them, before the scorer or the judge names them.
+        cases = [.. cases.Select(prospectCase => InputSanitizer.Sanitize(prospectCase).Case)];
         int failureCount = parseFailures.Count;
 
         Result<StreamReader> replayOpen = OpenInputReader("--replay", replayPath);

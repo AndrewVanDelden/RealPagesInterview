@@ -17,6 +17,11 @@ public enum SuppressionReason
     // The planned action is no_op: a closed lead or a record whose persona and stage contradict each
     // other is sent nothing, and next_action.reason says which.
     NoOpAction,
+
+    // A contact rule answered before planning: DoNotContact sends nothing, EscalatedToHuman hands the
+    // record to a person. next_action.reason says which rule.
+    DoNotContact,
+    EscalatedToHuman,
 }
 
 public static class SuppressionReasonExtensions

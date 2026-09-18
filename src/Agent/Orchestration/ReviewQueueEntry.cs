@@ -33,6 +33,12 @@ public sealed record ReviewQueueEntry(
             reasons.Add(ReviewReason.SafetyViolation);
         }
 
+        // A contact rule handed the record to a person, so the person needs it on the list.
+        if (result.Output.NextAction.Type == ActionTypes.EscalateToHuman)
+        {
+            reasons.Add(ReviewReason.EscalatedToHuman);
+        }
+
         GenericRowAnswer? genericRow = null;
         ActionPlanNotes? actionPlan = result.Diagnostics.ActionPlan;
 

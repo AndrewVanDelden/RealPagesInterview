@@ -1,0 +1,294 @@
+using System.Buffers;
+using System.Collections.Frozen;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Agent.Domain;
+
+namespace Agent.Ingest;
+
+// A record with every text field cleaned, and the path of each field the cleaning changed.
+public sealed record SanitizedInput(ProspectCase Case, IReadOnlyList<string> ChangedFields);
+
+// Every text field of an input record is cleaned where it enters, before any decision or message reads
+// it (OWASP Input Validation Cheat Sheet: validate as early as possible, normalize first, allowlist
+// character categories, bound the length). Output checks still stand behind it: input cleaning is not
+// the defense against injection on its own. Three kinds of field:
+//   the task id, which is a log correlation value only and never reaches a decision rule or the
+//   model prompt: invalid code units, control, format, bidirectional-control and private or
+//   unassigned characters removed, NFKC normalized, whitespace collapsed, and held to a length;
+//   vocabulary (persona, stage, time zone, language, unit, offer id, cancellation reason, loyalty
+//   status, features, required states, primary call to action), each of which a decision rule reads
+//   and some of which OpenAiMessageComposer.StatedLine states to the model verbatim: the same as the
+//   task id, then markup removed with the contents of script and style elements, but not run through
+//   a text field's character allowlist, since a rule or the model reads a vocabulary field by its own
+//   vocabulary rather than by the characters it is spelled with;
+//   text a person or the model reads (first name, city and amenity interest): the same as vocabulary,
+//   then only the characters that field can hold kept: letters, marks, spaces and a name's
+//   punctuation for a first name, and digits and a place's punctuation as well for the others;
+//   the property name, which is also the key the property system's facts are found by: markup, the
+//   unsafe characters and, as a backstop for a malformed tag the markup removal above does not
+//   match, any stray '<' or '>' removed, canonically (NFC) normalized so a trademark sign stays
+//   one, and every other character its owner gave it kept.
+// An identifier or vocabulary field longer than its cap is cut to it at a character boundary, so the
+// words a rule reads at its start still answer it. A text or vocabulary field longer than the raw
+// bound is absent before markup removal scans it, and a text field longer than its cap is absent too.
+// A field left empty is absent, as an absent field is. The expected outcome is the label and is not
+// input to a decision, so it is left as it is. A clean record is returned as the same instance.
+public static partial class InputSanitizer
+{
+    private const int TaskIdCap = 200;
+    private const int VocabularyCap = 100;
+    private const int TimeZoneCap = 64;
+    private const int LanguageCap = 35;
+    private const int UnitCap = 32;
+    private const int FirstNameCap = 50;
+    private const int PlaceCap = 120;
+    private const int AmenityCap = 60;
+
+    // Markup removal can rescan the rest of a field from each unclosed tag, so no text field longer than
+    // this is scanned: it is several times the longest cap, and a field that long is not a name or place.
+    private const int RawTextBound = 1024;
+
+    // Characters removed outright: they are invisible or undefined, and the bidirectional controls among
+    // the format characters can make text read in an order other than the one it is stored in.
+    private static readonly FrozenSet<UnicodeCategory> RemovedCategories = new[]
+    {
+        UnicodeCategory.Format, UnicodeCategory.PrivateUse, UnicodeCategory.OtherNotAssigned,
+    }.ToFrozenSet();
+
+    private static readonly FrozenSet<UnicodeCategory> NameCategories = new[]
+    {
+        UnicodeCategory.UppercaseLetter, UnicodeCategory.LowercaseLetter, UnicodeCategory.TitlecaseLetter,
+        UnicodeCategory.ModifierLetter, UnicodeCategory.OtherLetter, UnicodeCategory.NonSpacingMark,
+        UnicodeCategory.SpacingCombiningMark, UnicodeCategory.EnclosingMark, UnicodeCategory.SpaceSeparator,
+    }.ToFrozenSet();
+
+    private static readonly FrozenSet<UnicodeCategory> PlaceCategories = NameCategories
+        .Concat([UnicodeCategory.DecimalDigitNumber, UnicodeCategory.LetterNumber, UnicodeCategory.OtherNumber])
+        .ToFrozenSet();
+
+    // An apostrophe (straight or right single quotation mark), a hyphen and a period belong in a name;
+    // a place also uses a comma, an ampersand, parentheses, a slash and a number sign.
+    private static readonly FrozenSet<int> NamePunctuation = new[] { 0x27, 0x2019, 0x2D, 0x2E }.ToFrozenSet();
+
+    private static readonly FrozenSet<int> PlacePunctuation = NamePunctuation.Concat([0x2C, 0x26, 0x28, 0x29, 0x2F, 0x23]).ToFrozenSet();
+
+    // O(n) in the total length of the record's identifier and vocabulary fields, each cleaned in a bounded
+    // number of passes; each text field costs at most O(b squared) for the raw bound b, a constant.
+    public static SanitizedInput Sanitize(ProspectCase raw)
+    {
+        var changed = new List<string>();
+
+        string taskId = Field(changed, "task_id", raw.TaskId, CleanTaskId(raw.TaskId));
+        string? persona = Field(changed, "persona", raw.Persona, Vocabulary(raw.Persona, VocabularyCap));
+        string? stage = Field(changed, "lifecycle_stage", raw.LifecycleStage, Vocabulary(raw.LifecycleStage, VocabularyCap));
+
+        ProspectContext? input = raw.Input;
+        ProspectContext? cleanInput = input is null ? null : CleanContext(input, changed);
+
+        CaseAssertions? assertions = raw.Assertions;
+        CaseAssertions? cleanAssertions = assertions is null ? null : CleanAssertions(assertions, changed);
+
+        if (changed.Count == 0)
+        {
+            return new SanitizedInput(raw, changed);
+        }
+
+        ProspectCase clean = raw with
+        {
+            TaskId = taskId,
+            Persona = persona,
+            LifecycleStage = stage,
+            Input = cleanInput,
+            Assertions = cleanAssertions,
+        };
+
+        return new SanitizedInput(clean, changed);
+    }
+
+    private static ProspectContext CleanContext(ProspectContext input, List<string> changed)
+    {
+        string? propertyName = Field(changed, "input.property_name", input.PropertyName, PropertyName(input.PropertyName));
+        string? timeZoneId = Field(changed, "input.timezone", input.TimeZoneId, Vocabulary(input.TimeZoneId, TimeZoneCap));
+        string? language = Field(changed, "input.language", input.Language, Vocabulary(input.Language, LanguageCap));
+        string? unit = Field(changed, "input.unit", input.Unit, Vocabulary(input.Unit, UnitCap));
+        string? renewalOfferId = Field(changed, "input.renewal_offer_id", input.RenewalOfferId, Vocabulary(input.RenewalOfferId, VocabularyCap));
+        string? cancellationReason = Field(changed, "input.cancellation_reason", input.CancellationReason, Vocabulary(input.CancellationReason, VocabularyCap));
+
+        ProspectProfile? profile = input.Profile;
+        ProspectProfile? cleanProfile = profile is null ? null : CleanProfile(profile, changed);
+
+        return input with
+        {
+            PropertyName = propertyName,
+            TimeZoneId = timeZoneId,
+            Language = language,
+            Unit = unit,
+            RenewalOfferId = renewalOfferId,
+            CancellationReason = cancellationReason,
+            Profile = cleanProfile,
+        };
+    }
+
+    private static ProspectProfile CleanProfile(ProspectProfile profile, List<string> changed)
+    {
+        string? firstName = Field(changed, "input.profile.first_name", profile.FirstName, Text(profile.FirstName, FirstNameCap, NameCategories, NamePunctuation));
+        string? city = Field(changed, "input.profile.city_interest", profile.CityInterest, Text(profile.CityInterest, PlaceCap, PlaceCategories, PlacePunctuation));
+        IReadOnlyList<string>? amenities = ListField(changed, "input.profile.amenity_interest", profile.AmenityInterest, item => Text(item, AmenityCap, PlaceCategories, PlacePunctuation));
+        string? loyaltyStatus = Field(changed, "input.profile.loyalty_status", profile.LoyaltyStatus, Vocabulary(profile.LoyaltyStatus, VocabularyCap));
+        IReadOnlyList<string>? features = ListField(changed, "input.profile.features_enablement", profile.FeaturesEnablement, item => Vocabulary(item, VocabularyCap));
+
+        return profile with
+        {
+            FirstName = firstName,
+            CityInterest = city,
+            AmenityInterest = amenities,
+            LoyaltyStatus = loyaltyStatus,
+            FeaturesEnablement = features,
+        };
+    }
+
+    private static CaseAssertions CleanAssertions(CaseAssertions assertions, List<string> changed)
+    {
+        IReadOnlyList<string?>? requiredStates = assertions.RequiredStates;
+        IReadOnlyList<string?>? cleanStates = requiredStates is null
+            ? null
+            : Field(changed, "assertions.required_states", requiredStates, [.. requiredStates.Select(state => Vocabulary(state, VocabularyCap)).OfType<string>()]);
+
+        CaseConstraints? constraints = assertions.Constraints;
+        CaseConstraints? cleanConstraints = constraints is null
+            ? null
+            : constraints with
+            {
+                PrimaryCta = Field(changed, "assertions.constraints.primary_cta", constraints.PrimaryCta, Vocabulary(constraints.PrimaryCta, VocabularyCap)),
+            };
+
+        return assertions with { RequiredStates = cleanStates, Constraints = cleanConstraints };
+    }
+
+    // The cleaned value, and the path noted when it differs from the raw one. A list compares item by
+    // item, so a list whose items are unchanged is not noted.
+    private static T Field<T>(List<string> changed, string path, T raw, T clean)
+    {
+        bool same = raw is IEnumerable<string?> rawItems && clean is IEnumerable<string?> cleanItems
+            ? rawItems.SequenceEqual(cleanItems)
+            : EqualityComparer<T>.Default.Equals(raw, clean);
+        if (!same)
+        {
+            changed.Add(path);
+        }
+
+        return same ? raw : clean;
+    }
+
+    // An item left empty or over its cap is dropped from the list.
+    private static IReadOnlyList<string>? ListField(List<string> changed, string path, IReadOnlyList<string>? raw, Func<string, string?> clean) =>
+        raw is null ? null : Field(changed, path, raw, [.. raw.Select(clean).OfType<string>()]);
+
+    private static string CleanTaskId(string taskId) => CutTo(Collapse(Normalized(WithoutUnsafeCharacters(taskId))), TaskIdCap);
+
+    private static string? Vocabulary(string? value, int cap)
+    {
+        if (value is null || value.Length > RawTextBound)
+        {
+            return null;
+        }
+
+        string cut = CutTo(Collapse(WithoutMarkup(Normalized(WithoutUnsafeCharacters(value)))), cap);
+        return cut.Length == 0 ? null : cut;
+    }
+
+    private static string? PropertyName(string? value) =>
+        value is null || value.Length > RawTextBound
+            ? null
+            : Bounded(Collapse(WithoutTagDelimiters(WithoutMarkup(WithoutUnsafeCharacters(value).Normalize(NormalizationForm.FormC)))), PlaceCap);
+
+    private static string? Text(string? value, int cap, FrozenSet<UnicodeCategory> categories, FrozenSet<int> punctuation) =>
+        value is null || value.Length > RawTextBound
+            ? null
+            : Bounded(Collapse(OnlyAllowed(WithoutMarkup(Normalized(WithoutUnsafeCharacters(value))), categories, punctuation)), cap);
+
+    private static string WithoutMarkup(string value) => MarkupTag().Replace(ScriptOrStyleElement().Replace(value, " "), " ");
+
+    // A text field's character allowlist (OnlyAllowed) already drops a stray '<' or '>' left by a
+    // malformed tag the regexes above do not match, such as one with no closing '>'. The property
+    // name has no such allowlist, because '<' and '>' share their Unicode category with characters
+    // an owner's property name keeps, such as '+': a category-based allowlist broad enough to keep
+    // one keeps the other too. This backstop removes exactly the two delimiters a tag needs, whether
+    // or not the regexes above matched a well-formed one, and keeps every other character its owner
+    // gave the name.
+    private static string WithoutTagDelimiters(string value) => TagDelimiter().Replace(value, " ");
+
+    private static string? Bounded(string value, int cap) => value.Length == 0 || value.Length > cap ? null : value;
+
+    // The longest run of whole characters (grapheme clusters) that fits the cap, so a cut never leaves a
+    // lone surrogate or a mark without its base, and a space left at the cut is trimmed.
+    private static string CutTo(string value, int cap)
+    {
+        if (value.Length <= cap)
+        {
+            return value;
+        }
+
+        int length = 0;
+        int next = StringInfo.GetNextTextElementLength(value, length);
+        while (length + next <= cap)
+        {
+            length += next;
+            next = StringInfo.GetNextTextElementLength(value, length);
+        }
+
+        return value[..length].TrimEnd();
+    }
+
+    // Invalid code units, such as a lone surrogate, are dropped, which also keeps normalization from
+    // throwing; a control character becomes a space, so a line break cannot forge a new log line.
+    private static string WithoutUnsafeCharacters(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        int index = 0;
+        while (index < value.Length)
+        {
+            OperationStatus status = Rune.DecodeFromUtf16(value.AsSpan(index), out Rune rune, out int consumed);
+            index += consumed;
+            UnicodeCategory category = Rune.GetUnicodeCategory(rune);
+            if (status != OperationStatus.Done || RemovedCategories.Contains(category))
+            {
+                continue;
+            }
+
+            builder.Append(category == UnicodeCategory.Control ? " " : rune.ToString());
+        }
+
+        return builder.ToString();
+    }
+
+    private static string Normalized(string value) => value.Normalize(NormalizationForm.FormKC);
+
+    private static string OnlyAllowed(string value, FrozenSet<UnicodeCategory> categories, FrozenSet<int> punctuation)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (Rune rune in value.EnumerateRunes())
+        {
+            bool allowed = categories.Contains(Rune.GetUnicodeCategory(rune)) || punctuation.Contains(rune.Value);
+            builder.Append(allowed ? rune.ToString() : " ");
+        }
+
+        return builder.ToString();
+    }
+
+    private static string Collapse(string value) => Whitespace().Replace(value, " ").Trim();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
+
+    [GeneratedRegex(@"<(script|style)\b[^>]*>.*?</\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ScriptOrStyleElement();
+
+    [GeneratedRegex(@"<[^>]*>")]
+    private static partial Regex MarkupTag();
+
+    [GeneratedRegex(@"[<>]")]
+    private static partial Regex TagDelimiter();
+}
