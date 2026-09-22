@@ -4578,3 +4578,16 @@ A6 in `docs/DESIGN.md` still said an unknown zone is always UTC; both corrected.
 `src/Agent/Decisions/HorizonBranch.cs` said a past date is short, which D117 changed to no move date; the
 comment now states the rule the planner runs, and no code changed. Evidence: `runs\step99e`,
 `probe50answerkey.md`, the rehearsal's run outputs. Assumptions: A4 to A8.
+
+**Review fix, the Phase 9 retrospective, run and debug fact (2026-09-21).** A cold review of the diff
+above against the code, `runs\step99e` and the key raised three findings and two optional ones, and all
+five are fixed. Record 8 was filed as a Discussion row, but the key's clause covers only an app that
+declines voice, and this one sent voice, so its `start_cadence` for `follow_up_in_days` is a product
+miss: the action catalog does not read the channel, with pillar VF. The summary's groups counted twelve
+items as eleven, because the tour-slot lead day fails no record under the key's rule, which does not
+compare the payload. The eleven are now eight product misses (8, 12, 17, 18, 29, 30, 31, 32), one
+Discussion row (36) and two no single frame satisfies (33, 39), with the lead day a finding of its own.
+The lead-day records are 22 sms invitations, not sms and voice. Optional: the template p95 is 33 ms on
+`synthetic_12.jsonl` in a run that day, not the older 19 ms; and `docs/OPERATIONS.md` still counted tour
+slots from the send date, now corrected as in the README. Evidence: `probe50answerkey.md` row 8; the
+reviewer's pairing of `TrueTest.jsonl` with `out.json`. Assumptions: A8.

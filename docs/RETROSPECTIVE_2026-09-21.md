@@ -34,19 +34,22 @@ offsets and a daylight-saving boundary. No record leaked a field the key forbids
 **What did not.** Rules fitted to a handful of labels:
 - the send-slot table's minute values;
 - the horizon bands at their extremes;
+- an action catalog that does not read the channel;
 - the tour-slot lead day;
 - a schedule floor that trusts an inconsistent input.
 
 The model path misses its latency budget, and the template path meets it.
 
 **The eleven failures in three groups.**
-- Eight product findings no frame explains: send slots on 12, 17, 18 and 32; a past move date on 29;
-  a 22-month horizon on 30; a future `last_interaction` on 31; and the tour-slot lead day, which is
-  also 22 of the 24 payload mismatches the program's own evaluator reports.
-- Two of the key's Discussion rows, where its stated condition is met but its strict rule is not: 8
-  and 36.
+- Eight product misses no frame explains: send slots on 12, 17, 18 and 32; a voice record given the
+  welcome cadence on 8; a past move date on 29; a 22-month horizon on 30; a future `last_interaction` on
+  31.
+- One Discussion row whose stated condition is met but whose strict rule is not: 36.
 - Two no single reference time can satisfy: 33 and 39 want a Monday 09:00 send, which is before the
   Monday-evening frame the other 38 labels fix.
+
+One further finding fails no record under the key's rule, which does not compare the payload: the
+tour-slot lead day. It is 22 of the 24 payload failures the program's own evaluator reports.
 
 **Why 22 and 39 differ.** The key compares types, and the program's evaluator compares values. The
 tour-slot finding alone fails 22 payload checks. `follow_up_in_days` 2 against a label of 3 fails an
@@ -57,7 +60,8 @@ every failure against the key.
 ## 2. Every failure, by its cause
 
 The reference time is 2026-03-09T18:00:00-06:00. Record numbers are line numbers in `TrueTest.jsonl`.
-Code locations are under `src/Agent/`.
+Code locations are under `src/Agent/`. The eleven failing records come first, then the tour-slot
+finding, which fails none of them.
 
 | # | Record | Output against the key | Input field | Rule and assumption |
 |---|---|---|---|---|
@@ -68,16 +72,16 @@ Code locations are under `src/Agent/`.
 | 29 | `prospect_move_date_in_past` | `follow_up_in_days` 2 at 09:20; key `reset_cadence` at 09:00; the body says "before your move in November 2025" | `move_date_target` 2025-11-01, 128 days past | `Decisions/NextActionPlanner.cs` sends a past date to the no-move-date branch (A7). The model is handed the date as data, and the past-date guard in `Composition/OpenAiMessageComposer.cs` covers email only. The send time is the prospect/open row, as 17 |
 | 30 | `prospect_move_date_far_future` | `follow_up_in_days` 3; key 14 | `move_date_target` 2028-01-15, 677 days out | every horizon over 60 days is one long branch with one value (A7) |
 | 31 | `prospect_last_interaction_in_future` | 2026-04-01T09:00-06:00 with April tour dates; key 2026-03-10T09:00-06:00 | `last_interaction` 2026-04-01, three weeks after the reference time | the floor is the later of the reference time and the last interaction (A4). The diagnostics record `floor: last_interaction`, but no ingest note calls the value inconsistent, which the key also requires |
-| Tour slots | 22 sms and voice tour invitations | Wednesday 03-11 and Thursday 03-12; key Thursday 03-12 and Friday 03-13 | the reference time | `Decisions/TourSlots.cs` counts its two-day lead from the run's local date, not the send date. The hold-out and `synthetic_v2.jsonl` labels fit the reference date, and this key fits the send date (D108). This is the finding behind 22 of the evaluator's 24 payload failures. The other two are record 8's single option and record 31's April dates |
-| 8 | `prospect_voice_only_consent` | voice, "press 9", `start_cadence`; key `follow_up_in_days` 3 | channel voice, move date 40 days out | the action catalog does not read the channel, so a short horizon starts the cadence (A7, A8). The key lists this as a Discussion row |
+| 8 | `prospect_voice_only_consent` | voice, "press 9", `start_cadence`; key `follow_up_in_days` 3 | channel voice, move date 40 days out | the action catalog does not read the channel, so a short horizon starts the welcome cadence (A7, A8). The key's Discussion clause covers only an app that declines voice, and this one sent voice, so the action is a product miss |
 | 36 | `resident_timezone_unrecognized` | 2026-03-11T09:30Z; key 2026-03-10T09:30-06:00 | `timezone` "Mars/Olympus_Mons", no state in the city | UTC fallback, stated in the ingest notes (A6). UTC moves the local calendar day. The key says a stated UTC fallback passes, and its strict rule fails it |
 | 33 | `prospect_dst_boundary_chicago` | 2026-03-10T09:00-05:00; key 2026-03-09T09:00-05:00 | none: the offset is right | the key's instant is ten hours before the reference time the other labels fix, so no single `--now` passes it with them |
 | 39 | `prospect_late_night_interaction` | 2026-03-10T09:00-06:00; key 2026-03-09T09:00-06:00 | none | as 33 |
+| Tour slots | 22 sms tour invitations | Wednesday 03-11 and Thursday 03-12; key Thursday 03-12 and Friday 03-13 | the reference time | `Decisions/TourSlots.cs` counts its two-day lead from the run's local date, not the send date. The hold-out and `synthetic_v2.jsonl` labels fit the reference date, and this key fits the send date (D108). This is the finding behind 22 of the evaluator's 24 payload failures. The other two are record 8's single option and record 31's April dates |
 
 The p95 failure is the model path's cost. A timeout short enough to meet 2,000 ms returns no
 message: 14 of 48 calls at that budget in the first step 99 run. So the run gives each call 60
-seconds and reports the p95 against the records' own budget. The template path's p95 is 19 ms on
-`synthetic_12.jsonl`.
+seconds and reports the p95 against the records' own budget. The template path's p95 is 33 ms on
+`synthetic_12.jsonl`, in a run on 2026-09-21.
 
 ## 3. The playbook step that would have caught each failure (step 101)
 
@@ -88,7 +92,7 @@ seconds and reports the p95 against the records' own budget. The template path's
 | Far horizon, 30 | 7: what the examples cannot tell you (the longest labeled horizon in any fitted set is 100 days, against this record's 677); 9: a boundary-date case | VF |
 | Future `last_interaction`, 31 | 26: validate each record and report a failure per record; 44: boundaries | HB: an inconsistent external value was trusted and not reported |
 | Tour-slot lead day | 6 and 41: two rules (reference date, send date) fit the fitted labels equally, so they were one open question, not one rule | VF: two rules that fit the same examples were stated as one |
-| 8, voice action | 6: the channel was never tested as a driver of the action | none: the key calls it a Discussion row |
+| 8, voice action | 6: the channel was never tested as a driver of the action | VF: the rule was stated from labels that held no voice record |
 | 36, UTC fallback | 8: ask the requester what an unrecognized zone should do | none: the key's own text allows it |
 | 33, 39 | 3 and 8: the key states the day and not the hour; the frame had to be read off the labels | none: a label set no single frame satisfies |
 | p95 | 49 and 60: the budget and the implementation choice, stated with a reason | none: a recorded trade-off |
@@ -118,7 +122,8 @@ Each is a question with its options, none taken. Fitting any of them to this key
 5. **Which date does a tour lead count from?** (a) The send date, as this key does; (b) the reference
    date, as the fitted labels do. Recommendation: ask the requester. The two labeled sources
    disagree, and either fit fails the other. Scopes D108, `TourSlots`.
-6. **Does the channel change the action?** Recommendation: decline until the requester answers the
-   key's Discussion row. Scopes A8.
+6. **Does the channel change the action?** (a) A voice row in the catalog, answered
+   `follow_up_in_days`; (b) keep one action per persona, stage and branch. Recommendation: (a) only
+   once a second labeled voice record agrees, since one label fixes no rule. Scopes A8.
 7. **The model path's latency.** Options: a faster model, streaming, or the template path when the
    budget binds. Recommendation: none from one run. Scopes D70.
