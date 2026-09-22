@@ -18,10 +18,10 @@ flowchart TD
     A[Ingest: one Result per line] --> B[1 Select: contactable channel from consent and preferences]
     B -- none --> S[Suppress: channel none, next_action no_op with reason]
     B -- channel --> C[2 Plan: next_action from the catalog row and the horizon, generic fallback]
-    C --> D[3 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone; tour slots from the send date]
+    C --> D[3 Schedule: channel slot on the first day at or after max of now and last interaction, in the record's timezone; tour slots counted from the run's date]
     D --> E[4 Compose: template or model, in the record's language; one retry on a safety rejection, then template]
     E -- no draft at all --> S2[Suppress: reason composition_failed, with the planned next_action]
-    E -- a draft, composed or refused --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing]
+    E -- a draft, composed or refused --> F[5 Validate: opt-out, Social Security number, long digit run, fair housing, unstated offer]
     F -- violations --> S3[Suppress: reason safety_violation, plus a review queue row carrying the draft]
     F -- clean --> G[6 Emit]
     S --> H[Output plus diagnostics: every decision input, every defaulted field, every fallback]
@@ -31,7 +31,7 @@ flowchart TD
 ```
 
 Step 3 schedules before step 4 composes because a tour invitation's reply options are the next two
-open tour slots counted from the send date (D108). Step 4 is `ValidatingMessageComposer`: at most two
+open tour slots from two days after the run's date, never on or before the send date (D108). Step 4 is `ValidatingMessageComposer`: at most two
 composer attempts, the second only after a safety rejection, then the template (D34). Step 5 also checks brand style, recorded and never a
 gate (D39). Components and the three interfaces: [docs/DESIGN.md](docs/DESIGN.md) section 5.
 
@@ -66,7 +66,7 @@ budget, and the overall count. `--replay` re-scores an output file without runni
 (D14); `--judge` adds two model-graded checks and needs the key (D30). `sample.jsonl` and, since D81,
 `holdout_12.jsonl` are the evidence rules are fitted to; `synthetic_12.jsonl` is a regression set,
 and `synthetic_v2.jsonl`, written blind to the code, carried the honest number until D116 made it
-training data too; the owner's larger dataset, unseen until it is run once, carries it next.
+training data too; the owner's 50-record set, run once unseen, carries it now.
 
 | Set, template composer | Overall | Checks below full | Source |
 |---|---|---|---|
@@ -76,8 +76,9 @@ training data too; the owner's larger dataset, unseen until it is run once, carr
 | `synthetic_v2.jsonl`, fitted since D116 | 26 of 30 | action 28 of 29, call-to-action payload 23 of 25: the three labels the fit declined (a reason spelled differently from the hold-out's, an email labeled with options and no link, two inspection dates one record cannot fix a rule for) (D117); line 15 is malformed by design | [docs/scorecards/synthetic_v2_template.txt](docs/scorecards/synthetic_v2_template.txt) |
 
 Every labeled set except `synthetic_12.jsonl` is fitted, so 2 of 2, 12 of 12 and 26 of 30 show the
-rules reproduce their own evidence and say nothing about generalizing; the owner's larger dataset,
-run once and unseen, is the number that does (D116). Where a `synthetic_v2.jsonl` label collided with
+rules reproduce their own evidence and say nothing about generalizing; the owner's 50-record set,
+run once and unseen, is the number that does (D116): 39 of 50 against the owner's answer key, every
+failure explained in [docs/RETROSPECTIVE_2026-09-21.md](docs/RETROSPECTIVE_2026-09-21.md). Where a `synthetic_v2.jsonl` label collided with
 a hold-out label, the rule keys on an input that separates the two records, and the labels that could
 not be fitted without breaking the hold-out are declined and still fail (D117). Every set records zero
 safety violations. The review queue is empty on the samples and the hold-out and holds one row on each
@@ -96,8 +97,8 @@ table in [docs/DESIGN.md](docs/DESIGN.md) section 7; every rule cites one. The o
 most outputs:
 
 - A1 to A3: the channel is the first opted-in entry of `channel_preferences`; with none, channel `none` and `no_op`.
-- A4 to A6: the first day at or after the later of `--now` and `last_interaction`, in the record's timezone (UTC when unknown); sms and voice 09:00, email 10:00.
-- A7, A8: a move date at most 45 days out gives `start_cadence`, else `follow_up_in_days` 3; an unknown persona or stage uses the generic row.
+- A4 to A6: the first day at or after the later of `--now` and `last_interaction`, in the record's timezone (the city's state zone when the timezone is unknown, else UTC); a slot row per persona, stage and channel, else sms and voice 09:00, email 10:00.
+- A7, A8: a move date at most 60 days out is the short branch, a later one the long branch, and an absent or past one the no-move-date branch, each answered by the catalog row for the persona and stage; an unknown persona or stage uses the generic row.
 - A13, A18: the template writes English and Spanish, any other language in English with a diagnostic; the model writes prose only, and the template is the fallback.
 
 ## Documentation

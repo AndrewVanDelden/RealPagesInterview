@@ -13,9 +13,9 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 ## Current phase
 
-Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16. Sprints 16 and 17 were its steps 102 and 103, which sent the project back to Phase 4 (D106); that phase's check passed again on 2026-09-15, so later work resumes.
-Check: the retrospective names a playbook step or a new step for every failure.
-Next step: name a playbook step for each of the eight product findings the pinned-frame run in `runs\step99e\` leaves, 39 of 50 against the answer key (the 2026-09-17 run facts).
+Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16 after Phase 4's check passed again (D106).
+Check: the retrospective names a playbook step or a new step for every failure. Passed 2026-09-21: `docs/RETROSPECTIVE_2026-09-21.md` names an existing step for each of `runs\step99e`'s eleven failures.
+Next step: none scheduled; the product is frozen for delivery, and step 102's seven root causes are recorded as unproposed questions in that file's section 4.
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
@@ -95,13 +95,9 @@ for each of its sixteen findings: fourteen existing steps, one new step for find
 8 declined by D55. A step 104 audit of the failures since then found seven with no step and four
 steps that earned nothing here; D79 took none of them, and the rules stay as they are.
 
-**D80, cleanup (2026-09-10).** `TalkingPoints.md`, the Sprint 8 spoken script, deleted as a
-duplicate of `docs/NARRATION.md` (D80). The same day, a run and debug fact: the narration was
-checked against a code trace and a re-run of all three sets at the tag; eight mismatches fixed.
-
-**D81 to D87, the architecture plan (proposed 2026-09-10).** A score of the system, a run and debug
-fact, read 7 of 10 and traced the eight hold-out misses to their fields. The seven decisions it
-proposed are the paragraph below, which took them all.
+**D80 and the architecture plan (2026-09-10).** A duplicate spoken script deleted (D80); the
+narration checked against a code trace, eight mismatches fixed. A score of the system traced the
+hold-out misses to their fields and proposed D81 to D87.
 
 **D81 to D87 and D89 taken, Sprint 15 (2026-09-10 to 2026-09-11).** The owner took every
 recommendation, and the project returned to Phase 0, its decisions merged in phase order from
@@ -148,14 +144,18 @@ result: `synthetic_v2.jsonl` 26 of 30 from 1, its failures the three declined la
 `sample.jsonl` and `holdout_12.jsonl` unchanged. The model runs matched it; D118 fixed two
 prompt-path bugs they exposed.
 
-**D119, PR #36's own review revisited (2026-09-15).** A second `/code-review` raised ten findings.
-Six declined: two already fixed by D111/D112, two already answered by pre-merge threads this pass
-missed, one an unearned catalog abstraction, one a saving too small to justify widening the composer
-seam. Four fixed test first: a judge-side cancellation that discarded an already-composed record, a
-case-sensitive identifier match, five near-identical `--replay` guards collapsed to one helper, and
-a duplicate `ScoredRun` build removed. 116 and 916 tests at 100 percent, run and debug facts.
+**D119, PR #36's own review revisited (2026-09-15).** A second `/code-review` raised ten findings:
+six declined with reasons, four fixed test first, among them a judge-side cancellation that discarded
+a composed record. 116 and 916 tests at 100 percent, run and debug facts.
 
 **D120 to D132, Sprint 17 closed, step 99 run (2026-09-16).** Phase 4 passed again. D120: one
 unread JSONL run at its own time, everything on. D121 creates folders, D122 quiets the console,
 D123 to D126 set the call budget, rate limits, consent and report. Scored against the answer key,
 30 of 50; consent researched; D127 to D132: language, voice, names, offers, contact rules, sanitizing.
+
+**Step 99 rerun and the retrospective, Phase 9 (2026-09-17 to 2026-09-21).** Run and debug facts.
+After D127 to D132, `runs\step99c` read 8 of 50 on the program's checks at its own time;
+`runs\step99e`, at the answer key's frame, read 22 of 50 and 39 of 50 against the key.
+`docs/RETROSPECTIVE_2026-09-21.md` explains all eleven failures and names an existing playbook step for
+each, so step 104 adds none. A cold re-read corrected three counts. A narration rehearsal corrected
+eighteen stale statements, five in the README, assumption A6 and one source comment. No code changed.
