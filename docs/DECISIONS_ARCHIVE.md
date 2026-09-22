@@ -4552,3 +4552,42 @@ eighth product finding in the list above and explains the Payload column: the ch
 messaged records, all by this one-day gap, and record 12, which passes the check, carries a link its
 label does not, so 25 records differ from their label's call-to-action payload and the check sees 24. Evidence: `src/Agent/Decisions/TourSlots.cs` lines 36 to 38;
 `runs\step99e\out.json` against the labels, compared field by field. Assumptions: none.
+
+**Run and debug fact, the Phase 9 retrospective and the narration rehearsal (2026-09-21).** The owner's
+instruction, with the product frozen for delivery: record step 101's retrospective for `runs\step99e`,
+rehearse the narration against the current code, and write a one-page summary, polish only. The
+retrospective is `docs/RETROSPECTIVE_2026-09-21.md`; its section 1 is the summary, section 2 explains
+all eleven failures by input field, rule and assumption (step 100), section 3 names an existing playbook
+step and a pillar for each (step 101), and section 4 states the seven root causes as step 102 questions,
+none taken. Every failure names an existing step, so step 104 adds none, as at D79. A cold re-read of
+`out.json`, `diag.json` and the key, pairing `TrueTest.jsonl` (md5 `cd7f7070e2850bf63f7c7f13160804a9`)
+with the output by position, confirmed the eleven failures and 39 of 50 and corrected the facts above in
+three places: the tour-slot lead day explains 22 of the Payload check's 24 failures, not 24, since record
+8 fails on its label's single option `"1"` and record 31 on its April dates; record 29 also fails its
+send time, 09:20 for 09:00, from the prospect/open sms row; and record 36's Discussion clause, "UTC
+fallback passes if stated", is met, so a reader applying it scores 40 of 50. The same read found the
+labels split the prospect/open sms hour by whether a move date is stated (17, 18 and 29 at 09:00, 40 to
+43 at 09:20), and that the nine unmessaged records are exactly the nine the key leaves unmessaged. The
+rehearsal, a template run of `sample.jsonl` at `bbeaf57` against every sentence of `docs/NARRATION.md`,
+reproduced every value the walk-through states and found eighteen statements stale since D117 to D132:
+four safety checks where there are five, a 45-day threshold where it is 60, three interfaces where there
+are four, no step 1b, a three-member input contract, a four-record concurrency bound, tour slots counted
+from the send date, the old timezone fallback, and the superseded result lines. All are corrected, the
+one-minute script, which the corrections took to 234 words, trimmed to 193. Five of the same facts were stale in `README.md`, and
+A6 in `docs/DESIGN.md` still said an unknown zone is always UTC; both corrected. One comment in
+`src/Agent/Decisions/HorizonBranch.cs` said a past date is short, which D117 changed to no move date; the
+comment now states the rule the planner runs, and no code changed. Evidence: `runs\step99e`,
+`probe50answerkey.md`, the rehearsal's run outputs. Assumptions: A4 to A8.
+
+**Review fix, the Phase 9 retrospective, run and debug fact (2026-09-21).** A cold review of the diff
+above against the code, `runs\step99e` and the key raised three findings and two optional ones, and all
+five are fixed. Record 8 was filed as a Discussion row, but the key's clause covers only an app that
+declines voice, and this one sent voice, so its `start_cadence` for `follow_up_in_days` is a product
+miss: the action catalog does not read the channel, with pillar VF. The summary's groups counted twelve
+items as eleven, because the tour-slot lead day fails no record under the key's rule, which does not
+compare the payload. The eleven are now eight product misses (8, 12, 17, 18, 29, 30, 31, 32), one
+Discussion row (36) and two no single frame satisfies (33, 39), with the lead day a finding of its own.
+The lead-day records are 22 sms invitations, not sms and voice. Optional: the template p95 is 33 ms on
+`synthetic_12.jsonl` in a run that day, not the older 19 ms; and `docs/OPERATIONS.md` still counted tour
+slots from the send date, now corrected as in the README. Evidence: `probe50answerkey.md` row 8; the
+reviewer's pairing of `TrueTest.jsonl` with `out.json`. Assumptions: A8.
