@@ -4156,7 +4156,7 @@ inspected, which moved the latency labels off the bars; `run-report.ps1 -Compose
 `holdout_12.jsonl` wrote all seven files, exit code 0, and opened the page. Two fixture mistakes in the
 first Python tests were found by running them and fixed in the fixtures, not the code. Assumptions: none.
 
-**Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.uns\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
+**Review fact, D126 (2026-09-16).** The cold review found no HTML injection: matplotlib escapes text in the SVG, and the page escapes every value from the run's files. It found five defects, each fixed test first where code could be tested: a `$` in a task id was read as matplotlib math, which garbled the label or raised and lost the whole report, now off (`text.parse_math`); the p95 fallback counted rows the scorecard does not score and also ran for a live scorecard whose p95 was unmeasured, now only for a rebuilt scorecard and only over scored rows; the grid and latency chart called their order input order, which is false once a line fails to parse, now scorecard order with the rule stated; a row that was not an object, results that were not an object, and an unknown batch `latency_p95` raised instead of being reported, now reported per row or as one input error; and `run-report.ps1` passed a folder given with a trailing backslash before a closing quote with the quote attached, and skipped a failed first install forever. The wrapper now trims the separator (run with `.\runs\space probe\` wrote all seven files, exit 0) and checks that matplotlib imports before every run, with a check that writes nothing to stderr (exit 1 on the system Python, 0 in the venv, under `$ErrorActionPreference = 'Stop'`); the reinstall itself was not exercised. Two more fixture mistakes in the Python tests were fixed in the fixtures. Python tool: 25 tests, mypy strict clean.
 
 **D126 review fixes, run and debug fact (2026-09-16).** A second cold review of the D126 diff found five
 more problems, each fixed test first. `_read_json` caught only `json.JSONDecodeError`; a directory or an
@@ -4439,3 +4439,116 @@ touches the type's qualification at every one of its fourteen references across 
 finding with no live exploit, so it is left for the next site rather than done here (Least Code, Scope
 Discipline). Scopes: `SanitizedInput`; `Agent.csproj`; `Evaluator.cs`; `SendSlotTableTests.cs`. Evidence:
 `.\test.ps1` exits 0 at 100 percent line, branch and method, 128 and 1,084 tests.
+
+**Run and debug fact, the step 99 rerun after D127 to D132 (2026-09-17).** D127 to D132 were all
+fitted to the `runs\step99b` run and none had been measured, so D120's command ran once more on the
+same file, `TrueTest.jsonl`, 50 lines, md5 `cd7f7070e2850bf63f7c7f13160804a9`, unchanged since the
+previous run, through `run-report.ps1` into `runs\step99c` with `--composer openai` and `--judge`.
+Exit code 0, all 50 records answered, no line refused. `Checks: Channel 46/50, Day 0/41, Hour 0/41,
+Action 36/50, OptOut 39/39, CTA 38/38, Payload 15/39, Lang 36/36, Safety 50/50, Personalization
+32/32, ActionSem 35/50, BodySem 6/38`; `Overall: 8/50 passed`, against `step99b`'s 2 of 50. Latency
+p95 6,093 ms against the records' 2,000 ms budget, FAIL, as before; batch 68,583 ms; product 40
+calls, 40 completed, 20,930 input and 2,997 output tokens, no call cut short at the 60-second budget;
+judge 50 calls, 50 completed, 23,385 input and 4,692 output tokens. Eight fewer product calls than
+`step99b`'s 48, because records answered with no message went from 2 to 11 under D125 and D131, which
+is also why every message-side denominator fell: OptOut 42 to 39, CTA 41 to 38, Lang 45 to 36,
+Personalization 35 to 32, BodySem 41 to 38, Payload 47 to 39. Three checks moved up as counts and as
+rates: Channel 43 to 46, Action 33 to 36, ActionSem 33 to 35, and Personalization and Lang now pass
+every record they measure. One moved down as a rate and is the first thing the record-by-record read
+owes an answer: Payload was 24 of 47, 51 percent, and is 15 of 39, 38 percent, so the nine records
+that stopped being messaged do not account for it on their own. Day and Hour stay at 0 of 41 for the
+reason D120 recorded: the answer key's frame is Monday 2026-03-09 and the run used its own time,
+2026-09-17, so both checks measure that gap rather than the rules. This run has not yet been scored
+against `probe50answerkey.md`, which is the number that replaces `step99b`'s 30 of 50, and it has not
+been read record by record. `runs\step99c` is git ignored, so the files live only on this machine.
+Evidence: `.\test.ps1` before the run exits 0 at 100 percent line, branch and method, 128 and 1,084
+tests; `runs\step99c\eval.txt`, `diag.json`, `out.json`, `review_queue.json`, `run.log` and
+`report.html`. Assumptions: A19.
+
+**Run and debug fact, the step 99 rerun scored against the answer key (2026-09-17).** `runs\step99c`
+read record by record against `probe50answerkey.md` under the same rule the 2026-09-16 scoring used:
+channel, local time and offset, call-to-action type, next-action type, and the body constraint in the
+key's table, with dates set aside because the key's frame is Monday 2026-03-09 and the run used its
+own time. 39 of 50 pass, against 30 of 50 for `step99b`. The eleven failures are 5, 8, 12, 17, 18,
+21, 29, 30, 32, 38 and 49, and they fall in two groups. Four are artifacts of the reference-time gap,
+not rules: records 5, 21 and 49 are renewal-window residents whose `lease_end_date` is 2026-06-05,
+2026-05-31 and 2026-06-30, after the key's frame but before the run's own day, so the escalation that
+record 37 is meant to earn, `lease_end_date_in_past`, fires on all four renewal records and suppresses
+three messages the key expects; and record 38's missed tour, 2026-03-14, is next Saturday at the key's
+frame and six months past at the run's, so treating it as a real no-show is right for the day it ran.
+Seven are frame independent. Four are send-slot times that differ from the key with the date set
+aside: 12 sends 10:00 for 09:00, 17 and 18 send 09:20 for 09:00, 32 sends 09:00 for 09:05. Record 29
+has a `move_date_target` of 2025-11-01 and the planner answers with branch `no_move_date` and
+`horizon_days` -320, which gives `follow_up_in_days` where the key wants `reset_cadence`, and the
+composer, given the date, writes "a move-in date of November 1, 2025" into an sms; the branch name and
+the negative horizon disagree, and nothing stops a past date reaching a body. Record 30 answers a
+22-month horizon with a 3-day follow-up where the key wants longer. Record 8's body is now a spoken
+script that ends "press 9", which is what D128 was for, but its action is `start_cadence` where the
+key expects `follow_up_in_days`. Eleven of the eighteen failures the 2026-09-16 scoring found are
+gone: 14, 20, 22, 37, 46 and 47 are no longer messaged, 28 no longer carries the injected "first year
+is free", 41 is French throughout including its options and opt-out, 42 falls back to English with
+`locale_applied` false in diagnostics, 45 no longer echoes the emoji, and 8's body is fixed. Records
+33 and 39, unjudgeable at the previous run, now pass what can be judged: 33 sends at -05:00 and 39 the
+next morning. Every grep the key asks for is clean in all six output files: no `123-45-6789`, no
+`720-555-0142` or `diego.r@example.com`, no gate code `4471`, no `0001-01-01`, no angle bracket in any
+body; the Arabic name round-trips byte for byte; both rows of the duplicated task id are written; and
+record 36 states `input.timezone (unrecognized, UTC used)` in its ingest notes, which is what the key
+allows the UTC fallback on. Nothing here is fitted. Evidence: `runs\step99c\out.json`, `diag.json`,
+`eval.txt` and `run.log` against `probe50answerkey.md`; the four `lease_end_date_in_past` lines in
+`run.log`. Assumptions: A19.
+
+**Run and debug fact, the step 99 runs at the answer key's frame (2026-09-17).** The owner's
+instruction, after the scoring above showed four failures were the reference-time gap: re-run with
+`--now` pinned to the key's frame, Monday 2026-03-09. The key states the day and not the hour, and the
+hour decides four records, so it was read off the labels rather than guessed. Of the 41 dated labels
+38 expect Tuesday 2026-03-10, two (33, 39) expect Monday 09:00 and one expects Thursday; and record
+6's missed tour is 15:00 on the Monday, which the key calls yesterday relative to the send. So the oracle's now is Monday after 15:00 local, and no single instant
+can also satisfy 33 and 39, which need a now before 09:00 that Monday. Two runs were made rather than
+one: `runs\step99d` at 2026-03-09T12:00:00-06:00, where record 6's tour was still three hours in the
+future and no-opped, 21 of 50 on the program's own evaluator; then `runs\step99e` at
+2026-03-09T18:00:00-06:00, which is the frame the labels describe. `step99e`: exit 0, 50 records,
+`Checks: Channel 50/50, Day 37/41, Hour 36/41, Action 44/50, OptOut 41/41, CTA 41/41, Payload 17/41,
+Lang 38/38, Safety 50/50, Personalization 35/35, ActionSem 44/50, BodySem 25/41`; `Overall: 22/50
+passed` against `step99c`'s 8 of 50 at the run's own time; p95 4,327 ms against the 2,000 ms budget,
+FAIL; batch 67,940 ms; product 42 calls, 42 completed, 22,013 input and 3,222 output tokens; judge 50
+calls, 50 completed. Scored against the key by its own rule, now with `send_at` compared as an exact
+instant rather than set aside, 39 of 50 pass. The eleven failures are 8, 12, 17, 18, 29, 30, 31, 32,
+33, 36 and 39, in three groups. Two are not judgeable at any one frame: 33 and 39 want the Monday
+09:00 send that the other 38 labels rule out. Two are the key's own Discussion rows, where its stated
+condition is met but the strict rule is not: record 8 speaks its opt-out as "press 9" on voice, which
+is what D128 was for, but answers `start_cadence` where the label says `follow_up_in_days`; record 36
+states `input.timezone (unrecognized, UTC used)`, which the key allows, and the fallback then moves
+its local calendar day, so it sends 2026-03-11T09:30Z for a label of 2026-03-10T09:30-06:00. Eight are
+product findings that no frame explains, seven on a single record and the tour slots across records: 12 sends 10:00 for 09:00, 17 and 18 send 09:20 for 09:00 and
+32 sends 09:00 for 09:05, four send-slot times the key does not use; 29 has a past `move_date_target`,
+is planned as branch `no_move_date` with `horizon_days` -128, answers `follow_up_in_days` where the
+label says `reset_cadence`, and its body says "before your move in November 2025", the upcoming-move
+language the key forbids; 30 answers a 22-month horizon with a 3-day follow-up where the key wants
+longer; the tour slots an invitation offers are Wednesday 2026-03-11 and Thursday 2026-03-12 where the
+key names Thursday 2026-03-12 and Friday 2026-03-13, because `TourSlots.For` counts its two-day lead
+from the run's local reference date, 2026-03-09, while the key counts from the message's send date,
+2026-03-10, and the two rules differ by a day whenever the send rolls past the run's own day; that
+one-day gap is what the Payload check reports, 24 of the 41 messaged records failing it and the check
+reading 17 of 41, so it is one finding and not twenty-four. And 31, masked at the September frame and visible here, takes `last_interaction` 2026-04-01,
+three weeks after the reference time, as its schedule floor, so it sends 2026-04-01T09:00-06:00 for a
+label of 2026-03-10T09:00-06:00 and offers tours in April, which is the key's stated fail for that
+record, and no ingest note or diagnostic flags the inconsistency, which is the other half of its
+condition. Four failures the September frame produced are gone, as predicted: 5, 21 and 49 send their
+renewal emails, and 6 and 38 are answered apart, the tour that has happened rescheduled and the tour
+still to come left alone. Every grep the key asks for is clean across all six output files. Nothing is
+fitted here. Evidence: `runs\step99d\eval.txt`; `runs\step99e\out.json`, `diag.json`, `eval.txt` and
+`report.html` against `probe50answerkey.md`. Assumptions: A19.
+
+**Correction to the fact above, the tour-slot claim (2026-09-18).** A first draft of the paragraph above
+justified the pinned frame partly on the claim that the key's Thursday and Friday tour options are two
+days after a 2026-03-10 send, "which is what D108 computes". The second half was wrong and was written
+from D108's addendum rather than from the run, and the paragraph now states the rule as run. `TourSlots.For` counts its two-day lead from the run's local
+reference date and never offers a day on or before the send date, which its comment states and gives
+its reason for: the reference date is what both labeled sets fit. At this frame that yields Wednesday
+2026-03-11 and Thursday 2026-03-12, not the key's Thursday and Friday, and the run's own output says
+so on every tour invitation. The frame conclusion is unchanged, since it rests on the 38 Tuesday
+labels and on record 6's 15:00 tour, neither of which involves tour slots. The tour-slot gap is the
+eighth product finding in the list above and explains the Payload column: the check fails 24 of the 41
+messaged records, all by this one-day gap, and record 12, which passes the check, carries a link its
+label does not, so 25 records differ from their label's call-to-action payload and the check sees 24. Evidence: `src/Agent/Decisions/TourSlots.cs` lines 36 to 38;
+`runs\step99e\out.json` against the labels, compared field by field. Assumptions: none.

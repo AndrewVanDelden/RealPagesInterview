@@ -15,7 +15,7 @@ archive in full and named in this file's paragraph for its sprint, which is at m
 
 Phase 9 of `~/.agent-rules/PROJECT_PLAYBOOK.md`: Delivery and retrospective, resumed 2026-09-16. Sprints 16 and 17 were its steps 102 and 103, which sent the project back to Phase 4 (D106); that phase's check passed again on 2026-09-15, so later work resumes.
 Check: the retrospective names a playbook step or a new step for every failure.
-Next step: read the step 99 run in `runs\step99\` record by record, 1 of 50 passed, and name a playbook step for each failure (D122's run fact).
+Next step: name a playbook step for each of the eight product findings the pinned-frame run in `runs\step99e\` leaves, 39 of 50 against the answer key (the 2026-09-17 run facts).
 Open decisions: none.
 
 Replace these lines at the end of every sprint. Never append to them. A phase that passed, the
